@@ -1,0 +1,41 @@
+# Transferable currency -> program ratios, as `from:to` units.
+# ratio 1.0 means 1 card point = 1 mile. Transfers are one-way and irreversible,
+# which the report states every time it recommends a transfer.
+# `confidence: verify` entries changed recently or vary by card tier; the report
+# tells the user to confirm before transferring.
+last_verified: 2026-10-31
+verified_by: "model knowledge (cutoff mid-2026); pending Phase 0 recon confirmation"
+
+currencies:
+  amex_mr: {name: Amex Membership Rewards}
+  chase_ur: {name: Chase Ultimate Rewards}
+  citi_ty: {name: Citi ThankYou}
+  capital_one: {name: Capital One Miles}
+  bilt: {name: Bilt Points}
+
+transfers:
+  amex_mr:
+    aeroplan: {ratio: 1.0, time: instant, confidence: high}
+    flyingblue: {ratio: 1.0, time: instant, confidence: high}
+    virginatlantic: {ratio: 1.0, time: instant, confidence: high}
+    delta: {ratio: 1.0, time: instant, confidence: high}
+  chase_ur:
+    united: {ratio: 1.0, time: instant, confidence: high}
+    aeroplan: {ratio: 1.0, time: instant, confidence: high}
+    flyingblue: {ratio: 1.0, time: instant, confidence: high}
+    virginatlantic: {ratio: 1.0, time: instant, confidence: high}
+  citi_ty:
+    american: {ratio: 1.0, time: instant, confidence: high}
+    flyingblue: {ratio: 1.0, time: instant, confidence: high}
+    virginatlantic: {ratio: 1.0, time: instant, confidence: high}
+  capital_one:
+    aeroplan: {ratio: 1.0, time: instant, confidence: high}
+    flyingblue: {ratio: 1.0, time: instant, confidence: high}
+    virginatlantic: {ratio: 1.0, time: instant, confidence: verify}
+  bilt:
+    american: {ratio: 1.0, time: instant, confidence: high}
+    united: {ratio: 1.0, time: instant, confidence: high}
+    alaska: {ratio: 1.0, time: instant, confidence: verify}
+    aeroplan: {ratio: 1.0, time: instant, confidence: high}
+    flyingblue: {ratio: 1.0, time: instant, confidence: high}
+    virginatlantic: {ratio: 1.0, time: instant, confidence: high}

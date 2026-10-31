@@ -1,0 +1,78 @@
+query ($offerSearchCriteria: OfferSearchCriteriaInput!) {
+  gqlSearchOffers(offerSearchCriteria: $offerSearchCriteria) {
+    offerResponseId
+    gqlOffersSets {
+      offers {
+        offerId
+        additionalOfferProperties {
+          offered
+          soldOut
+          lowestFare
+          totalTripStopCnt
+          discountAvailable
+        }
+        offerPricing {
+          discountsApplied {
+            code
+            pct
+          }
+          originalTotalAmt {
+            currencyEquivalentPrice {
+              currencyAmt
+              roundedCurrencyAmt
+              formattedCurrencyAmt
+            }
+            milesEquivalentPrice {
+              mileCnt
+            }
+          }
+          totalAmt {
+            currencyEquivalentPrice {
+              currencyAmt
+              roundedCurrencyAmt
+              formattedCurrencyAmt
+            }
+            milesEquivalentPrice {
+              mileCnt
+            }
+          }
+          promotionalPrices {
+            code
+            pct
+            price {
+              milesEquivalentPrice {
+                mileCnt
+              }
+              currencyEquivalentPrice {
+                currencyAmt
+                roundedCurrencyAmt
+                formattedCurrencyAmt
+              }
+            }
+          }
+        }
+      }
+      itineraryDepartureDate
+    }
+    offerDataList {
+      pricingOptions {
+        pricingOptionDetail {
+          currencyCode
+        }
+      }
+      flexReturnDates
+      responseProperties {
+        tripTypeText
+        discountInfo {
+          discountPct
+          discountTypeCode
+          nonDiscountedOffersAvailable
+        }
+        promotionsInfo {
+          promotionalCode
+          promotionalPct
+        }
+      }
+    }
+  }
+}

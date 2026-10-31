@@ -1,0 +1,8 @@
+{
+  "origins": ["CVG"],
+  "destinations": [{"code": "ICN", "weight": 1.0}, {"code": "HKG", "weight": 1.0}],
+  "outbound": {"start": "2027-05-28", "end": "2027-05-29"},
+  "passengers": 3,
+  "preferred_cabin": "J",
+  "together": "same_flights"
+}

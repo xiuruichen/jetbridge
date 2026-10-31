@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jetbridge": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["-m", "jetbridge.mcp_server"]
+    }
+  }
+}

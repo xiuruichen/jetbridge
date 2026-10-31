@@ -1,0 +1,132 @@
+# Loyalty programs searchable by jetbridge.
+#
+# `bookable_carriers`: operating carriers whose award space this program can ticket.
+# Only carriers relevant to transpacific/US-domestic positioning are listed exhaustively.
+# `confidence`: high = well established; verify = partnership has been changing
+# recently and must be re-checked in Phase 0 recon (the report surfaces this flag).
+last_verified: 2026-10-31
+verified_by: "model knowledge (cutoff mid-2026); pending Phase 0 recon confirmation"
+
+# Regional airlines that operate flights for mainline brands ("Air Canada Express
+# operated by Jazz"). A segment operated by one of these is bookable by a program
+# when the program can book the *marketing* carrier listed here.
+regional_operators:
+  QK: [AC]          # Jazz (Air Canada Express)
+  ZX: [AC]          # Air Georgian / PAL Airlines (AC Express)
+  OO: [UA, DL, AA, AS]  # SkyWest
+  YX: [UA, DL, AA]  # Republic
+  9E: [DL]          # Endeavor
+  OH: [AA]          # PSA
+  MQ: [AA]          # Envoy
+  PT: [AA]          # Piedmont
+  G7: [UA, DL]      # GoJet
+  ZW: [UA, AA]      # Air Wisconsin
+  C5: [UA, AA]      # CommutAir / Champlain
+  YV: [UA, AA]      # Mesa
+  QX: [AS]          # Horizon
+  CP: [UA, DL, AA]  # Compass
+
+programs:
+  american:
+    name: American AAdvantage
+    currency: american
+    adapter: american
+    pricing: {own_metal: dynamic, partners: chart}
+    award_chart: aa_partner
+    bookable_carriers:
+      high: [AA, AS, BA, CX, AY, IB, JL, MH, QF, QR, RJ, UL, FJ, EY, EI]
+      verify: [HA, WY, AT]
+    gateways: [DFW, LAX, JFK, ORD, SEA, BOS, SFO, PHL]   # AA metal + JL/CX/QR gateways
+    booking_url: https://www.aa.com/booking/find-flights
+    notes:
+      - "Partner awards priced from a fixed chart; AA metal is dynamic."
+      - "No fuel surcharges on any partner when booked with AAdvantage miles."
+
+  delta:
+    name: Delta SkyMiles
+    currency: delta
+    adapter: delta
+    pricing: {own_metal: dynamic, partners: dynamic}
+    award_chart: null
+    bookable_carriers:
+      high: [DL, KE, AF, KL, VS, AM, CI, MU, VN, GA, WS, LA]
+      verify: [SV, ME, KQ, UX, RO]
+    gateways: [ATL, DTW, MSP, SEA, LAX, SLC, JFK, SFO]       # DL metal + KE gateways
+    booking_url: https://www.delta.com/flight-search/book-a-flight
+    notes:
+      - "No published chart; partner pricing is also dynamic."
+      - "Korean Air metal to ICN is the main transpacific partner for SkyMiles."
+
+  united:
+    name: United MileagePlus
+    currency: united
+    adapter: united
+    pricing: {own_metal: dynamic, partners: chart_saver}
+    award_chart: null
+    bookable_carriers:
+      high: [UA, NH, BR, SQ, CA, TG, NZ, AC, LH, LX, OS, TK, ET, MS, AI, CM, AV, TP, LO, SN, ZH, EI]
+      verify: [OZ, EK, B6]
+    gateways: [SFO, LAX, ORD, EWR, IAD, IAH, DEN, SEA]      # UA metal + NH/BR gateways
+    booking_url: https://www.united.com/en/us/book-flight/united-reservations
+    notes:
+      - "Asiana (OZ) Star Alliance status depends on Korean Air integration; verify."
+      - "Partner saver space shows in United search; Singapore releases only limited saver to partners."
+
+  alaska:
+    name: Alaska/Hawaiian Atmos Rewards
+    currency: alaska
+    adapter: alaska
+    pricing: {own_metal: dynamic, partners: chart}
+    award_chart: null
+    bookable_carriers:
+      high: [AS, HA, AA, BA, CX, JL, QF, QR, AY, IB, MH, RJ, FJ, JX]
+      verify: [EK, SQ, KE, FI]
+    gateways: [SEA, LAX, SFO, HNL, JFK, ORD]                 # AS/HA metal + JL/CX/JX gateways
+    booking_url: https://www.alaskaair.com/search
+    notes:
+      - "Rebranded from Mileage Plan to Atmos Rewards (2025); program ids unchanged here."
+      - "Good cross-check source for JAL / Cathay / Starlux space."
+
+  aeroplan:
+    name: Air Canada Aeroplan
+    currency: aeroplan
+    adapter: aeroplan
+    pricing: {own_metal: dynamic, partners: chart_distance}
+    award_chart: null
+    bookable_carriers:
+      high: [AC, UA, NH, BR, SQ, CA, TG, NZ, LH, LX, OS, TK, ET, MS, AI, CM, AV, TP, LO, SN, ZH, EY, EK, CX]
+      verify: [OZ, QR, GF, WY]
+    gateways: [YVR, YYZ, YUL, SFO, LAX, ORD, EWR, IAH, SEA]
+    booking_url: https://www.aircanada.com/aeroplan/redeem/availability/outbound
+    notes:
+      - "Partner awards distance-banded; Air Canada metal is dynamic."
+      - "Charges carrier surcharges on some partners (e.g. LH group)."
+
+  flyingblue:
+    name: Air France-KLM Flying Blue
+    currency: flyingblue
+    adapter: flyingblue
+    pricing: {own_metal: dynamic, partners: dynamic}
+    award_chart: null
+    bookable_carriers:
+      high: [AF, KL, DL, KE, VS, MU, CI, VN, GA, AM, KQ, ME, SV, UX, RO]
+      verify: []
+    gateways: [ATL, DTW, MSP, SEA, LAX, JFK]
+    booking_url: https://wwws.airfrance.us/search/advanced
+    notes:
+      - "Monthly 'Promo Rewards' discount specific routes."
+
+  virginatlantic:
+    name: Virgin Atlantic Flying Club
+    currency: virginatlantic
+    adapter: virginatlantic
+    pricing: {own_metal: dynamic, partners: chart}
+    award_chart: null
+    bookable_carriers:
+      high: [VS, DL, AF, KL, NH, SQ, AI, ME]
+      verify: [KE, CI, VN, GA, AM, SV, KQ]
+    gateways: [ATL, DTW, MSP, SEA, LAX, JFK]
+    booking_url: https://www.virginatlantic.com/flights/search
+    notes:
+      - "ANA business/first via Flying Club is a well-known transpacific sweet spot (call-in for some partners)."
+      - "Some partners (e.g. ANA) not bookable online; adapter may only see VS/DL/AF/KL space."

@@ -1,0 +1,60 @@
+[project]
+name = "jetbridge"
+version = "0.1.0"
+description = "Comprehensive award + cash flight search engine with an MCP agent interface"
+readme = "README.md"
+authors = [
+    { name = "xiuruichen" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "airportsdata>=20261030",
+    "alembic>=1.20.1",
+    "curl-cffi>=0.17.0",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "mcp>=2.3.0",
+    "ortools>=9.15.6755",
+    "patchright>=1.64.3",
+    "pydantic>=2.14.2",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "sqlalchemy>=2",
+    "structlog>=26.1.0",
+    "tenacity>=9.2.1",
+    "typer>=0.27.3",
+    "zstandard>=0.25.0",
+]
+
+[project.scripts]
+jetbridge = "jetbridge.cli:app"
+jetbridge-mcp = "jetbridge.mcp_server:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.14",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+    "ruff>=0.17.3",
+    "syrupy>=6.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["live: hits real airline sites (deselect with -m 'not live')"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "B008", "E501", "SIM105"]  # B008: typer options; E501: formatter owns length

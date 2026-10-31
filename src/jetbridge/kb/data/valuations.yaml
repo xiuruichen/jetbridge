@@ -1,0 +1,16 @@
+# Default cents-per-point valuations, used only to rank options that mix miles
+# and cash. Users override them in their profile. Deliberately conservative.
+last_verified: 2026-10-31
+cpp:
+  american: 1.4
+  delta: 1.1
+  united: 1.25
+  alaska: 1.4
+  aeroplan: 1.4
+  flyingblue: 1.25
+  virginatlantic: 1.35
+  amex_mr: 1.6
+  chase_ur: 1.6
+  citi_ty: 1.5
+  capital_one: 1.5
+  bilt: 1.6

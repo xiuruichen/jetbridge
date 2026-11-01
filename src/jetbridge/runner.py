@@ -50,6 +50,10 @@ log = logging.getLogger("jetbridge.runner")
 
 SOLVER_TOP_PER_BUCKET = 40
 VERIFY_TOP = 6
+SOLVE_RESERVE_S = 60
+VERIFY_RESERVE_S = 90
+REPORT_RESERVE_S = 20
+STRAGGLER_GRACE_S = 15
 
 
 # --------------------------------------------------------------------------- create
@@ -85,13 +89,16 @@ def add_ledger(
                 continue
             existing.add(key)
             is_skip = skipped and reason is not None
+            status = "pending"
+            if is_skip:
+                status = "deferred" if reason.startswith("deferred") else "skipped"
             row = LedgerRow(
                 search_id=sid,
                 stage=pq.stage,
                 adapter=pq.query.adapter,
                 query_key=key,
                 query={**pq.to_dict(), "why": None if is_skip else reason},
-                status="skipped" if is_skip else "pending",
+                status=status,
                 reason=reason if is_skip else None,
             )
             s.add(row)
@@ -151,27 +158,58 @@ def _dests(spec: SearchSpec, kb: KB) -> dict[str, float]:
 
 
 # --------------------------------------------------------------------------- run
-async def run_search(sid: str, *, offscreen: bool = True, retry_blocked: bool = False) -> str:
-    """Execute a planned search end to end (the full agent loop); returns report path."""
+async def run_search(
+    sid: str, *, offscreen: bool = True, retry_blocked: bool = False, deep: bool = False
+) -> str:
+    """Execute a planned search end to end (the full agent loop); returns report path.
+
+    ``deep`` also runs queries deferred by the time budget."""
+    import time as _time
+
+    t_start = _time.monotonic()
     spec, profile = _load(sid)
     _set(sid, status="running", stage="acquire")
     kb = load_kb()
     adapters = registry()
     try:
         async with SessionBroker(offscreen=offscreen) as broker:
-            engine = Engine(
-                adapters, broker, search_id=sid, logins_enabled=frozenset(profile.logins_enabled)
+            from jetbridge.plan.planner import ACQUIRE_SHARE, REFINE_SHARE
+
+            # Deadlines are computed BACKWARD from fixed end-of-run reserves so the
+            # accuracy-critical live re-check always gets its slice:
+            #   ... acquire | refine | solve (60s) | verify (90s) | report (20s)
+            dl_acquire, dl_refine, dl_verify = (
+                (None, None, None)
+                if deep
+                else stage_deadlines(t_start, spec.time_budget_minutes * 60)
             )
-            await _acquire(engine, _pending(sid, retry_blocked))
-            if spec.refine and spec.refine_budget > 0:
-                await _refine(sid, spec, kb, adapters, engine)
+            _ = (ACQUIRE_SHARE, REFINE_SHARE)
+            engine = Engine(
+                adapters,
+                broker,
+                search_id=sid,
+                logins_enabled=frozenset(profile.logins_enabled),
+                deadline=dl_acquire,
+            )
+            await _acquire(engine, _pending(sid, retry_blocked, deep), dl_acquire)
+            log.info(
+                "acquisition done in %.0fs  rates=%s",
+                _time.monotonic() - t_start,
+                engine.scheduler.snapshot(),
+            )
+            if spec.refine and spec.refine_budget > 0 and not engine._past(30):
+                engine.deadline = dl_refine
+                await _refine(sid, spec, kb, adapters, engine, deep=deep, deadline=dl_refine)
+            log.info("refinement done at %.0fs", _time.monotonic() - t_start)
+            engine.deadline = dl_verify
             _set(sid, stage="solve")
             result = optimize(spec, profile, kb, collected_from_db(sid, spec, kb), adapters)
             _set(sid, stage="verify")
             ids = _option_ids(sid, result.solutions)
             pre = advise(result.solutions, ids, {}, spec, profile, kb, result.cash_index)
             targets = _verify_targets(pre, result.solutions)
-            verified = await verify(engine, result.solutions, targets)
+            verified = await verify(engine, result.solutions, targets, deadline=dl_verify)
+            log.info("verification done at %.0fs", _time.monotonic() - t_start)
         _set(sid, stage="report")
         return finalize(sid, spec, profile, kb, result, verified)
     except Exception as exc:
@@ -180,8 +218,31 @@ async def run_search(sid: str, *, offscreen: bool = True, retry_blocked: bool = 
         raise
 
 
-def _pending(sid: str, retry_blocked: bool = False) -> list[LedgerRow]:
+def stage_deadlines(t_start: float, budget_s: float) -> tuple[float, float, float]:
+    """(acquire, refine, verify) deadlines, computed backward from fixed reserves so
+    solve + live verification + report always fit inside the budget."""
+    from jetbridge.plan.planner import ACQUIRE_SHARE
+
+    end = t_start + budget_s
+    dl_verify = end - REPORT_RESERVE_S
+    dl_refine = dl_verify - VERIFY_RESERVE_S - SOLVE_RESERVE_S
+    dl_acquire = min(t_start + budget_s * ACQUIRE_SHARE, dl_refine)
+    return dl_acquire, dl_refine, dl_verify
+
+
+def _defer(row: LedgerRow, reason: str) -> None:
+    with session() as s:
+        s.execute(
+            update(LedgerRow)
+            .where(LedgerRow.id == row.id)
+            .values(status="deferred", reason=reason, updated_at=utcnow())
+        )
+
+
+def _pending(sid: str, retry_blocked: bool = False, deep: bool = False) -> list[LedgerRow]:
     states = ["pending", "blocked", "failed"] if retry_blocked else ["pending"]
+    if deep:
+        states.append("deferred")
     with session() as s:
         return list(
             s.scalars(
@@ -190,34 +251,88 @@ def _pending(sid: str, retry_blocked: bool = False) -> list[LedgerRow]:
         )
 
 
-async def _refine(sid: str, spec: SearchSpec, kb: KB, adapters: dict, engine: Engine) -> None:
+async def _refine(
+    sid: str,
+    spec: SearchSpec,
+    kb: KB,
+    adapters: dict,
+    engine: Engine,
+    *,
+    deep: bool = False,
+    deadline: float | None = None,
+) -> None:
+    from jetbridge.acquire.engine import DEFAULT_POLICIES
+    from jetbridge.plan.planner import (
+        DEFAULT_LATENCY_S,
+        REFINE_SHARE,
+        measured_latency_s,
+        throughput_qps,
+    )
+
     _set(sid, stage="refine")
     with session() as s:
         done = set(s.scalars(select(LedgerRow.query_key).where(LedgerRow.search_id == sid)))
+    with session() as s:
+        led = list(s.scalars(select(LedgerRow).where(LedgerRow.search_id == sid)))
+    tried: dict[str, int] = defaultdict(int)
+    blocked: dict[str, int] = defaultdict(int)
+    for r in led:
+        if r.status in ("ok", "empty", "blocked", "failed"):
+            tried[r.adapter] += 1
+            blocked[r.adapter] += r.status == "blocked"
+    skip = {a for a, n in tried.items() if n >= 5 and blocked[a] / n > 0.5}
+    if skip:
+        log.info("refine: skipping sites that mostly blocked this search: %s", sorted(skip))
+        adapters = {k: v for k, v in adapters.items() if k not in skip}
     budget = spec.refine_budget
+    if not deep:
+        # Follow-ups spread across the award sites: cap at REFINE_SHARE of the
+        # clock at their aggregate measured throughput.
+        agg = sum(
+            throughput_qps(
+                DEFAULT_POLICIES.get(a.site),
+                measured_latency_s(a.id, DEFAULT_LATENCY_S.get(a.id, 6)),
+            )
+            for a in adapters.values()
+            if a.capabilities.award
+        )
+        budget = min(budget, int(agg * spec.time_budget_minutes * 60 * REFINE_SHARE))
     col = collected_from_db(sid, spec, kb)
     cands, _stats, _gw, _pos = build_candidates(spec, kb, col)
     qa = phase_a(spec, kb, adapters, cands, _dests(spec, kb), done, int(budget * 0.75))
     rows = add_ledger(sid, [(r.pq, r.reason) for r in qa])
     log.info("refine phase A: %d follow-up queries", len(rows))
-    await _acquire(engine, rows)
+    await _acquire(engine, rows, deadline)
     col = collected_from_db(sid, spec, kb)
-    _c, _s, gateway_offers, _p = build_candidates(spec, kb, col)
+    through_cands, _s, gateway_offers, _p = build_candidates(spec, kb, col)
     with session() as s:
         done = set(s.scalars(select(LedgerRow.query_key).where(LedgerRow.search_id == sid)))
-    qb = phase_b(spec, kb, adapters, gateway_offers, done, budget - len(rows))
+    qb = phase_b(spec, kb, adapters, gateway_offers, done, budget - len(rows), through_cands)
     rows_b = add_ledger(sid, [(r.pq, r.reason) for r in qb])
     log.info("refine phase B: %d positioning queries", len(rows_b))
-    await _acquire(engine, rows_b)
+    await _acquire(engine, rows_b, deadline)
 
 
-async def _acquire(engine: Engine, ledger: list[LedgerRow]) -> None:
+async def _acquire(engine: Engine, ledger: list[LedgerRow], deadline: float | None = None) -> None:
+    """Run ledger rows: per site, ``max concurrency`` workers pull from a priority
+    queue (the adaptive scheduler gates how many are actually in flight). At the
+    deadline, rows not yet started are marked DEFERRED with a reason."""
+    import time as _time
+
     by_adapter: dict[str, list[LedgerRow]] = defaultdict(list)
     for row in sorted(ledger, key=lambda r: -r.query["priority"]):
         by_adapter[row.adapter].append(row)
 
-    async def worker(rows: list[LedgerRow]) -> None:
-        for row in rows:
+    async def worker(queue: asyncio.Queue) -> None:
+        while not queue.empty():
+            row = queue.get_nowait()
+            if deadline is not None and _time.monotonic() > deadline:
+                _defer(
+                    row,
+                    "deferred: time budget reached before this query ran; "
+                    "run `jetbridge resume <search_id> --deep` to include",
+                )
+                continue
             q = Query.from_dict(row.query["query"])
             res = await engine.run(q)
             with session() as s:
@@ -234,7 +349,37 @@ async def _acquire(engine: Engine, ledger: list[LedgerRow]) -> None:
                     )
                 )
 
-    await asyncio.gather(*(worker(rows) for rows in by_adapter.values()))
+    tasks = []
+    for adapter_id, rows in by_adapter.items():
+        queue: asyncio.Queue = asyncio.Queue()
+        for r in rows:  # already in priority order
+            queue.put_nowait(r)
+        site = engine.adapters[adapter_id].site
+        n = max(1, engine.scheduler.policy(site).concurrency)
+        tasks += [worker(queue) for _ in range(n)]
+    if not tasks:
+        return
+    futs = [asyncio.ensure_future(t) for t in tasks]
+    timeout = (
+        None if deadline is None else max(1.0, deadline - _time.monotonic() + STRAGGLER_GRACE_S)
+    )
+    _done, stragglers = await asyncio.wait(futs, timeout=timeout)
+    for f in stragglers:  # in flight 30s past the deadline: cancel, never stall the run
+        f.cancel()
+    if stragglers:
+        await asyncio.wait(stragglers, timeout=10)
+        with session() as s:
+            ids = [r.id for r in ledger]
+            s.execute(
+                update(LedgerRow)
+                .where(LedgerRow.id.in_(ids), LedgerRow.status == "pending")
+                .values(
+                    status="deferred",
+                    reason="deferred: still in flight when the time budget ended; "
+                    "run `jetbridge resume <search_id> --deep` to include",
+                    updated_at=utcnow(),
+                )
+            )
 
 
 # --------------------------------------------------------------------------- candidates
@@ -357,16 +502,20 @@ def optimize(
         elif label and not sols[s.key()].label:
             sols[s.key()].label = label
 
-    for s in allocator.solve(pool, k=40, time_limit_s=10):
+    for s in allocator.solve(pool, k=30, time_limit_s=5, deadline_s=45):
         add(s)
     for cabin in sorted({c.offer.itinerary.main_cabin for c in pool}, reverse=True):
-        for i, s in enumerate(allocator.solve(pool, k=2, restrict={"cabin": cabin})):
+        for i, s in enumerate(
+            allocator.solve(pool, k=2, time_limit_s=4, deadline_s=6, restrict={"cabin": cabin})
+        ):
             add(s, f"best {cabin.name.lower()}" if i == 0 else "")
     for prog in sorted({c.offer.program for c in pool if isinstance(c.offer, AwardOffer)}):
-        for s in allocator.solve(pool, k=1, restrict={"program": prog}):
+        for s in allocator.solve(pool, k=1, time_limit_s=4, restrict={"program": prog}):
             add(s, f"best using {prog}")
     if any(c.composed for c in pool):
-        for s in allocator.solve(pool, k=2, restrict={"composed": True}):
+        for s in allocator.solve(
+            pool, k=2, time_limit_s=4, deadline_s=6, restrict={"composed": True}
+        ):
             add(s, "best with positioning")
     ordered = _diversify(sorted(sols.values(), key=lambda s: s.objective_cents))
     if ordered:
@@ -438,12 +587,45 @@ def _verify_targets(brief: Brief, sols: list[Solution]) -> list[int]:
 
 
 async def verify(
-    engine: Engine, sols: list[Solution], targets: list[int] | None = None
+    engine: Engine,
+    sols: list[Solution],
+    targets: list[int] | None = None,
+    *,
+    deadline: float | None = None,
 ) -> dict[int, dict[str, Verdict]]:
     """Live re-check of selected options. Returns {solution index: {offer_id: verdict}}."""
     out: dict[int, dict[str, Verdict]] = {}
+    idx = list(targets if targets is not None else range(min(VERIFY_TOP, len(sols))))
+    # Re-fetch every distinct query first, concurrently (sites run in parallel).
+    wanted: dict[str, Query] = {}
+    for i in idx:
+        for a in sols[i].assignments:
+            o = a.candidate.offer
+            if isinstance(o, AwardOffer):
+                it = o.itinerary
+                q = Query(
+                    o.provenance.adapter,
+                    "day",
+                    it.origin,
+                    it.destination,
+                    it.departs_at.date(),
+                    o.provenance.request_pax,
+                )
+                wanted[q.key] = q
+    import time as _time
+
+    tasks = {k: asyncio.ensure_future(engine.run(q, use_cache=False)) for k, q in wanted.items()}
+    timeout = None if deadline is None else max(5.0, deadline - _time.monotonic())
+    if tasks:
+        await asyncio.wait(tasks.values(), timeout=timeout)
     fresh: dict[str, QueryResult] = {}
-    for i in targets if targets is not None else range(min(VERIFY_TOP, len(sols))):
+    for k, t in tasks.items():
+        if t.done() and not t.cancelled() and t.exception() is None:
+            fresh[k] = t.result()
+        else:
+            t.cancel()
+            fresh[k] = QueryResult(wanted[k], "failed", reason="re-check skipped: time budget")
+    for i in idx:
         sol = sols[i]
         out[i] = {}
         for a in sol.assignments:
@@ -746,3 +928,62 @@ def ledger_stats(sid: str) -> dict:
     for r in rows:
         by[r.adapter][r.status] += 1
     return {a: dict(v) for a, v in by.items()}
+
+
+def reparse(sid: str) -> dict[str, int]:
+    """Re-run the CURRENT parsers over every stored raw response of a search (no
+    network), replacing its observations and updating ledger statuses. Used after
+    a parser fix: recovers data that an older parser dropped."""
+    from sqlalchemy import delete
+
+    from jetbridge.acquire.cache import get_blob
+    from jetbridge.acquire.types import RawResponse
+    from jetbridge.store.db import FetchRow
+
+    adapters = registry()
+    engine = Engine(adapters, broker=None, search_id=sid)
+    changed: dict[str, int] = defaultdict(int)
+    with session() as s:
+        rows = list(
+            s.scalars(
+                select(LedgerRow).where(LedgerRow.search_id == sid, LedgerRow.fetch_id.is_not(None))
+            )
+        )
+        fetches = {
+            f.id: f
+            for f in s.scalars(select(FetchRow).where(FetchRow.id.in_([r.fetch_id for r in rows])))
+        }
+    for row in rows:
+        f = fetches.get(row.fetch_id)
+        if f is None or not f.blob or f.outcome not in ("ok", "empty"):
+            continue
+        q = Query.from_dict(row.query["query"])
+        raw = RawResponse(
+            status=f.http_status,
+            body=get_blob(f.blob),
+            tier=f.tier,  # type: ignore[arg-type]
+            started_at=f.started_at if f.started_at.tzinfo else f.started_at.replace(tzinfo=UTC),
+            latency_ms=f.latency_ms,
+        )
+        with session() as s:
+            s.execute(
+                delete(ObservationRow).where(
+                    ObservationRow.search_id == sid, ObservationRow.fetch_id == f.id
+                )
+            )
+        res = engine._interpret(adapters[q.adapter], q, raw, f.id)
+        n = len(res.parsed.awards) + len(res.parsed.cash)
+        if res.status != row.status or n != row.offers:
+            changed[f"{row.status}->{res.status}"] += 1
+        with session() as s:
+            s.execute(
+                update(LedgerRow)
+                .where(LedgerRow.id == row.id)
+                .values(
+                    status=res.status,
+                    offers=n,
+                    reason=res.reason or ("; ".join(res.parsed.warnings[:3]) or None),
+                    updated_at=utcnow(),
+                )
+            )
+    return dict(changed)

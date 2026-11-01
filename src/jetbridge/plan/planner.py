@@ -1,44 +1,54 @@
-"""SearchSpec -> SearchPlan.
+"""SearchSpec -> SearchPlan, under a wall-clock budget.
 
-Pricing rule learned in live recon (2026-10-31): aa.com dynamic award prices
-change with party size (352,500 for 1 pax vs 384,000/pax for 3 on the same
-flights), and a 1-pax search can show seats that do not exist for 3. So:
-
-* **Primary stage** searches with the *real* passenger count. Its prices are
-  authoritative for the whole party.
-* **Split stage** (only when passengers > 1) searches pax=1 on preferred
-  destinations to find space that only works as a split booking (e.g. 2 seats
-  on one flight + 1 on another). The solver only assigns such an offer as many
-  passengers as is *sound* for its adapter (see ``Adapter.price_independent_of_pax``).
-
-Nothing is pruned heuristically. When a per-adapter query budget is exceeded,
-the overflow is written to the ledger as ``skipped`` with the reason, so the
-report shows exactly what was not searched.
+Principles
+----------
+* **Real party size.** Award prices for AA/United change with party size, so
+  base searches use the actual passenger count (authoritative for the party).
+  Split-booking probes are evidence-driven follow-ups (``plan/refine.py``), not
+  a blanket second pass.
+* **Time budget.** Each site's throughput is estimated from *measured* latency
+  telemetry (recent fetches in the DB) and its concurrency/spacing policy. Sites
+  run in parallel, so each gets the acquisition share of the budget. Queries
+  are filled in priority order; the remainder is DEFERRED — written to the
+  ledger with a reason and resumable via ``jetbridge resume <id> --deep`` —
+  never silently dropped.
+* **Priority** = destination preference weight x hub factor (airports with
+  nonstop service from North America rank higher, since itineraries elsewhere
+  usually connect through them) x home-airport factor; days in order.
+* **No redundant queries.** Engines that expand an airport to its metro
+  (verified: united.com HND -> TYO) are searched once per metro.
 """
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass, field
+
+from sqlalchemy import select
 
 from jetbridge.acquire.adapters.base import Adapter
 from jetbridge.acquire.engine import DEFAULT_POLICIES
+from jetbridge.acquire.scheduler import SitePolicy
 from jetbridge.acquire.types import Query
 from jetbridge.kb import KB
 from jetbridge.models.spec import Profile, SearchSpec
 
-EST_LATENCY_S = {
-    "united": 4.0,
-    "american": 9.0,
-    "delta": 5.0,
-    "alaska": 5.0,
-    "google_flights": 12.0,
+# Fallback median latencies (s) when no telemetry exists yet (from recon runs).
+DEFAULT_LATENCY_S = {
+    "united": 5.6,
+    "american": 7.2,
+    "delta": 3.6,
+    "alaska": 1.9,
+    "google_flights": 9.0,
 }
+ACQUIRE_SHARE = 0.62  # of the time budget; refine gets the rest minus ~170s of reserves
+REFINE_SHARE = 0.15
 
 
 @dataclass
 class PlannedQuery:
     query: Query
-    stage: str  # primary|split
+    stage: str  # primary|cash|refine-*|agent
     direction: str  # out|in
     priority: float
     skip_reason: str | None = None
@@ -57,10 +67,11 @@ class PlannedQuery:
 class SearchPlan:
     queries: list[PlannedQuery]
     origins: list[str]
-    destinations: dict[str, float]  # airport -> preference weight
+    destinations: dict[str, float]
     adapters: list[str]
-    excluded_programs: dict[str, str]  # program -> reason it is not searched
+    excluded_programs: dict[str, str]
     est_seconds: float
+    throughput: dict[str, float] = field(default_factory=dict)  # queries/s per adapter
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -69,8 +80,10 @@ class SearchPlan:
 
     def summary(self) -> dict:
         by_adapter: dict[str, int] = {}
-        for pq in self.runnable:
-            by_adapter[pq.query.adapter] = by_adapter.get(pq.query.adapter, 0) + 1
+        deferred: dict[str, int] = {}
+        for pq in self.queries:
+            tgt = by_adapter if pq.skip_reason is None else deferred
+            tgt[pq.query.adapter] = tgt.get(pq.query.adapter, 0) + 1
         return {
             "origins": self.origins,
             "destinations": self.destinations,
@@ -78,8 +91,10 @@ class SearchPlan:
             "excluded_programs": self.excluded_programs,
             "queries_total": len(self.queries),
             "queries_runnable": len(self.runnable),
-            "queries_skipped": len(self.queries) - len(self.runnable),
+            "queries_deferred": len(self.queries) - len(self.runnable),
             "by_adapter": by_adapter,
+            "deferred_by_adapter": deferred,
+            "throughput_qps": {k: round(v, 2) for k, v in self.throughput.items()},
             "estimated_minutes": round(self.est_seconds / 60, 1),
             "notes": self.notes,
         }
@@ -88,6 +103,40 @@ class SearchPlan:
         return {"summary": self.summary(), "queries": [q.to_dict() for q in self.queries]}
 
 
+# --------------------------------------------------------------------- throughput
+def measured_latency_s(adapter: str, default: float) -> float:
+    """Median latency of recent successful live fetches (telemetry), else ``default``."""
+    try:
+        from jetbridge.store.db import FetchRow, session
+
+        with session() as s:
+            rows = list(
+                s.scalars(
+                    select(FetchRow.latency_ms)
+                    .where(
+                        FetchRow.adapter == adapter,
+                        FetchRow.outcome == "ok",
+                        FetchRow.tier != "replay",
+                    )
+                    .order_by(FetchRow.started_at.desc())
+                    .limit(200)
+                )
+            )
+        if len(rows) >= 5:
+            return statistics.median(rows) / 1000
+    except Exception:
+        pass
+    return default
+
+
+def throughput_qps(policy: SitePolicy | None, latency_s: float) -> float:
+    """Sustained queries/s = min(concurrency / latency, 1 / mean start spacing), -10%."""
+    pol = policy or SitePolicy()
+    gap = (pol.min_interval_s + pol.max_interval_s) / 2
+    return min(pol.concurrency / max(latency_s, 0.3), 1 / max(gap, 0.05)) * 0.9
+
+
+# --------------------------------------------------------------------- helpers
 def _reachable(program: str, profile: Profile, kb: KB) -> tuple[bool, str]:
     if not profile.balances:
         return True, "no balances in profile: all programs searched"
@@ -97,22 +146,30 @@ def _reachable(program: str, profile: Profile, kb: KB) -> tuple[bool, str]:
     return False, "no balance in this program or any card currency that transfers to it"
 
 
+def _metro_members(kb: KB, adapter_id: str, airport: str) -> list[str] | None:
+    """Members of ``airport``'s metro if ``adapter_id``'s engine expands that metro."""
+    for metro in kb.metro_expanding_adapters.get(adapter_id, []):
+        members = kb.metros.get(metro, [])
+        if airport in members:
+            return members
+    return None
+
+
 def build_plan(
     spec: SearchSpec,
     profile: Profile,
     kb: KB,
     adapters: dict[str, Adapter],
     *,
-    max_queries_per_adapter: int = 700,
-    split_stage: bool = True,
+    max_queries_per_adapter: int | None = None,
+    deep: bool = False,
 ) -> SearchPlan:
     notes: list[str] = []
     excluded: dict[str, str] = {}
 
-    # ---- which adapters ---------------------------------------------------
-    wanted_programs = spec.programs or list(kb.programs)
+    # ---- which award adapters ----------------------------------------------
     chosen: list[str] = []
-    for pid in wanted_programs:
+    for pid in spec.programs or list(kb.programs):
         prog = kb.programs.get(pid)
         if prog is None:
             excluded[pid] = "unknown program"
@@ -130,12 +187,10 @@ def build_plan(
             continue
         chosen.append(a.id)
 
-    # ---- geography ----------------------------------------------------------
+    # ---- geography ------------------------------------------------------------
     origins: list[str] = []
     for o in [*spec.origins, *spec.nearby_origins]:
-        for ap in kb.expand(o):
-            if ap not in origins:
-                origins.append(ap)
+        origins += [ap for ap in kb.expand(o) if ap not in origins]
     dests: dict[str, float] = {}
     for d in spec.destinations:
         for ap in kb.expand(d.code):
@@ -143,49 +198,61 @@ def build_plan(
     for ap in list(dests):
         if ap in origins:
             del dests[ap]
+    hubs = set(kb.na_nonstop_asia)
 
-    # ---- queries ------------------------------------------------------------
-    pqs: list[PlannedQuery] = []
+    def dest_priority(w: float, hub: bool) -> float:
+        if w >= 0.9:
+            return 10 + w  # primary destinations always first
+        return w * (1.0 if hub else 0.6)
+
     directions = [("out", spec.outbound.days())]
     if spec.inbound:
         directions.append(("in", spec.inbound.days()))
+
+    pqs: list[PlannedQuery] = []
+    metro_skips = 0
     for direction, days in directions:
         for a in chosen:
             for dest, w in dests.items():
+                members = _metro_members(kb, a, dest)
+                if members:
+                    rep = next(m for m in members if m in dests)
+                    if rep != dest:
+                        metro_skips += len(days) * len(origins)
+                        continue  # covered by the representative airport's search
+                    w = max(dests[m] for m in members if m in dests)
+                    hub = any(m in hubs for m in members)
+                else:
+                    hub = dest in hubs
+                dp = dest_priority(w, hub)
                 for org in origins:
                     o, d = (org, dest) if direction == "out" else (dest, org)
                     home = 1.0 if org == spec.origins[0] else 0.8
                     for i, day in enumerate(days):
-                        base = w * home - i * 1e-4
                         pqs.append(
                             PlannedQuery(
                                 Query(a, "day", o, d, day, spec.passengers),
                                 "primary",
                                 direction,
-                                priority=2.0 + base,
+                                priority=dp * home - i * 1e-4,
                             )
                         )
-                        if split_stage and spec.passengers > 1 and w >= 0.9 and home == 1.0:
-                            pqs.append(
-                                PlannedQuery(
-                                    Query(a, "day", o, d, day, 1),
-                                    "split",
-                                    direction,
-                                    priority=1.0 + base,
-                                )
-                            )
+    if metro_skips:
+        notes.append(
+            f"{metro_skips} queries avoided: the airline's search already covers the whole "
+            "metro (e.g. HND+NRT)"
+        )
 
-    # ---- cash fares (real party size; preferred + minimum cabin) -------------
+    # ---- cash fares: primary destinations, preferred + minimum cabin -----------
     if spec.include_cash and "google_flights" in adapters:
         chosen.append("google_flights")
         cabins = sorted({spec.preferred_cabin, spec.min_cabin}, key=lambda c: -c.rank)
         for direction, days in directions:
             for dest, w in dests.items():
                 if w < 0.9:
-                    continue  # cash baseline: primary destinations only (stated in notes)
-                for org in origins:
+                    continue
+                for org in origins[:1]:
                     o, d = (org, dest) if direction == "out" else (dest, org)
-                    home = 1.0 if org == spec.origins[0] else 0.8
                     for i, day in enumerate(days):
                         for cab in cabins:
                             pqs.append(
@@ -193,40 +260,51 @@ def build_plan(
                                     Query("google_flights", "day", o, d, day, spec.passengers, cab),
                                     "cash",
                                     direction,
-                                    priority=1.5
-                                    + w * home
+                                    priority=10
+                                    + w
                                     - i * 1e-4
                                     + (0.01 if cab == spec.preferred_cabin else 0),
                                 )
                             )
+        notes.append(
+            "cash fares (Google Flights) searched for primary destinations (weight >= 0.9)"
+        )
 
-    # ---- budget (explicit, recorded as skipped) ----------------------------
+    # ---- time budget -> per-adapter capacity -----------------------------------
+    qps: dict[str, float] = {}
+    for a in set(chosen):
+        ad = adapters[a]
+        lat = measured_latency_s(a, DEFAULT_LATENCY_S.get(a, 6.0))
+        qps[a] = throughput_qps(DEFAULT_POLICIES.get(ad.site), lat)
+    acquire_s = spec.time_budget_minutes * 60 * ACQUIRE_SHARE
     pqs.sort(key=lambda p: -p.priority)
     used: dict[str, int] = {}
     for pq in pqs:
-        n = used.get(pq.query.adapter, 0)
-        if n >= max_queries_per_adapter:
-            pq.skip_reason = f"query budget ({max_queries_per_adapter}/adapter) exhausted"
+        a = pq.query.adapter
+        cap = max_queries_per_adapter
+        if not deep:
+            budget_cap = int(qps[a] * acquire_s)
+            cap = budget_cap if cap is None else min(cap, budget_cap)
+        n = used.get(a, 0)
+        if cap is not None and n >= cap:
+            pq.skip_reason = (
+                f"deferred: beyond the {spec.time_budget_minutes:g}-min time budget "
+                f"(~{cap} {a} queries fit); run `jetbridge resume <search_id> --deep` to include"
+            )
         else:
-            used[pq.query.adapter] = n + 1
-
-    est = 0.0
-    for a, n in used.items():
-        pol = DEFAULT_POLICIES.get(adapters[a].site)
-        gap = (pol.min_interval_s + pol.max_interval_s) / 2 if pol else 5.5
-        est = max(est, n * (gap + EST_LATENCY_S.get(a, 6.0)))
-    if spec.include_cash and "google_flights" in adapters:
-        notes.append(
-            "cash fares (Google Flights) searched for primary destinations (weight >= 0.9) only"
-        )
-    skipped = sum(1 for p in pqs if p.skip_reason)
-    if skipped:
-        notes.append(f"{skipped} lower-priority queries exceed the budget and will be skipped")
+            used[a] = n + 1
+    est = max((n / qps[a] for a, n in used.items()), default=0.0)
+    if not deep:
+        est += spec.time_budget_minutes * 60 * (1 - ACQUIRE_SHARE)  # refine + reserves
+    deferred = sum(1 for p in pqs if p.skip_reason)
+    if deferred:
+        by_dest: dict[str, int] = {}
+        for p in pqs:
+            if p.skip_reason:
+                end = p.query.destination if p.direction == "out" else p.query.origin
+                by_dest[end] = by_dest.get(end, 0) + 1
+        top = ", ".join(f"{k} ({v})" for k, v in sorted(by_dest.items(), key=lambda x: -x[1])[:8])
+        notes.append(f"{deferred} lower-priority queries deferred to fit the time budget: {top}")
     if not spec.include_positioning:
         notes.append("positioning (separate-ticket) composition disabled by spec")
-    else:
-        notes.append(
-            "through-itineraries from each airline's own engine are searched; "
-            "separate-ticket gateway composition is not yet implemented"
-        )
-    return SearchPlan(pqs, origins, dests, chosen, excluded, est, notes)
+    return SearchPlan(pqs, origins, dests, sorted(set(chosen)), excluded, est, qps, notes)

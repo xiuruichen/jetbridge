@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -42,12 +43,26 @@ class QueryResult:
 
 QUARANTINE_AFTER = 2
 
+# Concurrency + spacing between request starts, per site. T1 sites (in-page
+# fetch) overlap requests inside one warmed tab; T3 sites get a tab per slot.
+# American is the most bot-sensitive (interactive challenges observed), so it
+# gets the gentlest policy.
 DEFAULT_POLICIES = {
-    "united": SitePolicy(min_interval_s=4, max_interval_s=9),
-    "american": SitePolicy(min_interval_s=8, max_interval_s=16, cooldown_s=600),
-    "delta": SitePolicy(min_interval_s=3, max_interval_s=7),
-    "alaska": SitePolicy(min_interval_s=4, max_interval_s=8),
-    "google": SitePolicy(min_interval_s=6, max_interval_s=12),
+    # concurrency = MAX in flight; AIMD starts at start_concurrency and adapts.
+    # Delta blocked at 4-way / ~0.5 q/s in a live run (2026-10-31): cap 3, start 2.
+    "united": SitePolicy(
+        min_interval_s=0.8, max_interval_s=1.6, concurrency=4, start_concurrency=2
+    ),
+    "american": SitePolicy(
+        min_interval_s=2.0, max_interval_s=4.0, concurrency=2, start_concurrency=1, cooldown_s=600
+    ),
+    "delta": SitePolicy(min_interval_s=1.0, max_interval_s=2.0, concurrency=3, start_concurrency=2),
+    "alaska": SitePolicy(
+        min_interval_s=0.6, max_interval_s=1.2, concurrency=4, start_concurrency=2
+    ),
+    "google": SitePolicy(
+        min_interval_s=1.0, max_interval_s=2.0, concurrency=3, start_concurrency=2
+    ),
 }
 
 
@@ -62,6 +77,7 @@ class Engine:
         max_attempts: int = 3,
         search_id: str | None = None,
         logins_enabled: frozenset[str] = frozenset(),
+        deadline: float | None = None,
     ):
         self.adapters = adapters
         self.broker = broker
@@ -70,12 +86,15 @@ class Engine:
         self.max_attempts = max_attempts
         self.search_id = search_id
         self.logins_enabled = logins_enabled
+        self.deadline = deadline  # time.monotonic() wall-clock limit for waits
         # Site quarantine: after QUARANTINE_AFTER consecutive *queries* end blocked
         # (each already retried), stop spending time on that site for this run when
         # no human can clear the challenge. Remaining queries are recorded as
         # blocked with a remedy, and `resume --show-browser` retries them.
         self._block_streak: dict[str, int] = {}
         self.quarantined: dict[str, str] = {}
+        if broker is not None and getattr(broker, "offscreen", False):
+            self._prequarantine()
 
     async def run(self, q: Query, *, use_cache: bool = True) -> QueryResult:
         adapter = self.adapters[q.adapter]
@@ -102,9 +121,21 @@ class Engine:
                 return QueryResult(q, "failed", reason="no browser broker (offline mode)")
             try:
                 async with self.scheduler.slot(adapter.site):
-                    page = await self.broker.page(adapter.site, adapter.warmup_url)
-                    raw = await adapter.fetch(page, q)
+                    if adapter.exclusive_tab:
+                        conc = self.scheduler.policy(adapter.site).concurrency
+                        async with self.broker.tab(adapter.site, adapter.warmup_url, conc) as page:
+                            raw = await self._bounded(adapter.fetch(page, q), adapter)
+                    else:
+                        page = await self.broker.page(adapter.site, adapter.warmup_url)
+                        raw = await self._bounded(adapter.fetch(page, q), adapter)
             except BreakerOpen as exc:
+                if self._past(exc.retry_in):
+                    return QueryResult(
+                        q,
+                        "blocked",
+                        reason=f"{exc} (cooldown would exceed the time budget)",
+                        attempts=attempt,
+                    )
                 if not self.scheduler._fast:
                     await asyncio.sleep(min(exc.retry_in, 240))
                 last_reason, last_outcome = str(exc), Outcome.BLOCKED
@@ -156,7 +187,51 @@ class Engine:
         self.scheduler.report(adapter.site, blocked=blocked)
         if self.broker is not None and (blocked or attempt >= 2):
             await self.broker.rotate(adapter.site)
-        await asyncio.sleep(min(2**attempt * 5, 60) if not self.scheduler._fast else 0)
+        backoff = min(2**attempt * 5, 60) if not self.scheduler._fast else 0
+        if self.deadline is not None:
+            backoff = max(0.0, min(backoff, self.deadline - time.monotonic()))
+        await asyncio.sleep(backoff)
+
+    def _prequarantine(self, window_min: float = 15, last_n: int = 5) -> None:
+        """Carry block state across runs: a site whose last ``last_n`` live fetches in
+        the past ``window_min`` minutes were all blocks starts this run quarantined."""
+        from datetime import timedelta as _td
+
+        from sqlalchemy import select as _select
+
+        from jetbridge.store.db import FetchRow, session
+
+        since = datetime.now(UTC) - _td(minutes=window_min)
+        try:
+            with session() as s:
+                for a in self.adapters.values():
+                    outs = list(
+                        s.scalars(
+                            _select(FetchRow.outcome)
+                            .where(FetchRow.adapter == a.id, FetchRow.started_at >= since)
+                            .order_by(FetchRow.started_at.desc())
+                            .limit(last_n)
+                        )
+                    )
+                    if len(outs) == last_n and all(o in ("blocked", "rate_limited") for o in outs):
+                        self.quarantined[a.site] = (
+                            f"{a.site} was blocking in the last {window_min:g} min; skipped. Run "
+                            "`jetbridge resume <search_id> --show-browser` (complete the check) or retry later."
+                        )
+                        log.warning("pre-quarantined %s from recent telemetry", a.site)
+        except Exception:
+            pass
+
+    async def _bounded(self, coro, adapter: Adapter):  # type: ignore[no-untyped-def]
+        """Hard wall-clock bound on one fetch: a hung browser call becomes an error
+        (retried within the deadline) instead of stalling the whole run."""
+        limit = adapter.request_timeout_ms / 1000 + 30
+        if self.deadline is not None:
+            limit = max(5.0, min(limit, self.deadline - time.monotonic() + 15))
+        return await asyncio.wait_for(coro, timeout=limit)
+
+    def _past(self, extra_s: float = 0.0) -> bool:
+        return self.deadline is not None and time.monotonic() + extra_s > self.deadline
 
     def _interpret(self, adapter: Adapter, q: Query, raw: RawResponse, fid: str) -> QueryResult:
         prov = Provenance(

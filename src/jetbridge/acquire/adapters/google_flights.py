@@ -36,6 +36,8 @@ from jetbridge.kb import load_kb
 from jetbridge.models.core import Cabin, CashOffer, Itinerary, Money, Provenance, Segment
 
 _LEN = re.compile(r"\s*\d+\s*")
+QUIET_S = 1.5
+MAX_TAIL_S = 6.0
 
 
 def batchexecute_payloads(body: str) -> list[Any]:
@@ -67,6 +69,7 @@ class GoogleFlightsAdapter(Adapter):
     warmup_url = "https://www.google.com/travel/flights?hl=en&gl=us&curr=USD"
     capabilities = Capabilities(award=False, cash=True, seat_counts="none")
     marker = "wrb.fr"
+    exclusive_tab = True
 
     def url(self, q: Query) -> str:
         return TFS(
@@ -105,9 +108,19 @@ class GoogleFlightsAdapter(Adapter):
                 await asyncio.wait_for(first.wait(), timeout=45)
             except TimeoutError:
                 pass
-            await page.wait_for_timeout(6000)
+            # Results stream in several responses; stop once the stream has been
+            # quiet for QUIET_S (bounded by MAX_TAIL_S) instead of a fixed sleep.
+            tail_start = time.perf_counter()
+            seen = len(bodies)
+            last_change = time.perf_counter()
+            while bodies and time.perf_counter() - tail_start < MAX_TAIL_S:
+                await asyncio.sleep(0.25)
+                if len(bodies) != seen:
+                    seen, last_change = len(bodies), time.perf_counter()
+                elif time.perf_counter() - last_change >= QUIET_S:
+                    break
             if tasks:
-                await asyncio.wait(tasks, timeout=10)
+                await asyncio.wait(tasks, timeout=5)
         finally:
             page.remove_listener("response", on_resp)
         status = 200 if bodies else (statuses[0] if statuses else None)

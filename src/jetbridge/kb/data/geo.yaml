@@ -34,3 +34,13 @@ mct:
   default_international: 90
   separate_ticket_buffer: 180   # positioning flight on a separate ticket
   airport_change_buffer: 240    # e.g. NRT<->HND, EWR<->JFK
+
+# Asian airports with nonstop service from North America (approximate, 2026).
+# Used ONLY to order search priority under a time budget (itineraries to other
+# airports usually connect through these); never used to exclude anything.
+na_nonstop_asia: [HND, NRT, ICN, TPE, HKG, PVG, PEK, MNL, SIN, KIX, CAN, SGN, BKK, NGO, FUK, CTS]
+
+# Award engines that expand a searched airport to its whole metro (verified:
+# united.com returned NRT+HND for a HND search, "destinationAllAirports": true).
+metro_expanding_adapters:
+  united: [TYO]   # SHA, BJS, OSA likely too; unverified, so not used

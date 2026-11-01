@@ -104,7 +104,7 @@ class UnitedAdapter(Adapter):
     warmup_url = "https://www.united.com/en/us"
     capabilities = Capabilities(award=True, cash=False, seat_counts="bucket")
     marker = '"type":"meta"'
-    price_independent_of_pax = True
+    price_independent_of_pax = False
 
     async def fetch(self, page: Page, q: Query) -> RawResponse:
         tok = await self._fetch(page, "/api/auth/anonymous-token")

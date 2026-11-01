@@ -12,8 +12,8 @@ Recon (2026-10-31):
   from pax probes.
 * ``SearchData.weeklyResult.days`` = 13-day lowest-price strip (cabin-agnostic).
 
-Tier T3: we navigate the real page and capture the form-post response, which is
-robust to the session-id handshake the site performs.
+Tier T1 (primary): in-page fetch POST of that form (no rendering; concurrent in
+one tab). Tier T3 (fallback): navigate a throwaway tab and capture the POST.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import json
 import re
 import time
 import urllib.parse
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -73,6 +74,44 @@ def search_url(q: Query) -> str:
     return "https://www.aa.com/booking/search?" + urllib.parse.urlencode(params)
 
 
+def search_request(q: Query) -> dict[str, Any]:
+    """The JSON the site posts as ``searchRequest`` (captured in recon 2026-10-31)."""
+    return {
+        "metadata": {"selectedProducts": [], "tripType": "OneWay", "udo": {}},
+        "passengers": [{"type": "adult", "count": q.pax}],
+        "requestHeader": {"clientId": "AAcom"},
+        "slices": [
+            {
+                "allCarriers": True,
+                "cabin": "",
+                "departureDate": q.date.isoformat(),
+                "destination": q.destination,
+                "destinationNearbyAirports": False,
+                "maxStops": None,
+                "origin": q.origin,
+                "originNearbyAirports": False,
+            }
+        ],
+        "tripOptions": {
+            "corporateBooking": False,
+            "fareType": "Lowest",
+            "locale": "en_US",
+            "pointOfSale": None,
+            "searchType": "Award",
+            "enableBenefits": True,
+        },
+        "loyaltyInfo": None,
+        "version": "",
+        "queryParams": {
+            "sliceIndex": 0,
+            "sessionId": "",
+            "solutionSet": "",
+            "solutionId": "",
+            "sort": "CARRIER",
+        },
+    }
+
+
 def extract_state(html: str) -> dict[str, Any]:
     m = _NG_STATE.search(html)
     if not m:
@@ -89,37 +128,64 @@ class AmericanAdapter(Adapter):
     marker = 'id="ng-state"'
 
     async def fetch(self, page: Page, q: Query) -> RawResponse:
+        """T1: POST the same ``searchRequest`` form the site submits, via in-page fetch
+        (no navigation/rendering; concurrent requests share the tab). Falls back to T3
+        navigation in a throwaway tab if the response is not the expected page."""
+        from jetbridge.acquire.detect import _CHALLENGE_RE
+
+        raw = await self._fetch(
+            page,
+            f"/booking/choose-flights/1?sid={uuid.uuid4()}&locale=en_US",
+            method="POST",
+            headers={"content-type": "application/x-www-form-urlencoded", "accept": "text/html"},
+            body="searchRequest="
+            + urllib.parse.quote(json.dumps(search_request(q), separators=(",", ":"))),
+        )
+        if raw.status == 200 and self.marker in raw.body:
+            return raw
+        if raw.body and _CHALLENGE_RE.search(raw.body[:50_000]):
+            return raw  # a block page: let the engine classify it (no point navigating)
+        return await self._fetch_t3(page, q)
+
+    async def _fetch_t3(self, page: Page, q: Query) -> RawResponse:
         from patchright.async_api import TimeoutError as PWTimeout
 
         from jetbridge.acquire.detect import _CHALLENGE_RE
 
+        tab = await page.context.new_page()
         started = datetime.now(UTC)
         t0 = time.perf_counter()
         try:
-            async with page.expect_response(
-                lambda r: "/booking/choose-flights/" in r.url and r.request.method == "POST",
-                timeout=45_000,
-            ) as resp_info:
-                await page.goto(search_url(q), wait_until="commit", timeout=self.request_timeout_ms)
-            resp = await resp_info.value
-        except PWTimeout as exc:
-            # aa.com can interpose its human-verification page BEFORE the search form
-            # posts; then no search response ever arrives. That is a block, not an error.
             try:
-                html = await page.content()
-            except Exception:
-                html = ""
-            if _CHALLENGE_RE.search(html[:50_000]):
-                raise Blocked("aa.com human-verification page shown before search") from exc
-            raise
-        body = await resp.text()
+                async with tab.expect_response(
+                    lambda r: "/booking/choose-flights/" in r.url and r.request.method == "POST",
+                    timeout=45_000,
+                ) as resp_info:
+                    await tab.goto(
+                        search_url(q), wait_until="commit", timeout=self.request_timeout_ms
+                    )
+                resp = await resp_info.value
+            except PWTimeout as exc:
+                # aa.com can interpose its human-verification page BEFORE the search
+                # form posts; then no search response arrives. That is a block.
+                try:
+                    html = await tab.content()
+                except Exception:
+                    html = ""
+                if _CHALLENGE_RE.search(html[:50_000]):
+                    raise Blocked("aa.com human-verification page shown before search") from exc
+                raise
+            body = await resp.text()
+            status = resp.status
+        finally:
+            await tab.close()
         return RawResponse(
-            status=resp.status,
+            status=status,
             body=body,
             tier="T3",
             started_at=started,
             latency_ms=int((time.perf_counter() - t0) * 1000),
-            meta={"url": resp.url},
+            meta={"fallback": "t3"},
         )
 
     def is_empty_answer(self, raw: RawResponse) -> bool:

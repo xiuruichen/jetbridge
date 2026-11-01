@@ -76,6 +76,32 @@ uv run jetbridge whatif <search_id> --business-per-hour 200 --risk-aversion 0.8
 uv run jetbridge explain <option_id>
 ```
 
+## How it stays fast (20-minute budget by default)
+
+- **Hard time budget.** `SearchSpec.time_budget_minutes` defaults to 20. The planner
+  estimates each site's throughput from measured latency and its concurrency policy, then
+  ranks queries: primary destinations first, then the rest by preference weight and by
+  whether they have nonstop service from North America. Whatever doesn't fit is marked
+  **deferred**, never silently dropped. At runtime, each stage (acquisition, refinement,
+  verification) has a hard deadline, every fetch has a hard timeout, and requests still
+  running at the deadline are cancelled and recorded as deferred. `resume --deep` runs
+  everything that was deferred.
+- **Real concurrency.** In-page fetch requests run in parallel inside one warmed tab;
+  sites that navigate get a pool of tabs. Spacing applies between request *starts*.
+- **Adaptive rate control (AIMD).** Each site gets one more concurrent request after a
+  clean streak; on any block it halves concurrency and doubles spacing. Each site
+  settles at the fastest rate it tolerates.
+- **Block memory.** After 2 consecutive blocked queries a site is quarantined for the
+  run, and sites that were blocking in the last 15 minutes start quarantined. Refinement
+  skips sites that mostly blocked. `resume --show-browser` retries them after you
+  complete the check.
+- **No wasted queries.** Searches use the real party size (no blanket 1-passenger
+  pass); split probes are driven by evidence. United's HND search already covers NRT, so
+  NRT isn't searched separately. Google Flights stops collecting results once they stop
+  arriving.
+- **Recover without re-fetching.** `jetbridge reparse <id>` re-runs fixed parsers over
+  stored raw responses.
+
 ## How it stays accurate
 
 - **Real party size.** Searches use your actual passenger count, because aa.com charges

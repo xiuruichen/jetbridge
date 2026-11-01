@@ -113,7 +113,7 @@ def set_profile(
 
 
 @server.tool()
-def plan_search(spec: SearchSpec, max_queries_per_adapter: int = 700) -> dict[str, Any]:
+def plan_search(spec: SearchSpec, max_queries_per_adapter: int = 2000) -> dict[str, Any]:
     """Create a search from a SearchSpec and return its plan (queries, estimated minutes,
     programs excluded and why). Does not start it; call start_search with the search_id."""
     from jetbridge.runner import create_search

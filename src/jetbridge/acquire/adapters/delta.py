@@ -108,6 +108,21 @@ def results_variables(q: Query, page_num: int = 1) -> dict[str, Any]:
     }
 
 
+_NO_OFFERS = "Unable to retrieve Flight offers"
+
+
+def _no_offers_error(data: dict[str, Any]) -> bool:
+    errs = data.get("errors") or []
+    if not errs or (data.get("data") or {}).get("gqlSearchOffers"):
+        return False
+    return all(
+        e.get("message") == "RetailOfferError"
+        and _NO_OFFERS
+        in str(((e.get("extensions") or {}).get("errors") or {}).get("developerMessage", ""))
+        for e in errs
+    )
+
+
 def _pages(body: str) -> list[dict[str, Any]]:
     data = json.loads(body)
     return data if isinstance(data, list) else [data]
@@ -119,6 +134,7 @@ class DeltaAdapter(Adapter):
     program = "delta"
     warmup_url = "https://www.delta.com/"
     capabilities = Capabilities(award=True, cash=False, seat_counts="exact", calendar_days=7)
+    price_independent_of_pax = True  # see Adapter docstring (verified)
     marker = '"gqlSearchOffers"'
 
     async def fetch(self, page: Page, q: Query) -> RawResponse:
@@ -172,6 +188,8 @@ class DeltaAdapter(Adapter):
             pages = _pages(raw.body)
         except ValueError:
             return False
+        if pages and all(_no_offers_error(d) for d in pages):
+            return True
         rs = [(d.get("data") or {}).get("gqlSearchOffers") for d in pages]
         return bool(rs) and all(r is not None and not r.get("gqlOffersSets") for r in rs)
 
@@ -187,6 +205,13 @@ class DeltaAdapter(Adapter):
     ) -> None:
         if data.get("errors"):
             msgs = "; ".join(str(e.get("message"))[:200] for e in data["errors"])
+            if _no_offers_error(data):
+                # Delta's explicit "no offers for this market" (seen 2026-10-31 for
+                # CVG-CAN/CTS/FUK). Genuine empty; evidence kept as a warning.
+                out.warnings.append(
+                    "Delta: no offers for this market (Shopping API: Unable to retrieve Flight offers)"
+                )
+                return
             if not (data.get("data") or {}).get("gqlSearchOffers"):
                 raise SchemaDrift(f"Delta GraphQL errors: {msgs}")
             out.warnings.append(f"Delta GraphQL partial errors: {msgs}")

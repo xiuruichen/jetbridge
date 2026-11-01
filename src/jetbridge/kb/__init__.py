@@ -97,6 +97,8 @@ class KB(_M):
     cpp: dict[str, Decimal]
     last_verified: dict[str, date]
     regional_operators: dict[str, list[str]] = Field(default_factory=dict)
+    na_nonstop_asia: list[str] = Field(default_factory=list)
+    metro_expanding_adapters: dict[str, list[str]] = Field(default_factory=dict)
 
     def bookable(
         self, program: str, operator: str, marketing: str
@@ -231,6 +233,8 @@ def load_kb() -> KB:
         charts=charts,
         cpp={k: Decimal(str(v)) for k, v in vals["cpp"].items()},
         regional_operators=programs_raw.get("regional_operators", {}),
+        na_nonstop_asia=geo.get("na_nonstop_asia", []),
+        metro_expanding_adapters=geo.get("metro_expanding_adapters", {}),
         last_verified={
             "programs": programs_raw["last_verified"],
             "transfers": transfers_raw["last_verified"],

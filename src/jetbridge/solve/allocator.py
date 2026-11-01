@@ -119,8 +119,15 @@ class Allocator:
         k: int = 12,
         time_limit_s: float = 20.0,
         restrict: dict | None = None,
+        deadline_s: float | None = None,
     ) -> list[Solution]:
-        """Up to ``k`` diverse solutions in objective order (no-good cuts)."""
+        """Up to ``k`` diverse solutions in objective order (no-good cuts).
+
+        ``time_limit_s`` bounds each solve; ``deadline_s`` bounds the whole k-best
+        loop (the first solution is always attempted)."""
+        import time as _t
+
+        t0 = _t.monotonic()
         n = self.spec.passengers
         directions = ["out"] + (["in"] if self.spec.inbound else [])
         if restrict:
@@ -205,7 +212,9 @@ class Allocator:
         m.minimize(sum(cost_terms))
 
         sols: list[Solution] = []
-        for _ in range(k):
+        for j in range(k):
+            if deadline_s is not None and j > 0 and _t.monotonic() - t0 > deadline_s:
+                break
             solver = cp_model.CpSolver()
             solver.parameters.max_time_in_seconds = time_limit_s
             solver.parameters.num_workers = 8

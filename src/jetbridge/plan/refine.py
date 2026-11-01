@@ -157,30 +157,67 @@ def phase_b(
     gateway_offers: list[tuple[str, AwardOffer]],
     done_keys: set[str],
     budget: int,
+    through: list[Candidate] | None = None,
 ) -> list[RefineQuery]:
-    """Positioning cash queries for gateways that actually showed useful space."""
+    """Positioning cash queries, only where a gateway award can actually compete.
+
+    A gateway award is worth positioning for when it is in the preferred cabin
+    and the through-search had no preferred-cabin option for that day, or when it
+    is cheaper (miles) than the best through option in the same cabin/day/end.
+    Same-day positioning is searched first; the evening before only when the
+    long-haul departs too early for a same-day connection with the separate-ticket
+    buffer (arrival-side mirror for return trips). Ranked by value; capped by budget.
+    """
     if "google_flights" not in adapters or budget <= 0:
         return []
     home = _home(spec, kb)[:1]  # position from the primary home airport
-    need: dict[tuple[str, str, str], str] = {}
-    for direction, o in gateway_offers:
-        if o.itinerary.main_cabin < spec.min_cabin:
+    pref = spec.preferred_cabin
+    best_through: dict[tuple[str, str, str, str], int] = {}
+    for c in through or []:
+        o = c.offer
+        if not isinstance(o, AwardOffer) or c.composed:
             continue
         it = o.itinerary
-        if direction == "out":
-            g, day = it.origin, it.departs_at.date()
-            for dd in (day, day - timedelta(days=1)):
-                for h in home:
-                    need[(h, g, dd.isoformat())] = "out"
+        end = it.destination if c.direction == "out" else it.origin
+        k = (c.direction, end, it.departs_at.date().isoformat(), it.main_cabin.value)
+        best_through[k] = min(best_through.get(k, 10**9), o.miles)
+
+    scored: dict[tuple[str, str, str], tuple[float, str, str]] = {}
+    for direction, o in gateway_offers:
+        it = o.itinerary
+        cab = it.main_cabin
+        if cab < spec.min_cabin:
+            continue
+        end = it.destination if direction == "out" else it.origin
+        day = it.departs_at.date().isoformat()
+        thr = best_through.get((direction, end, day, cab.value))
+        if cab >= pref and thr is None:
+            value, why = 3.0, f"{cab.name.lower()} space from gateway; none from home that day"
+        elif thr is not None and o.miles < thr:
+            value, why = 1.0 + (thr - o.miles) / thr, f"{o.miles:,} vs best {thr:,} from home"
         else:
-            g, day = it.destination, it.arrives_at.date()
-            for dd in (day, day + timedelta(days=1)):
-                for h in home:
-                    need[(g, h, dd.isoformat())] = "in"
+            continue  # cannot beat what home already offers
+        if direction == "out":
+            g = it.origin
+            # same-day works if the long-haul leaves late enough for a morning hop + buffer
+            days = [it.departs_at.date()]
+            if it.departs_at.hour < 11:
+                days.append(it.departs_at.date() - timedelta(days=1))
+            keys = [(h, g, d.isoformat()) for h in home for d in days]
+        else:
+            g = it.destination
+            days = [it.arrives_at.date()]
+            if it.arrives_at.hour >= 18:
+                days.append(it.arrives_at.date() + timedelta(days=1))
+            keys = [(g, h, d.isoformat()) for h in home for d in days]
+        for k in keys:
+            prev = scored.get(k)
+            if prev is None or value > prev[0]:
+                scored[k] = (value, direction, why)
     out = []
     from datetime import date as _date
 
-    for (o, d, day), direction in sorted(need.items()):
+    for (o, d, day), (value, direction, why) in sorted(scored.items(), key=lambda kv: -kv[1][0]):
         q = Query(
             "google_flights", "day", o, d, _date.fromisoformat(day), spec.passengers, Cabin.ECONOMY
         )
@@ -189,8 +226,8 @@ def phase_b(
             continue
         out.append(
             RefineQuery(
-                PlannedQuery(q, "refine-position", direction, priority=2.0),
-                f"cash positioning {o}→{d} on {day} for gateway award space",
+                PlannedQuery(q, "refine-position", direction, priority=2.0 + value),
+                f"cash positioning {o}→{d} on {day}: {why}",
             )
         )
     return out[:budget]

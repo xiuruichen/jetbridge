@@ -122,7 +122,7 @@ def _profile():
 
 
 @app.command()
-def plan(spec: Path, budget: int = typer.Option(700, help="max queries per adapter")) -> None:
+def plan(spec: Path, budget: int = typer.Option(2000, help="hard max queries per adapter")) -> None:
     """Show the search plan (queries, coverage, estimated runtime) without running it."""
     from jetbridge.acquire.adapters import registry
     from jetbridge.kb import load_kb
@@ -137,7 +137,7 @@ def plan(spec: Path, budget: int = typer.Option(700, help="max queries per adapt
 @app.command()
 def search(
     spec: Path,
-    budget: int = typer.Option(700, help="max queries per adapter"),
+    budget: int = typer.Option(2000, help="hard max queries per adapter"),
     show_browser: bool = typer.Option(False, help="show Chrome windows on screen"),
 ) -> None:
     """Plan and run a full search, then write the report."""
@@ -156,12 +156,13 @@ def resume(
     search_id: str,
     show_browser: bool = typer.Option(False, help="visible Chrome, to complete human checks"),
     retry_blocked: bool = typer.Option(True, help="also retry blocked/failed queries"),
+    deep: bool = typer.Option(False, help="also run queries deferred by the time budget"),
 ) -> None:
     """Continue a search (pending + by default blocked/failed rows) and regenerate its report."""
     from jetbridge.runner import run_search
 
     path = asyncio.run(
-        run_search(search_id, offscreen=not show_browser, retry_blocked=retry_blocked)
+        run_search(search_id, offscreen=not show_browser, retry_blocked=retry_blocked, deep=deep)
     )
     console.print(f"report: {path}")
 
@@ -175,6 +176,16 @@ def report(
     from jetbridge.runner import rereport
 
     console.print(f"report: {rereport(search_id, _profile() if use_current_profile else None)}")
+
+
+@app.command()
+def reparse(search_id: str) -> None:
+    """Re-run current parsers over a search's stored responses (no network), then re-report."""
+    from jetbridge.runner import reparse as _reparse
+    from jetbridge.runner import rereport
+
+    console.print(f"ledger changes: {_reparse(search_id)}")
+    console.print(f"report: {rereport(search_id)}")
 
 
 @app.command()

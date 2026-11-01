@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +31,8 @@ class _Session:
     page: Page
     warmed_at: float
     requests: int = 0
+    tabs: asyncio.Queue | None = None  # extra warmed tabs for exclusive (T3) use
+    tab_count: int = 0
 
 
 class SessionBroker:
@@ -37,8 +41,8 @@ class SessionBroker:
         *,
         channel: str = "chrome",
         offscreen: bool | None = None,
-        max_requests_per_session: int = 150,
-        max_session_age_s: float = 1800,
+        max_requests_per_session: int = 1500,
+        max_session_age_s: float = 3600,
     ):
         self.channel = channel
         if offscreen is None:
@@ -123,9 +127,38 @@ class SessionBroker:
                 return True
         return False
 
-    async def rotate(self, site: str) -> None:
-        """Drop the session (after a block); the next ``page()`` call re-warms."""
+    @asynccontextmanager
+    async def tab(self, site: str, warmup_url: str, max_tabs: int = 3) -> AsyncIterator[Page]:
+        """Exclusive tab for adapters that navigate (tier T3). Tabs share the site's
+        persistent context (cookies, bot-manager state) and are created lazily up to
+        ``max_tabs``; concurrent T3 fetches each get their own tab."""
+        await self.page(site, warmup_url)  # ensure session exists and is warm
+        sess = self._sessions[site]
+        if sess.tabs is None:
+            sess.tabs = asyncio.Queue()
+            sess.tabs.put_nowait(sess.page)
+            sess.tab_count = 1
+        if sess.tabs.empty() and sess.tab_count < max_tabs:
+            sess.tab_count += 1
+            extra = await sess.ctx.new_page()
+            await extra.goto(warmup_url, wait_until="domcontentloaded", timeout=90_000)
+            sess.tabs.put_nowait(extra)
+        tab = await sess.tabs.get()
+        try:
+            yield tab
+        finally:
+            if not tab.is_closed() and self._sessions.get(site) is sess:
+                sess.tabs.put_nowait(tab)
+
+    async def rotate(self, site: str, min_age_s: float = 20.0) -> None:
+        """Drop the session (after a block); the next ``page()`` call re-warms.
+
+        Idempotent within ``min_age_s``: with concurrent requests, one block makes
+        several in-flight requests fail at once; only the first should rotate."""
         async with self._lock(site):
+            sess = self._sessions.get(site)
+            if sess is not None and time.monotonic() - sess.warmed_at < min_age_s:
+                return
             await self._close_unlocked(site)
 
     async def close(self, site: str) -> None:

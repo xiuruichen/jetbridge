@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime
 
 import pytest
@@ -91,3 +92,64 @@ async def test_block_page_with_200_is_not_empty():
     fake = Fake([(200, "<html><title>Challenge Validation</title>I'm not a robot</html>")])
     eng = Engine({"fake": fake}, FakeBroker(), Scheduler(fast=True), max_attempts=1)
     assert (await eng.run(q(1), use_cache=False)).status == "blocked"
+
+
+async def test_acquire_defers_rows_past_deadline():
+    import time as _t
+
+    from sqlalchemy import select
+
+    from jetbridge.runner import _acquire
+    from jetbridge.store.db import LedgerRow, SearchRow, session
+
+    with session() as s:
+        s.add(SearchRow(id="s_t", spec={}, profile={}, status="running"))
+        s.flush()
+        for i in range(5):
+            s.add(
+                LedgerRow(
+                    search_id="s_t",
+                    stage="primary",
+                    adapter="fake",
+                    query_key=f"k{i}",
+                    query={"query": q(i).to_dict(), "direction": "out", "priority": 1.0},
+                    status="pending",
+                )
+            )
+    with session() as s:
+        rows = list(s.scalars(select(LedgerRow).where(LedgerRow.search_id == "s_t")))
+    fake = Fake([(200, '{"ok":true,"flights":[]}')] * 5)
+    eng = Engine({"fake": fake}, FakeBroker(), Scheduler(fast=True), max_attempts=1)
+    await _acquire(eng, rows, deadline=_t.monotonic() - 1)  # already past
+    with session() as s:
+        sts = [r.status for r in s.scalars(select(LedgerRow).where(LedgerRow.search_id == "s_t"))]
+        reasons = [
+            r.reason for r in s.scalars(select(LedgerRow).where(LedgerRow.search_id == "s_t"))
+        ]
+    assert sts == ["deferred"] * 5 and fake.calls == 0
+    assert all("--deep" in r for r in reasons)
+
+
+async def test_hung_fetch_is_bounded_and_stage_cannot_stall():
+    import time as _t
+
+    class Hang(Fake):
+        async def fetch(self, page, q):
+            self.calls += 1
+            await asyncio.sleep(3600)
+
+    from jetbridge.acquire import engine as eng_mod
+
+    hang = Hang([])
+    hang.request_timeout_ms = 100  # bound = 0.1s + 30s grace normally; deadline tightens it
+    eng = Engine(
+        {"fake": hang},
+        FakeBroker(),
+        Scheduler(fast=True),
+        max_attempts=1,
+        deadline=_t.monotonic() - 25,
+    )
+    t = _t.monotonic()
+    r = await eng.run(q(1), use_cache=False)
+    assert r.status == "failed" and _t.monotonic() - t < 10  # bounded by deadline + grace
+    assert eng_mod  # module import sanity

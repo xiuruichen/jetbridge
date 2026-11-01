@@ -41,6 +41,7 @@ _CABIN = {
     "MAIN": Cabin.ECONOMY,
     "PREMIUM": Cabin.PREMIUM,
     "PREMIUM_ECONOMY": Cabin.PREMIUM,
+    "PREMIUM-COACH": Cabin.PREMIUM,  # partner premium economy (REFUNDABLE_PARTNER_PREMIUM)
     "PREMIUMCLASS": Cabin.PREMIUM,
     "BUSINESS": Cabin.BUSINESS,
     "FIRST": Cabin.FIRST,
@@ -90,7 +91,6 @@ class AlaskaAdapter(Adapter):
     warmup_url = "https://www.alaskaair.com/"
     capabilities = Capabilities(award=True, cash=False, seat_counts="exact")
     marker = '"rows"'
-    # verified 2026-10-31: SEA-HND 1 vs 3 pax identical per-pax points/taxes
     price_independent_of_pax = True
 
     async def fetch(self, page: Page, q: Query) -> RawResponse:
@@ -128,7 +128,7 @@ class AlaskaAdapter(Adapter):
         seen: set[str] = set()
         for row in d["rows"]:
             try:
-                for o in self._offers(row, q, prov):
+                for o in self._offers(row, q, prov, out.warnings):
                     if o.offer_id not in seen:
                         seen.add(o.offer_id)
                         out.awards.append(o)
@@ -136,64 +136,78 @@ class AlaskaAdapter(Adapter):
                 out.warnings.append(f"skipped Alaska row {row.get('id')}: {exc!r}")
         return out
 
-    def _offers(self, row: dict[str, Any], q: Query, prov: Provenance) -> list[AwardOffer]:
+    def _offers(
+        self, row: dict[str, Any], q: Query, prov: Provenance, warnings: list[str]
+    ) -> list[AwardOffer]:
         segs = row["segments"]
         offers = []
         for col, sol in (row.get("solutions") or {}).items():
             if not sol or not sol.get("atmosPoints"):
                 continue
-            by_hash = {m["segmentHash"]: m for m in sol.get("fareSegmentMapping") or []}
-            segments = []
-            for i, s in enumerate(segs):
-                mp = by_hash.get(s["hash"])
-                cab = mp["cabin"] if mp else (sol.get("cabins") or [None] * len(segs))[i]
-                if cab not in _CABIN:
-                    raise ValueError(f"unknown Alaska cabin {cab!r} in {col}")
-                car = s["displayCarrier"]
-                segments.append(
-                    Segment(
-                        marketing_carrier=car["carrierCode"],
-                        flight_number=flight_number(car["flightNumber"]),
-                        operating_carrier=_operator(
-                            s.get("operationalDisclosure"), car["carrierCode"]
-                        ),
-                        origin=s["departureStation"],
-                        destination=s["arrivalStation"],
-                        departs_at=_dt(s["departureTime"]),
-                        arrives_at=_dt(s["arrivalTime"]),
-                        cabin=_CABIN[cab],
-                        booking_class=(mp or {}).get("bookingCode") or None,
-                        equipment=s.get("aircraftCode"),
-                    )
-                )
-            per, allp = int(sol["atmosPoints"]), sol.get("allPaxPoints")
-            if allp is not None and int(allp) != per * q.pax:
-                raise ValueError(
-                    f"allPaxPoints {allp} != atmosPoints {per} x pax {q.pax}: per-pax semantics changed"
-                )
-            n = int(sol.get("seatsRemaining") or 0)
-            if n <= 0:
-                seats = SeatInfo(kind="lower_bound", count=q.pax)
-            elif n >= 9:
-                seats = SeatInfo(kind="lower_bound", count=max(9, q.pax))
-            else:
-                seats = SeatInfo(kind="exact", count=max(n, q.pax))
-            notes = [f"Alaska fare column {col}"]
-            if sol.get("isDiscounted"):
-                notes.append("discounted award")
-            offers.append(
-                AwardOffer(
-                    program="alaska",
-                    itinerary=Itinerary(segments=tuple(segments)),
-                    miles=int(sol["atmosPoints"]),
-                    taxes=Money(amount=money(sol["grandTotal"]), currency="USD"),
-                    seats=seats,
-                    provenance=prov,
-                    booking_url=search_url(q),
-                    notes=tuple(notes),
+            try:
+                offers.append(self._column(row, segs, col, sol, q, prov))
+            except (KeyError, TypeError, ValueError) as exc:
+                # one bad fare column must not discard the row's other columns
+                warnings.append(f"skipped Alaska column {col} (row {row.get('id')}): {exc!r}")
+        return offers
+
+    def _column(
+        self,
+        row: dict[str, Any],
+        segs: list,
+        col: str,
+        sol: dict[str, Any],
+        q: Query,
+        prov: Provenance,
+    ) -> AwardOffer:
+        """One fare column of a result row -> one offer (raises on unknown data)."""
+        by_hash = {m["segmentHash"]: m for m in sol.get("fareSegmentMapping") or []}
+        segments = []
+        for i, s in enumerate(segs):
+            mp = by_hash.get(s["hash"])
+            cab = mp["cabin"] if mp else (sol.get("cabins") or [None] * len(segs))[i]
+            if cab not in _CABIN:
+                raise ValueError(f"unknown Alaska cabin {cab!r} in {col}")
+            car = s["displayCarrier"]
+            segments.append(
+                Segment(
+                    marketing_carrier=car["carrierCode"],
+                    flight_number=flight_number(car["flightNumber"]),
+                    operating_carrier=_operator(s.get("operationalDisclosure"), car["carrierCode"]),
+                    origin=s["departureStation"],
+                    destination=s["arrivalStation"],
+                    departs_at=_dt(s["departureTime"]),
+                    arrives_at=_dt(s["arrivalTime"]),
+                    cabin=_CABIN[cab],
+                    booking_class=(mp or {}).get("bookingCode") or None,
+                    equipment=s.get("aircraftCode"),
                 )
             )
-        return offers
+        per, allp = int(sol["atmosPoints"]), sol.get("allPaxPoints")
+        if allp is not None and int(allp) != per * q.pax:
+            raise ValueError(
+                f"allPaxPoints {allp} != atmosPoints {per} x pax {q.pax}: per-pax semantics changed"
+            )
+        n = int(sol.get("seatsRemaining") or 0)
+        if n <= 0:
+            seats = SeatInfo(kind="lower_bound", count=q.pax)
+        elif n >= 9:
+            seats = SeatInfo(kind="lower_bound", count=max(9, q.pax))
+        else:
+            seats = SeatInfo(kind="exact", count=max(n, q.pax))
+        notes = [f"Alaska fare column {col}"]
+        if sol.get("isDiscounted"):
+            notes.append("discounted award")
+        return AwardOffer(
+            program="alaska",
+            itinerary=Itinerary(segments=tuple(segments)),
+            miles=int(sol["atmosPoints"]),
+            taxes=Money(amount=money(sol["grandTotal"]), currency="USD"),
+            seats=seats,
+            provenance=prov,
+            booking_url=search_url(q),
+            notes=tuple(notes),
+        )
 
 
 def _dt(s: str):

@@ -47,12 +47,17 @@ class Adapter(ABC):
     # A substring every genuine response contains (guards against a block page
     # being misread as "no availability").
     marker: ClassVar[str]
-    # True only when verified that the per-passenger award price does not depend
-    # on the party size searched (lets the solver put k <= seats passengers on
-    # an offer observed with a different pax count). aa.com: False (verified
-    # dynamic by party size). united.com: True (verified 1 vs 3 pax, 2026-10-31).
+    # True only when it is verified that a fare seen in a k-pax search with an
+    # EXACT seat count s is valid at the same per-pax price for any party <= s.
+    # Verified on stored data 2026-10-31 (same flights+cabin, 1-pax vs 3-pax):
+    #   delta 796/796 consistent, alaska 41/41  -> True
+    #   united 653 underpriced despite >=9 bucket seats (dynamic by party size),
+    #   american dynamic by party size           -> False
     price_independent_of_pax: ClassVar[bool] = False
     request_timeout_ms: ClassVar[int] = 90_000
+    # True for adapters that NAVIGATE (tier T3): each concurrent fetch needs its own
+    # tab. In-page fetch adapters (T1) share one tab and run concurrently in it.
+    exclusive_tab: ClassVar[bool] = False
 
     @abstractmethod
     async def fetch(self, page: Page, q: Query) -> RawResponse: ...

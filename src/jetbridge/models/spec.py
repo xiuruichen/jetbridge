@@ -103,6 +103,14 @@ class SearchSpec(SpecModel):
         "(gateway positioning, split-seat completion)",
     )
     refine_budget: int = Field(default=240, ge=0, le=2000, description="max follow-up queries")
+    time_budget_minutes: float = Field(
+        default=20,
+        gt=0,
+        le=600,
+        description="target wall-clock for the whole search. Queries are ranked by "
+        "priority; those beyond the budget are DEFERRED (recorded, resumable with "
+        "`resume --deep`), never silently dropped.",
+    )
 
     @field_validator("origins", "nearby_origins")
     @classmethod

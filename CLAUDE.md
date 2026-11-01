@@ -40,5 +40,11 @@ valuation (cpp vs cash) · CP-SAT allocator · advisor (Pareto, sensitivity, act
   queries record *why* they ran.
 - Solver candidate IDs include direction and searched party size (regression: a shared
   offer_id once aliased two variables and double-counted passengers).
+- Party-size price validity (`price_independent_of_pax`) is set only from data:
+  Delta and Alaska are seat-count consistent (796/796, 41/41); United and AA are dynamic
+  by party size (United: 653 fares that showed 9+ seats still cost more for 3).
+- The time budget is enforced at runtime (stage deadlines, a hard timeout per fetch,
+  cancelling requests in flight past the deadline). Work that doesn't fit is `deferred`,
+  never dropped.
 - Advisor numbers are exact functions of solver output; sensitivity break-evens are
   tested to actually flip the recommendation.

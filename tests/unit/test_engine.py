@@ -1,4 +1,4 @@
-"""Engine behaviour with fake sites: block handling, quarantine, empty-vs-failed."""
+"""Engine behaviour with fake sites: block handling, cooldown, empty-vs-failed."""
 
 from __future__ import annotations
 
@@ -67,17 +67,31 @@ def q(i):
     return Query("fake", "day", "CVG", "ICN", date(2027, 5, 20 + i), 3)
 
 
-async def test_site_quarantined_after_consecutive_blocked_queries():
+async def test_block_is_never_retried_and_cools_the_site_for_every_process():
     fake = Fake([])
     br = FakeBroker()
-    eng = Engine({"fake": fake}, br, Scheduler(fast=True), max_attempts=2)
-    r1, r2 = await eng.run(q(1), use_cache=False), await eng.run(q(2), use_cache=False)
-    assert r1.status == r2.status == "blocked"
-    calls_before = fake.calls
-    r3 = await eng.run(q(3), use_cache=False)
-    assert r3.status == "blocked" and "--show-browser" in r3.reason
-    assert fake.calls == calls_before  # no time wasted on a quarantined site
-    assert br.rotations >= 2  # sessions were rotated while retrying
+    eng = Engine({"fake": fake}, br, Scheduler(fast=True), max_attempts=3)
+    r1 = await eng.run(q(1), use_cache=False)
+    assert r1.status == "blocked" and fake.calls == 1  # no retries into a challenge
+    assert "cooling down" in r1.reason and br.rotations == 1
+    r2 = await eng.run(q(2), use_cache=False)
+    assert r2.status == "deferred" and fake.calls == 1  # site cooling: nothing fired
+    # a NEW engine (another run / the crawler) sees the persisted cooldown too
+    eng2 = Engine({"fake": fake}, FakeBroker(), Scheduler(fast=True))
+    r3 = await eng2.run(q(3), use_cache=False)
+    assert r3.status == "deferred" and fake.calls == 1
+
+
+async def test_visible_browser_ignores_cooldown_so_a_human_can_clear_it():
+    fake = Fake([])
+    eng = Engine({"fake": fake}, FakeBroker(), Scheduler(fast=True), max_attempts=1)
+    await eng.run(q(1), use_cache=False)
+    visible = FakeBroker()
+    visible.offscreen = False
+    fake.bodies = [(200, '{"ok":true,"flights":[]}')]
+    eng2 = Engine({"fake": fake}, visible, Scheduler(fast=True), max_attempts=1)
+    r = await eng2.run(q(2), use_cache=False)
+    assert r.status == "empty" and fake.calls == 2
 
 
 async def test_genuine_empty_vs_unrecognized_empty():

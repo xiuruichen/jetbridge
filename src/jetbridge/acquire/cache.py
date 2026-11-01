@@ -90,3 +90,78 @@ def cached(query: Query, max_age: timedelta) -> tuple[str, RawResponse] | None:
         latency_ms=row.latency_ms,
         meta={"cached": True},
     )
+
+
+def cached_any(queries: list[Query], max_age: timedelta) -> tuple[str, RawResponse, Query] | None:
+    """Most recent good answer to any of ``queries`` within ``max_age`` (see
+    ``freshness.serving_queries``); returns the query it actually answered so the
+    response is parsed with the party size it was fetched for."""
+    by_key = {q.key: q for q in queries}
+    cutoff = datetime.now(UTC) - max_age
+    with session() as s:
+        row = s.scalars(
+            select(FetchRow)
+            .where(
+                FetchRow.request_key.in_(list(by_key)),
+                FetchRow.outcome.in_([Outcome.OK.value, Outcome.EMPTY.value]),
+                FetchRow.started_at >= cutoff,
+                FetchRow.blob.is_not(None),
+            )
+            .order_by(FetchRow.started_at.desc())
+            .limit(1)
+        ).first()
+    if row is None or row.blob is None:
+        return None
+    started = row.started_at if row.started_at.tzinfo else row.started_at.replace(tzinfo=UTC)
+    raw = RawResponse(
+        status=row.http_status,
+        body=get_blob(row.blob),
+        tier=row.tier,  # type: ignore[arg-type]
+        started_at=started,
+        latency_ms=row.latency_ms,
+        meta={"cached": True},
+    )
+    return row.id, raw, by_key[row.request_key]
+
+
+def fresh_index(max_age: timedelta = timedelta(hours=24)) -> dict[str, float]:
+    """request_key -> age in seconds of its newest good answer (one query)."""
+    from sqlalchemy import func
+
+    cutoff = datetime.now(UTC) - max_age
+    now = datetime.now(UTC)
+    with session() as s:
+        rows = s.execute(
+            select(FetchRow.request_key, func.max(FetchRow.started_at))
+            .where(
+                FetchRow.outcome.in_([Outcome.OK.value, Outcome.EMPTY.value]),
+                FetchRow.started_at >= cutoff,
+                FetchRow.blob.is_not(None),
+            )
+            .group_by(FetchRow.request_key)
+        ).all()
+    out = {}
+    for key, t in rows:
+        if isinstance(t, str):
+            t = datetime.fromisoformat(t)
+        t = t if t.tzinfo else t.replace(tzinfo=UTC)
+        out[key] = (now - t).total_seconds()
+    return out
+
+
+def freshest_age(queries: list[Query]) -> timedelta | None:
+    """Age of the newest good answer to any of ``queries`` (no blob read)."""
+    with session() as s:
+        t = s.scalars(
+            select(FetchRow.started_at)
+            .where(
+                FetchRow.request_key.in_([q.key for q in queries]),
+                FetchRow.outcome.in_([Outcome.OK.value, Outcome.EMPTY.value]),
+                FetchRow.blob.is_not(None),
+            )
+            .order_by(FetchRow.started_at.desc())
+            .limit(1)
+        ).first()
+    if t is None:
+        return None
+    return datetime.now(UTC) - (t if t.tzinfo else t.replace(tzinfo=UTC))

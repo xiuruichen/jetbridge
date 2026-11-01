@@ -72,6 +72,12 @@ def create_search(spec: SearchSpec, profile: Profile, **plan_kw) -> tuple[str, S
             )
         )
     add_ledger(sid, [(pq, pq.skip_reason) for pq in plan.queries], skipped=True)
+    try:
+        from jetbridge.crawl.watch import watch_from_search
+
+        watch_from_search(sid, spec, profile)
+    except Exception as exc:  # a watch is a convenience; never fail a search on it
+        log.warning("could not register watch for %s: %r", sid, exc)
     return sid, plan
 
 
@@ -193,9 +199,10 @@ async def run_search(
             )
             await _acquire(engine, _pending(sid, retry_blocked, deep), dl_acquire)
             log.info(
-                "acquisition done in %.0fs  rates=%s",
+                "acquisition done in %.0fs  rates=%s  engine=%s",
                 _time.monotonic() - t_start,
                 engine.scheduler.snapshot(),
+                engine.stats,
             )
             if spec.refine and spec.refine_budget > 0 and not engine._past(30):
                 engine.deadline = dl_refine
@@ -228,6 +235,18 @@ def stage_deadlines(t_start: float, budget_s: float) -> tuple[float, float, floa
     dl_refine = dl_verify - VERIFY_RESERVE_S - SOLVE_RESERVE_S
     dl_acquire = min(t_start + budget_s * ACQUIRE_SHARE, dl_refine)
     return dl_acquire, dl_refine, dl_verify
+
+
+def _cache_label(res: QueryResult) -> str:
+    from jetbridge.store.db import FetchRow
+
+    with session() as s:
+        f = s.get(FetchRow, res.fetch_id) if res.fetch_id else None
+    if f is None:
+        return "served from the availability cache"
+    t = f.started_at if f.started_at.tzinfo else f.started_at.replace(tzinfo=UTC)
+    age_h = (datetime.now(UTC) - t).total_seconds() / 3600
+    return f"served from the availability cache (observed {age_h:.1f} h ago)"
 
 
 def _defer(row: LedgerRow, reason: str) -> None:
@@ -265,6 +284,7 @@ async def _refine(
     from jetbridge.plan.planner import (
         DEFAULT_LATENCY_S,
         REFINE_SHARE,
+        governed_qps,
         measured_latency_s,
         throughput_qps,
     )
@@ -281,6 +301,11 @@ async def _refine(
             tried[r.adapter] += 1
             blocked[r.adapter] += r.status == "blocked"
     skip = {a for a, n in tried.items() if n >= 5 and blocked[a] / n > 0.5}
+    skip |= {
+        a.id
+        for a in adapters.values()
+        if engine.governor.cooldown_remaining(a.site) > 0 and not engine.human_present
+    }
     if skip:
         log.info("refine: skipping sites that mostly blocked this search: %s", sorted(skip))
         adapters = {k: v for k, v in adapters.items() if k not in skip}
@@ -289,9 +314,12 @@ async def _refine(
         # Follow-ups spread across the award sites: cap at REFINE_SHARE of the
         # clock at their aggregate measured throughput.
         agg = sum(
-            throughput_qps(
-                DEFAULT_POLICIES.get(a.site),
-                measured_latency_s(a.id, DEFAULT_LATENCY_S.get(a.id, 6)),
+            min(
+                throughput_qps(
+                    DEFAULT_POLICIES.get(a.site),
+                    measured_latency_s(a.id, DEFAULT_LATENCY_S.get(a.id, 6)),
+                ),
+                governed_qps(engine.governor, a.site),
             )
             for a in adapters.values()
             if a.capabilities.award
@@ -326,15 +354,21 @@ async def _acquire(engine: Engine, ledger: list[LedgerRow], deadline: float | No
     async def worker(queue: asyncio.Queue) -> None:
         while not queue.empty():
             row = queue.get_nowait()
-            if deadline is not None and _time.monotonic() > deadline:
-                _defer(
-                    row,
-                    "deferred: time budget reached before this query ran; "
-                    "run `jetbridge resume <search_id> --deep` to include",
-                )
-                continue
             q = Query.from_dict(row.query["query"])
-            res = await engine.run(q)
+            if deadline is not None and _time.monotonic() > deadline:
+                hit = engine.lookup_cache(q)  # a fresh stored answer costs nothing
+                if hit is None:
+                    _defer(
+                        row,
+                        "deferred: time budget reached before this query ran; the background "
+                        "crawler will fill it (or `jetbridge resume <search_id> --deep`)",
+                    )
+                    continue
+                res = hit
+            else:
+                res = await engine.run(q)
+            if res.from_cache:
+                res.reason = res.reason or _cache_label(res)
             with session() as s:
                 s.execute(
                     update(LedgerRow)

@@ -248,3 +248,12 @@ def test_google_flights_total_price_divided_per_pax():
     assert seg.departs_at.isoformat() == "2027-05-28T09:15:00-04:00"
     assert ac.itinerary.segments[-1].destination == "ICN"
     assert all(s.cabin == Cabin.BUSINESS for s in ac.itinerary.segments)
+
+
+def test_delta_korean_air_brands_map_by_award_class():
+    from jetbridge.acquire.adapters.delta import _brand_cabin
+    from jetbridge.models.core import Cabin
+
+    # recorded 2026-11-01: KEEC/cosCode X (economy award), CKEPC/cosCode O (Prestige)
+    assert _brand_cabin("KEEC") == Cabin.ECONOMY
+    assert _brand_cabin("CKEPC") == Cabin.BUSINESS

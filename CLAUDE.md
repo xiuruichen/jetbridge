@@ -19,13 +19,17 @@ report coverage %, gaps and verification status, and that transfers are irrevers
 - `uv run pytest` (offline: parsers on recorded fixtures, CP-SAT property tests, e2e).
 - `uv run jetbridge probe CVG ICN 2027-05-28 --pax 1,3` — live adapter health check.
 - `uv run jetbridge plan examples/cvg_asia_3pax.json` / `search` / `status` / `profile`.
+- `uv run jetbridge avail ...` (instant cached cells), `crawl [--detach|--status]`, `watch`,
+  `alerts`, `health` (rate governor), `backfill` (rebuild the store from stored blobs).
 - Recon a new/drifted site: `src/jetbridge/acquire/recon.py` (records XHR/JSON to `var/recon/`).
 - Live searches drive the installed Google Chrome headful (off-screen) via patchright with
   persistent per-site profiles in `var/profiles/`; headless is rejected by Akamai.
 
 ## Layout
 `models/` strict types · `kb/data/*.yaml` partners/transfers/charts (with last_verified) ·
-`acquire/` broker, scheduler, cache, detect, engine, adapters · `plan/` planner ·
+`acquire/` broker, scheduler (in-process AIMD), governor (cross-process budgets and
+cooldowns), freshness (TTL and party-size reuse), cache, detect, engine, adapters ·
+`store/availability.py` cells and alerts · `crawl/` watchlist, crawler, backfill · `plan/` planner ·
 `solve/` quality (layovers, comfort) · eligibility (candidates, risk, composition) ·
 valuation (cpp vs cash) · CP-SAT allocator · advisor (Pareto, sensitivity, actions) ·
 `plan/refine.py` adaptive follow-ups · `runner.py` agent loop + verification + what-if ·
@@ -46,5 +50,13 @@ valuation (cpp vs cash) · CP-SAT allocator · advisor (Pareto, sensitivity, act
 - The time budget is enforced at runtime (stage deadlines, a hard timeout per fetch,
   cancelling requests in flight past the deadline). Work that doesn't fit is `deferred`,
   never dropped.
+- Every live request goes through the rate governor. A block is never retried
+  (offscreen): it opens a persisted site cooldown that every process honors. Do not add
+  retry loops or bypasses around `Governor.acquire`.
+- A cached answer is reused only within `freshness.ttl_for`, and only across party sizes
+  for adapters with `price_independent_of_pax` and exact seats. Verification always goes
+  live (`use_cache=False`).
+- The availability store is derived data, rebuildable with `jetbridge backfill`. An older
+  answer never overwrites a newer cell.
 - Advisor numbers are exact functions of solver output; sensitivity break-evens are
   tested to actually flip the recommendation.

@@ -144,8 +144,11 @@ def search(
     from jetbridge.runner import create_search, run_search
 
     sid, p = create_search(_load_spec(spec), _profile(), max_queries_per_adapter=budget)  # type: ignore[arg-type]
+    sm = p.summary()
     console.print(
-        f"search [bold]{sid}[/]: {p.summary()['queries_runnable']} queries, ~{p.summary()['estimated_minutes']} min"
+        f"search [bold]{sid}[/]: {sm['queries_runnable']} queries "
+        f"({sm['queries_cached']} from cache, {sm['queries_deferred']} deferred to the crawler), "
+        f"~{sm['estimated_minutes']} min"
     )
     path = asyncio.run(run_search(sid, offscreen=not show_browser))
     console.print(f"report: {path}")
@@ -364,6 +367,220 @@ def whatif(
     )
     for line in out.get("sensitivity", [])[:3]:
         console.print(f"  {line}")
+
+
+# --------------------------------------------------------------------------- cache + crawler
+@app.command()
+def avail(
+    origins: str = typer.Argument(
+        ..., help="comma-separated airports/metros/regions, e.g. CVG,ORD"
+    ),
+    destinations: str = typer.Argument(..., help="e.g. HKG,ICN or ASIA_EAST"),
+    start: str = typer.Argument(..., help="YYYY-MM-DD"),
+    end: str = typer.Argument(..., help="YYYY-MM-DD"),
+    cabin: str = typer.Option("", help="Y/W/J/F (comma-separated); empty = all"),
+    pax: int = typer.Option(1, help="party size the seats must cover"),
+    max_age_h: float = typer.Option(0, help="only cells observed within N hours (0 = any)"),
+    limit: int = typer.Option(80),
+) -> None:
+    """Instant cached availability (seats.aero style) from the availability store."""
+    from jetbridge.kb import load_kb
+    from jetbridge.store.availability import search as avail_search
+
+    kb = load_kb()
+
+    def expand(codes: str) -> list[str]:
+        out: list[str] = []
+        for c in codes.split(","):
+            out += [a for a in kb.expand(c.strip().upper()) if a not in out]
+        return out
+
+    rows = avail_search(
+        expand(origins),
+        expand(destinations),
+        date.fromisoformat(start),
+        date.fromisoformat(end),
+        cabins=[c.strip().upper() for c in cabin.split(",") if c.strip()] or None,
+        pax=pax,
+        max_age=timedelta(hours=max_age_h) if max_age_h else None,
+    )
+    t = Table(title=f"cached availability ({len(rows)} cells; not live-verified)", box=None)
+    for col in (
+        "date",
+        "route",
+        "c",
+        "program",
+        "miles",
+        "tax$",
+        "seats",
+        "nonstop",
+        "carriers",
+        "age h",
+    ):
+        t.add_column(col, no_wrap=True)
+    for r in rows[:limit]:
+        seats = (
+            "?"
+            if not r["seats"]
+            else (f"{r['seats']}" if r["seats_kind"] == "exact" else f">={r['seats']}")
+        )
+        t.add_row(
+            r["date"][5:],
+            f"{r['origin']}-{r['destination']}",
+            r["cabin"],
+            r["program"][:8],
+            f"{r['miles']:,}" if r["miles"] else "-",
+            f"{r['taxes']:.0f}" if r["taxes"] is not None else "-",
+            seats,
+            "yes" if r["direct"] else "",
+            r["carriers"][:14],
+            f"{r['age_hours']:.0f}",
+        )
+    console.print(t)
+
+
+@app.command()
+def crawl(
+    minutes: float = typer.Option(0, help="stop after N minutes (0 = run until stopped)"),
+    once: bool = typer.Option(False, help="one pass over what is due, then exit"),
+    max_queries: int = typer.Option(0, help="stop after N live queries (0 = no cap)"),
+    detach: bool = typer.Option(False, help="run in the background (log: var/logs/crawler.log)"),
+    show_browser: bool = typer.Option(False, help="visible Chrome, to complete human checks"),
+    show_status: bool = typer.Option(False, "--status", help="show the running crawler and exit"),
+) -> None:
+    """Background refresh of watched routes into the availability store."""
+    from jetbridge.crawl.crawler import crawler_status, due_items
+
+    if show_status:
+        st = crawler_status()
+        console.print_json(json.dumps(st or {"running": False}, default=str))
+        from jetbridge.acquire.adapters import registry
+        from jetbridge.kb import load_kb
+
+        _due, counts = due_items(registry(), load_kb())
+        console.print(f"watched queries: {counts}")
+        return
+    if detach:
+        from jetbridge.crawl.__main__ import log_path, spawn
+
+        pid = spawn(minutes or None, once)
+        console.print(f"crawler started (pid {pid}); log: {log_path()}")
+        return
+    from jetbridge.crawl.crawler import crawl as _crawl
+
+    totals = asyncio.run(
+        _crawl(
+            minutes=minutes or None,
+            once=once,
+            offscreen=not show_browser,
+            max_queries=max_queries or None,
+        )
+    )
+    console.print(f"crawler finished: {totals}")
+
+
+watch_app = typer.Typer(help="Routes the crawler keeps fresh.")
+app.add_typer(watch_app, name="watch")
+
+
+@watch_app.command("add")
+def watch_add(spec: Path, weight: float = typer.Option(1.0), label: str = typer.Option("")) -> None:
+    """Watch the routes of a spec file (same format as `search`)."""
+    from jetbridge.crawl.watch import add_watch
+
+    wid, created = add_watch(_load_spec(spec), _profile(), weight=weight, label=label or None)  # type: ignore[arg-type]
+    console.print(f"{'added' if created else 'already watched'}: {wid}")
+
+
+@watch_app.command("list")
+def watch_list(all_: bool = typer.Option(False, "--all", help="include inactive")) -> None:
+    from jetbridge.crawl.watch import list_watches
+
+    t = Table()
+    for col in ("id", "label", "source", "weight", "active", "expires"):
+        t.add_column(col)
+    for w in list_watches(all_):
+        t.add_row(
+            w["id"],
+            w["label"],
+            w["source"],
+            f"{w['weight']:g}",
+            str(w["active"]),
+            str(w["expires"]),
+        )
+    console.print(t)
+
+
+@watch_app.command("rm")
+def watch_rm(watch_id: str) -> None:
+    from jetbridge.crawl.watch import set_active
+
+    console.print("deactivated" if set_active(watch_id, False) else f"unknown watch {watch_id}")
+
+
+@app.command()
+def alerts(
+    limit: int = typer.Option(30),
+    unseen: bool = typer.Option(False),
+    mark_seen: bool = typer.Option(False),
+) -> None:
+    """Changes the crawler/searches saw: new space, price drops, seats, gone."""
+    from jetbridge.store.availability import recent_alerts
+
+    t = Table()
+    for col in ("at", "kind", "program", "route", "date", "cabin", "before", "after"):
+        t.add_column(col)
+
+    def fmt(d: dict | None) -> str:
+        if not d:
+            return "-"
+        m = f"{d['miles']:,}" if d.get("miles") else "?"
+        return f"{m} s={d.get('seats')}" + (" nonstop" if d.get("direct") else "")
+
+    for a in recent_alerts(limit, unseen, mark_seen):
+        t.add_row(
+            a["at"],
+            a["kind"],
+            a["program"],
+            a["route"],
+            a["date"],
+            a["cabin"],
+            fmt(a["before"]),
+            fmt(a["after"]),
+        )
+    console.print(t)
+
+
+@app.command()
+def health() -> None:
+    """Per-site request budget, learned caps, and block cooldowns (rate governor)."""
+    from jetbridge.acquire.adapters import registry
+    from jetbridge.acquire.engine import site_adapters
+    from jetbridge.acquire.governor import Governor
+
+    gov = Governor(site_adapters=site_adapters(registry()))
+    t = Table(title="rate governor")
+    for col in ("site", "used/cap", "window", "learned cap", "cooldown", "block episodes", "probe"):
+        t.add_column(col)
+    for site, u in gov.usage().items():
+        t.add_row(
+            site,
+            f"{u['used']}/{u['cap']}",
+            f"{u['window_s'] // 60} min",
+            str(u["learned_cap"] or "-"),
+            f"{u['cooldown_s'] // 60} min" if u["cooldown_s"] else "-",
+            str(u["block_episodes"]),
+            "yes" if u["needs_probe"] else "",
+        )
+    console.print(t)
+
+
+@app.command()
+def backfill() -> None:
+    """Rebuild the availability store from every stored raw response (no network)."""
+    from jetbridge.crawl.backfill import backfill as _backfill
+
+    console.print(_backfill())
 
 
 def _setup_logging(verbose: bool) -> None:

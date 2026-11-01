@@ -53,6 +53,11 @@ _BRAND_CABIN = {
     "D1": Cabin.BUSINESS,  # Delta One
     "FIRST": Cabin.FIRST,  # Domestic First
     "BU": Cabin.BUSINESS,  # partner business (seen on some partner itineraries)
+    # Korean Air legs (seen 2026-11-01, CVG-HKG): KEEC carries cosCode X (KE's economy
+    # award class) inside the Main column; KEPC carries cosCode O (KE's Prestige /
+    # business award class).
+    "KEEC": Cabin.ECONOMY,
+    "KEPC": Cabin.BUSINESS,
 }
 
 

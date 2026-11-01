@@ -35,9 +35,18 @@ elicit preferences, interrogate the results, run follow-ups, and recommend.
      layovers") into these numbers and tell the user what you set.
    - Balances: get_profile; if missing, ask for approximate balances incl. card points
      (amex_mr, chase_ur, citi_ty, capital_one, bilt) and save with set_profile.
-2. SEARCH: plan_search -> report query count, ETA, excluded programs -> start_search ->
-   poll search_status every few minutes. The engine refines automatically (split-seat
-   completion, gateway long-haul searches, cash positioning).
+2. LOOK FIRST, THEN SEARCH (seats.aero model):
+   - cached_availability gives an INSTANT answer from the availability store (every past
+     search and the background crawler feed it). Use it to orient the user in seconds;
+     cells carry their age and are NOT live-verified.
+   - plan_search -> report query count, how many are served from cache, ETA, excluded
+     programs and any site cooling down -> start_search -> poll search_status. The engine
+     refines automatically (split-seat completion, gateway long-haul, cash positioning).
+   - Sites are rate-governed: a block cools that site down for every process instead of
+     hammering it; affected queries are DEFERRED, and every search becomes a watch the
+     background crawler fills. If coverage has gaps, offer start_crawler and a re-run
+     later (served mostly from cache, so fast). site_health shows budgets/cooldowns.
+   - alerts lists changes seen between snapshots (new space, price drops, more seats).
 3. REASON over get_brief (not just get_results):
    - Lead with the recommendation and WHY (utility, redemption cpp vs cash, risk).
    - Walk the trade-offs: each alternative's tradeoff line is exact; use it.
@@ -398,6 +407,94 @@ async def targeted_search(
     out = await targeted(search_id, qs, reason)
     out["brief"] = brief_for(search_id).to_dict()
     return out
+
+
+# --------------------------------------------------------------------------- cache + crawler
+@server.tool()
+def cached_availability(
+    origins: list[str],
+    destinations: list[str],
+    start: str,
+    end: str,
+    cabins: list[str] | None = None,
+    pax: int = 1,
+    max_age_hours: float | None = None,
+    limit: int = 150,
+) -> dict[str, Any]:
+    """INSTANT seats.aero-style lookup in the availability store: the latest known lowest
+    miles / taxes / seats / nonstop / carriers per (program, route, date, cabin). Codes may be
+    airports, metros or regions. Cells come from past searches and the crawler, carry their
+    age, and are not live-verified; a cell counts for ``pax`` only if its price is valid for
+    that party size (exact party, or a price-independent program with enough exact seats)."""
+    from datetime import date as _date
+    from datetime import timedelta
+
+    from jetbridge.kb import load_kb
+    from jetbridge.store.availability import search
+
+    kb = load_kb()
+
+    def expand(codes: list[str]) -> list[str]:
+        out: list[str] = []
+        for c in codes:
+            out += [a for a in kb.expand(c.upper()) if a not in out]
+        return out
+
+    rows = search(
+        expand(origins),
+        expand(destinations),
+        _date.fromisoformat(start),
+        _date.fromisoformat(end),
+        cabins=[c.upper() for c in cabins] if cabins else None,
+        pax=pax,
+        max_age=timedelta(hours=max_age_hours) if max_age_hours else None,
+    )
+    return {"cells": rows[:limit], "total": len(rows), "verified": False}
+
+
+@server.tool()
+def site_health() -> dict[str, Any]:
+    """Rate governor state per site: requests used vs cap in the sliding window, learned cap
+    from past blocks, remaining cooldown, and whether the crawler is running."""
+    from jetbridge.acquire.adapters import registry
+    from jetbridge.acquire.engine import site_adapters
+    from jetbridge.acquire.governor import Governor
+    from jetbridge.crawl.crawler import crawler_status
+
+    gov = Governor(site_adapters=site_adapters(registry()))
+    return {"sites": gov.usage(), "crawler": crawler_status()}
+
+
+@server.tool()
+def start_crawler(minutes: float | None = None) -> dict[str, Any]:
+    """Start the background crawler (detached): it keeps every watched route fresh and fills
+    deferred queries at a sustainable rate (half of each site's budget). ``minutes`` bounds it."""
+    from jetbridge.crawl.__main__ import log_path, spawn
+    from jetbridge.crawl.crawler import crawler_status
+
+    st = crawler_status()
+    if st and st.get("alive"):
+        return {"status": "already running", "crawler": st}
+    return {"status": "started", "pid": spawn(minutes), "log": str(log_path())}
+
+
+@server.tool()
+def watch_routes(spec: SearchSpec, weight: float = 1.0) -> dict[str, Any]:
+    """Add a route set (same shape as a search spec) to the crawler's watchlist. Searches are
+    watched automatically until their last travel day."""
+    from jetbridge.crawl.watch import add_watch, list_watches
+
+    wid, created = add_watch(spec, _profile(), weight=weight)
+    return {"watch_id": wid, "created": created, "watches": list_watches()}
+
+
+@server.tool()
+def alerts(limit: int = 30, unseen_only: bool = True, mark_seen: bool = True) -> dict[str, Any]:
+    """Changes between consecutive snapshots of availability cells: new_space, gone,
+    price_drop, price_rise, more_seats (each with before/after miles, seats, carriers)."""
+    from jetbridge.store.availability import recent_alerts
+
+    return {"alerts": recent_alerts(limit, unseen_only, mark_seen)}
 
 
 def main() -> None:

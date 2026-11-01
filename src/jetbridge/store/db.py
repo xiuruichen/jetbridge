@@ -145,6 +145,96 @@ class KVRow(Base):
     value: Mapped[str] = mapped_column(Text)
 
 
+class SiteStartRow(Base):
+    """One row per live request START, written by every process (searches, crawler).
+
+    The rate governor counts these in a sliding window, so the per-site request
+    budget holds across concurrent processes and across runs."""
+
+    __tablename__ = "site_starts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    site: Mapped[str] = mapped_column(String)
+    started_at: Mapped[float] = mapped_column(Float)  # unix epoch seconds
+    role: Mapped[str] = mapped_column(String, default="search")  # search|crawl|verify
+
+    __table_args__ = (Index("ix_site_starts", "site", "started_at"),)
+
+
+class AvailabilityRow(Base):
+    """Seats.aero-style availability cell: the latest snapshot of one
+    (adapter, O&D, date, searched party size) answer, one row per cabin.
+
+    ``status`` is ``available`` (cabin has >= 1 offer) or ``none`` (a genuine
+    empty answer; stored with cabin ``*``). A newer answer for the same
+    (adapter, O&D, date, pax) replaces the whole group, so the table is always
+    "what we last saw", while ``observations`` keeps the full history."""
+
+    __tablename__ = "availability"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    adapter: Mapped[str] = mapped_column(String)
+    program: Mapped[str] = mapped_column(String)
+    origin: Mapped[str] = mapped_column(String(3))
+    destination: Mapped[str] = mapped_column(String(3))
+    depart_date: Mapped[str] = mapped_column(String(10))
+    request_pax: Mapped[int] = mapped_column(Integer)
+    cabin: Mapped[str] = mapped_column(String(1))  # Y|W|J|F or * for none
+    status: Mapped[str] = mapped_column(String)  # available|none
+    min_miles: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    taxes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    max_seats: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    seats_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    direct: Mapped[int] = mapped_column(Integer, default=0)  # a nonstop exists in this cabin
+    carriers: Mapped[str] = mapped_column(String, default="")  # operating carriers, csv
+    n_offers: Mapped[int] = mapped_column(Integer, default=0)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fetch_id: Mapped[str] = mapped_column(String)
+
+    __table_args__ = (
+        Index("ix_avail_cell", "adapter", "origin", "destination", "depart_date", "request_pax"),
+        Index("ix_avail_route", "origin", "destination", "depart_date", "cabin"),
+    )
+
+
+class AlertRow(Base):
+    """A change between two consecutive snapshots of an availability cell."""
+
+    __tablename__ = "alerts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    kind: Mapped[str] = mapped_column(String)  # new_space|price_drop|price_rise|more_seats|gone
+    adapter: Mapped[str] = mapped_column(String)
+    program: Mapped[str] = mapped_column(String)
+    origin: Mapped[str] = mapped_column(String(3))
+    destination: Mapped[str] = mapped_column(String(3))
+    depart_date: Mapped[str] = mapped_column(String(10))
+    cabin: Mapped[str] = mapped_column(String(1))
+    before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    fetch_id: Mapped[str] = mapped_column(String)
+    seen: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class WatchRow(Base):
+    """A route set the background crawler keeps fresh (from a search or by hand).
+
+    Stored as a SearchSpec + Profile; the crawler expands it with the planner
+    (deep mode), so a watch covers exactly what the equivalent search would."""
+
+    __tablename__ = "watches"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    label: Mapped[str] = mapped_column(String)
+    spec: Mapped[dict] = mapped_column(JSON)
+    profile: Mapped[dict] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String, default="manual")  # manual|search:<id>
+    weight: Mapped[float] = mapped_column(Float, default=1.0)
+    active: Mapped[int] = mapped_column(Integer, default=1)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 _engines: dict[str, Engine] = {}
 
 

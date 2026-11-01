@@ -17,6 +17,14 @@ Principles
   usually connect through them) x home-airport factor; days in order.
 * **No redundant queries.** Engines that expand an airport to its metro
   (verified: united.com HND -> TYO) are searched once per metro.
+* **Cache first (seats.aero model).** A query whose stored answer is still
+  fresh for its departure horizon (``freshness.ttl_for``; party-size dominance
+  for Delta/Alaska) is served from the store and costs no live budget. The
+  background crawler keeps watched routes warm, so a repeat or overlapping
+  search is mostly instant.
+* **Governed capacity.** Live capacity per site is the lower of measured
+  throughput and the rate governor's sliding-window budget; a site cooling
+  down after a block contributes nothing until its cooldown ends.
 """
 
 from __future__ import annotations
@@ -27,7 +35,10 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 
 from jetbridge.acquire.adapters.base import Adapter
+from jetbridge.acquire.cache import fresh_index
 from jetbridge.acquire.engine import DEFAULT_POLICIES
+from jetbridge.acquire.freshness import serving_queries, ttl_for
+from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.scheduler import SitePolicy
 from jetbridge.acquire.types import Query
 from jetbridge.kb import KB
@@ -52,6 +63,7 @@ class PlannedQuery:
     direction: str  # out|in
     priority: float
     skip_reason: str | None = None
+    cached: bool = False  # a fresh stored answer exists: no live request needed
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +72,7 @@ class PlannedQuery:
             "direction": self.direction,
             "priority": self.priority,
             "skip_reason": self.skip_reason,
+            "cached": self.cached,
         }
 
 
@@ -81,8 +94,11 @@ class SearchPlan:
     def summary(self) -> dict:
         by_adapter: dict[str, int] = {}
         deferred: dict[str, int] = {}
+        cached: dict[str, int] = {}
         for pq in self.queries:
             tgt = by_adapter if pq.skip_reason is None else deferred
+            if pq.skip_reason is None and pq.cached:
+                tgt = cached
             tgt[pq.query.adapter] = tgt.get(pq.query.adapter, 0) + 1
         return {
             "origins": self.origins,
@@ -92,7 +108,9 @@ class SearchPlan:
             "queries_total": len(self.queries),
             "queries_runnable": len(self.runnable),
             "queries_deferred": len(self.queries) - len(self.runnable),
-            "by_adapter": by_adapter,
+            "queries_cached": sum(cached.values()),
+            "live_by_adapter": by_adapter,
+            "cached_by_adapter": cached,
             "deferred_by_adapter": deferred,
             "throughput_qps": {k: round(v, 2) for k, v in self.throughput.items()},
             "estimated_minutes": round(self.est_seconds / 60, 1),
@@ -129,6 +147,17 @@ def measured_latency_s(adapter: str, default: float) -> float:
     return default
 
 
+def governed_qps(governor: Governor | None, site: str) -> float:
+    """Sustainable q/s under the rate governor's window budget (inf if unbudgeted)."""
+    if governor is None:
+        return float("inf")
+    b = governor.budgets.get(site)
+    cap = governor.cap(site)
+    if b is None or cap is None:
+        return float("inf")
+    return cap / b.window_s
+
+
 def throughput_qps(policy: SitePolicy | None, latency_s: float) -> float:
     """Sustained queries/s = min(concurrency / latency, 1 / mean start spacing), -10%."""
     pol = policy or SitePolicy()
@@ -163,8 +192,14 @@ def build_plan(
     *,
     max_queries_per_adapter: int | None = None,
     deep: bool = False,
+    governor: Governor | None = None,
+    use_cache: bool = True,
 ) -> SearchPlan:
     notes: list[str] = []
+    if governor is None:
+        from jetbridge.acquire.engine import site_adapters
+
+        governor = Governor(site_adapters=site_adapters(adapters))
     excluded: dict[str, str] = {}
 
     # ---- which award adapters ----------------------------------------------
@@ -270,30 +305,63 @@ def build_plan(
             "cash fares (Google Flights) searched for primary destinations (weight >= 0.9)"
         )
 
-    # ---- time budget -> per-adapter capacity -----------------------------------
+    # ---- cache: fresh stored answers cost nothing -------------------------------
+    if use_cache:
+        fresh = fresh_index()
+        for pq in pqs:
+            ad = adapters[pq.query.adapter]
+            ttl = ttl_for(pq.query, ad).total_seconds()
+            ages = [fresh[k.key] for k in serving_queries(pq.query, ad) if k.key in fresh]
+            pq.cached = bool(ages) and min(ages) <= ttl
+
+    # ---- time budget -> per-adapter live capacity -------------------------------
     qps: dict[str, float] = {}
+    acquire_s = spec.time_budget_minutes * 60 * ACQUIRE_SHARE
+    cooling: dict[str, float] = {}
     for a in set(chosen):
         ad = adapters[a]
         lat = measured_latency_s(a, DEFAULT_LATENCY_S.get(a, 6.0))
-        qps[a] = throughput_qps(DEFAULT_POLICIES.get(ad.site), lat)
-    acquire_s = spec.time_budget_minutes * 60 * ACQUIRE_SHARE
+        qps[a] = min(
+            throughput_qps(DEFAULT_POLICIES.get(ad.site), lat), governed_qps(governor, ad.site)
+        )
+        cool = governor.cooldown_remaining(ad.site)
+        if cool > 0:
+            cooling[a] = cool
     pqs.sort(key=lambda p: -p.priority)
     used: dict[str, int] = {}
     for pq in pqs:
+        if pq.cached:
+            continue
         a = pq.query.adapter
         cap = max_queries_per_adapter
         if not deep:
-            budget_cap = int(qps[a] * acquire_s)
+            live_s = max(0.0, acquire_s - cooling.get(a, 0.0))
+            budget_cap = int(qps[a] * live_s)
             cap = budget_cap if cap is None else min(cap, budget_cap)
         n = used.get(a, 0)
         if cap is not None and n >= cap:
-            pq.skip_reason = (
-                f"deferred: beyond the {spec.time_budget_minutes:g}-min time budget "
-                f"(~{cap} {a} queries fit); run `jetbridge resume <search_id> --deep` to include"
-            )
+            if a in cooling and cap == 0:
+                pq.skip_reason = (
+                    f"deferred: {adapters[a].site} is cooling down after a block "
+                    f"(~{cooling[a] / 60:.0f} min left); the background crawler will fill it"
+                )
+            else:
+                pq.skip_reason = (
+                    f"deferred: beyond the {spec.time_budget_minutes:g}-min time budget "
+                    f"(~{cap} live {a} queries fit); the background crawler will fill it "
+                    "(or `jetbridge resume <search_id> --deep`)"
+                )
         else:
             used[a] = n + 1
-    est = max((n / qps[a] for a, n in used.items()), default=0.0)
+    est = max((n / qps[a] + cooling.get(a, 0.0) for a, n in used.items()), default=0.0)
+    n_cached = sum(1 for p in pqs if p.cached)
+    if n_cached:
+        notes.append(
+            f"{n_cached} of {len(pqs)} queries have a fresh stored answer and are served from "
+            "the availability cache (no live request)"
+        )
+    for a, cool in sorted(cooling.items()):
+        notes.append(f"{a}: cooling down after a block for ~{cool / 60:.0f} more min")
     if not deep:
         est += spec.time_budget_minutes * 60 * (1 - ACQUIRE_SHARE)  # refine + reserves
     deferred = sum(1 for p in pqs if p.skip_reason)

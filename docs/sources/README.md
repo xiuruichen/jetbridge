@@ -15,6 +15,20 @@ Akamai (`net::ERR_HTTP2_PROTOCOL_ERROR` on united.com).
 | **Flying Blue** | ⏸ pending | deep link redirects to `/search/advanced`; UI-driven search not yet captured | GraphQL `wwws.airfrance.us/gql/v1` (search op not yet captured) | — | — | — | — |
 | **Virgin Atlantic** | ⏸ pending | not yet probed successfully | — | — | — | — | — |
 
+## Request budgets (rate governor, `acquire/governor.py`)
+
+| Site | Budget | Basis |
+|---|---|---|
+| united | 110 / 5 min | 669 requests with no block at about 0.4 req/s |
+| alaska | 140 / 5 min | no blocks at about 0.6 req/s |
+| delta | 30 / 5 min (learned cap 36) | Akamai 444 after about 85 requests in 2 min (2026-10-31) |
+| american | 10 / 10 min | interactive challenge after short bursts |
+| google | 60 / 5 min | no blocks observed |
+
+A learned cap is 60% of the smallest request volume that preceded a burst-induced block
+in the last 14 days. A block opens a site cooldown (10 min, doubling, up to 4 h). The
+crawler uses half of each budget.
+
 ## Known behaviours that matter for accuracy
 
 - **aa.com error codes** (e.g. `309` for CVG→HKG) have unverified meaning. They are
@@ -26,7 +40,10 @@ Akamai (`net::ERR_HTTP2_PROTOCOL_ERROR` on united.com).
 - **United** shows a sign-in modal in its UI for award results; the guest-token API
   answers without it (owner's choice, 2026-10-31).
 - **Delta** brand ids are prefixed B/C: MAIN/DCP → economy, DPPS → premium,
-  D1 → business, FIRST → domestic first. Unknown brands are skipped *with a warning*.
+  D1 → business, FIRST → domestic first. Korean Air legs: KEEC → economy (award class X),
+  KEPC → Prestige/business (award class O), seen 2026-11-01. Before that mapping, KE
+  space was skipped; 69 stored KE offers (12 business) are now recovered. Unknown brands
+  are skipped *with a warning*.
 - **Alaska** marks Hawaiian-operated flights "Operated by Alaska as Hawaiian Airlines"
   → operator `HA`.
 

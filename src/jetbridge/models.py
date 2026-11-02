@@ -111,6 +111,7 @@ class ProductOffer:
     currency: str
     seats_remaining: int  # 0 means the site did not say (NOT sold out)
     notes: tuple[str, ...] = ()
+    seats_at_least: int = 0  # a capped count: the site says "9 or more"
 
 
 @dataclass(frozen=True)

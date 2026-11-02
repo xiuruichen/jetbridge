@@ -37,4 +37,6 @@ def group_queries(watches: list[Watch], today: date) -> dict[Query, list[Watch]]
             groups[Query(watch.origin, watch.destination, day, watch.pax, watch.program)].append(
                 watch
             )
-    return dict(sorted(groups.items(), key=lambda kv: (kv[0].date, kv[0].origin, kv[0].pax)))
+    return dict(
+        sorted(groups.items(), key=lambda kv: (kv[0].program, kv[0].date, kv[0].origin, kv[0].pax))
+    )

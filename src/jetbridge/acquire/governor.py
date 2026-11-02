@@ -1,11 +1,12 @@
 """Rate governor: request budget and block cooldowns, persisted across processes.
 
-From the project's own telemetry (2026-10-31), aa.com challenges after short bursts, and
-bot managers score both volume over a window and persistence after a challenge. So:
+From the project's own telemetry (2026-10-31), aa.com challenges after short bursts, Delta
+blocked after about 85 requests in 2 minutes, and bot managers score both volume over a window
+and persistence after a challenge. So:
 
-* A sliding-window budget counted in the database.
-* No retry after a block: one block rests the site for 10 minutes, doubling per episode
-  within 6 hours, up to 4 hours. Queries during a rest are deferred.
+* A sliding-window budget per site, counted in the database.
+* No retry after a block: one block rests that site for 10 minutes, doubling per episode
+  within 6 hours, up to 4 hours. Queries during a rest are deferred. Other sites carry on.
 * The first request after a rest is the only one in flight (ticks are sequential and
   locked), and its verdict decides whether the rest ends or doubles.
 """
@@ -19,8 +20,20 @@ from dataclasses import asdict, dataclass
 
 from jetbridge.store import Store
 
-WINDOW_S = 600
-MAX_REQUESTS = 10
+
+@dataclass(frozen=True)
+class Budget:
+    window_s: int
+    max_requests: int
+
+
+# A watcher needs far less than these sites tolerated in testing, so these sit well below it:
+# united went 669 requests unblocked at about 0.4 per second, and delta blocked at about 0.6.
+BUDGETS = {
+    "american": Budget(window_s=600, max_requests=10),
+    "delta": Budget(window_s=300, max_requests=20),
+    "united": Budget(window_s=300, max_requests=30),
+}
 COOLDOWN_BASE_S = 600.0
 COOLDOWN_MAX_S = 4 * 3600.0
 EPISODE_MEMORY_S = 6 * 3600.0
@@ -48,12 +61,11 @@ class Governor:
         store: Store,
         clock: Callable[[], float],
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-        *,
-        window_s: int = WINDOW_S,
-        max_requests: int = MAX_REQUESTS,
     ):
         self.store, self.clock, self.sleep = store, clock, sleep
-        self.window_s, self.max_requests = window_s, max_requests
+
+    def budget(self, site: str) -> Budget:
+        return BUDGETS[site]
 
     def health(self, site: str) -> SiteHealth:
         raw = self.store.get(f"governor:{site}")
@@ -88,7 +100,7 @@ class Governor:
             self._save(site, health)
 
     def used(self, site: str) -> int:
-        count, _ = self.store.window_starts(site, self.clock() - self.window_s)
+        count, _ = self.store.window_starts(site, self.clock() - self.budget(site).window_s)
         return count
 
     async def acquire(self, site: str, deadline: float) -> None:
@@ -97,16 +109,17 @@ class Governor:
         A rest period is never waited out inside a tick; a full budget is waited out only
         if it frees up before ``deadline``.
         """
+        budget = self.budget(site)
         while True:
             now = self.clock()
             until = self.cooldown_until(site)
             if until > now:
                 raise GovernorDeferred(site, "resting after a block", until)
-            count, oldest = self.store.window_starts(site, now - self.window_s)
-            if count < self.max_requests:
+            count, oldest = self.store.window_starts(site, now - budget.window_s)
+            if count < budget.max_requests:
                 self.store.record_start(site, now)
                 return
-            free_at = (oldest if oldest is not None else now) + self.window_s + 0.05
+            free_at = (oldest if oldest is not None else now) + budget.window_s + 0.05
             if free_at > deadline:
                 raise GovernorDeferred(site, "request budget used", free_at)
             await self.sleep(max(0.05, min(free_at - now, 30)))

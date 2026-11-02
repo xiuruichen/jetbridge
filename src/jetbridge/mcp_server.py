@@ -11,8 +11,8 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from jetbridge import service
-from jetbridge.acquire import american
 from jetbridge.acquire.governor import Governor
+from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import format_when
 from jetbridge.models import Watch
 
@@ -66,6 +66,7 @@ def add_watch(
     destination: str,
     dates: str,
     cabin: str = "business",
+    program: str = "american",
     pax: int = 1,
     checks_per_day: int = 6,
     max_miles: int | None = None,
@@ -80,6 +81,7 @@ def add_watch(
         destination=destination,
         dates=dates,
         cabin=cabin,
+        program=program,
         pax=pax,
         checks_per_day=checks_per_day,
         max_miles=max_miles,
@@ -141,12 +143,21 @@ def health() -> dict[str, Any]:
     """Whether the watcher is running: last tick, rate use, any rest period, emails queued."""
     store = service.open_store()
     governor = Governor(store, time.time)
-    until = governor.cooldown_until(american.SITE)
+    now = time.time()
     last = store.get("last_tick_at")
     return {
         "last_tick": format_when(float(last)) if last else None,
-        "requests_last_10_min": governor.used(american.SITE),
-        "resting_until": format_when(until) if until > time.time() else None,
+        "sites": {
+            site.domain: {
+                "requests_in_window": governor.used(site.id),
+                "max_in_window": governor.budget(site.id).max_requests,
+                "window_minutes": governor.budget(site.id).window_s // 60,
+                "resting_until": format_when(governor.cooldown_until(site.id))
+                if governor.cooldown_until(site.id) > now
+                else None,
+            }
+            for site in SITES.values()
+        },
         "emails_waiting": len(store.pending_alerts()),
     }
 

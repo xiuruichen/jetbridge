@@ -10,8 +10,8 @@ from pathlib import Path
 import typer
 
 from jetbridge import headlines, service, winsched, wizard
-from jetbridge.acquire import american
 from jetbridge.acquire.governor import Governor
+from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import CheckStatus, Watch
 from jetbridge.notify import email as mail
@@ -80,7 +80,7 @@ def watch_add(
     destination: str = typer.Option(..., "--to", help="Arrival airport of this flight"),
     dates: str = typer.Option(..., help="2027-06-14..2027-06-16 or 2027-06-14,2027-06-16"),
     cabin: str = typer.Option("business", help="economy, premium, business or first"),
-    program: str = typer.Option("american", help="Program to search"),
+    program: str = typer.Option("american", help="Miles to search: american, delta or united"),
     pax: int = typer.Option(1, help="Party size; searched at this real size"),
     checks_per_day: int = typer.Option(6, help="Checks per day, per date"),
     max_miles: int | None = typer.Option(None, help="Only alert at or below this price"),
@@ -174,7 +174,7 @@ def _print_report(report) -> None:
         result = line.result
         text = result.status.value
         if result.status is CheckStatus.AVAILABLE:
-            text += f": {result.miles:,} miles, {result.seats_text} seats"
+            text += f": {result.miles:,} miles, seats: {result.seats_text}"
         elif result.detail:
             text += f" ({result.detail})"
         typer.echo(f"[{line.watch_id}] {line.label} {line.day:%b %d}: {text}")
@@ -235,10 +235,19 @@ def status() -> None:
 
 def _print_health(store: Store) -> None:
     governor = Governor(store, time.time)
-    until = governor.cooldown_until(american.SITE)
-    typer.echo(f"aa.com requests in the last 10 minutes: {governor.used(american.SITE)}/10")
-    if until > time.time():
-        typer.echo(f"aa.com is RESTING after a block until {format_when(until)}.")
+    watched = {watch.program for watch in store.list_watches("active")}
+    for site in SITES.values():
+        used, until = governor.used(site.id), governor.cooldown_until(site.id)
+        resting = until > time.time()
+        if site.id in watched or used or resting:
+            budget = governor.budget(site.id)
+            minutes = budget.window_s // 60
+            typer.echo(
+                f"{site.domain} requests in the last {minutes} minutes: "
+                f"{used}/{budget.max_requests}"
+            )
+        if resting:
+            typer.echo(f"{site.domain} is RESTING after a block until {format_when(until)}.")
     last = store.get("last_tick_at")
     typer.echo(f"Last tick: {format_when(float(last)) if last else 'never'}")
     pending = store.pending_alerts()
@@ -300,7 +309,7 @@ def doctor() -> None:
             bool(store.list_watches("active")),
             "Run: jetbridge watch add",
         ),
-        ("A clear answer from aa.com so far", good is not None, "Run: jetbridge check <id>"),
+        ("A clear answer from an airline so far", good is not None, "Run: jetbridge check <id>"),
     ]
     for label, ok, fix in checks:
         typer.echo(f"[{' OK ' if ok else 'FAIL'}] {label}" + ("" if ok else f" -> {fix}"))
@@ -387,9 +396,10 @@ _EMAIL_FAILED = "email_test_failed"
 _RISK_ACCEPTED = "risk_accepted"
 _RISK_NOTICE = """Before you start, please read this:
 
-- jetbridge searches aa.com automatically, which likely goes against aa.com's terms of use. You
-  accept that risk by running it. It never logs in, so your AAdvantage account isn't involved,
-  and it searches at low volume, but aa.com can still block its searches.
+- jetbridge searches airline websites (aa.com, delta.com, united.com) automatically, which likely
+  goes against their terms of use. You accept that risk by running it. It never logs in, so your
+  frequent flyer accounts aren't involved, and it searches at low volume, but a site can still
+  block its searches.
 - It only checks while this PC is on, awake and logged in. To catch seats overnight, set Windows
   sleep to Never while plugged in.
 - Checks are hours apart, so seats that open and close between them are missed. Don't rely on it
@@ -462,7 +472,7 @@ def start() -> None:
         typer.echo(f"Installed task '{winsched.TASK_NAME}'. It runs while you're logged on.\n")
         doctor()
         typer.echo(
-            "\n'A clear answer from aa.com' can say FAIL until the first check finishes, which "
+            "\n'A clear answer from an airline' can say FAIL until the first check finishes, which "
             "is normal."
         )
 

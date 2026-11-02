@@ -22,9 +22,5 @@ class RawResponse:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-class Blocked(Exception):
-    """The site showed a challenge. Never retried: it opens a persisted cooldown."""
-
-
 class SchemaDrift(Exception):
     """The response did not match the expected shape. Fail loudly, never as "no seats"."""

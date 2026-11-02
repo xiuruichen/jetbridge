@@ -30,19 +30,20 @@ _CHALLENGE_MARKERS = [
 CHALLENGE_RE = re.compile("|".join(_CHALLENGE_MARKERS), re.I)
 
 
-def classify(raw: RawResponse, require_marker: str) -> tuple[Outcome, str | None]:
+def classify(raw: RawResponse, markers: str | tuple[str, ...]) -> tuple[Outcome, str | None]:
+    wanted = (markers,) if isinstance(markers, str) else markers
     status = raw.status
     if status is None:
         return Outcome.ERROR, "no status (network failure)"
     if status == 429:
         return Outcome.RATE_LIMITED, "HTTP 429"
-    if status in (401, 403):
+    if status in (401, 403, 444):  # Akamai answered Delta with 444 when it blocked (2026-10-31)
         return Outcome.BLOCKED, f"HTTP {status}"
     if status >= 500:
         return Outcome.ERROR, f"HTTP {status}"
-    has_marker = require_marker in raw.body
+    has_marker = any(marker in raw.body for marker in wanted)
     if not has_marker and CHALLENGE_RE.search(raw.body[:50_000]):
         return Outcome.BLOCKED, "challenge page markers"
     if not has_marker:
-        return Outcome.ERROR, f"expected marker {require_marker!r} absent (len={len(raw.body)})"
+        return Outcome.ERROR, f"expected marker {wanted[0]!r} absent (len={len(raw.body)})"
     return Outcome.OK, None

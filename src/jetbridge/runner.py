@@ -8,9 +8,9 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from jetbridge.acquire import american
 from jetbridge.acquire.fetcher import Fetcher
 from jetbridge.acquire.governor import Governor
+from jetbridge.acquire.sites import SITES, get_site
 from jetbridge.alerts import (
     AlertKind,
     DateState,
@@ -103,28 +103,34 @@ class Runner:
     async def _run_checks(self, due: list[Watch], report: TickReport) -> None:
         deadline = self.clock() + TICK_BUDGET_S
         retry_at: dict[int, float] = {}  # watches with dates that didn't get an answer
-        stop: SearchAnswer | None = None  # set once no further requests may be made
-        first = True
+        stops: dict[str, SearchAnswer] = {}  # sites that may not be asked anything more
+        last_site: str | None = None
+
+        def stop_site(site: str, answer: SearchAnswer) -> None:
+            stops[site] = SearchAnswer(
+                AnswerKind.DEFERRED, detail=answer.detail, retry_at=answer.retry_at
+            )
+            note = f"{get_site(site).domain} {answer.kind.value}: {answer.detail}"
+            report.stopped_early = (
+                f"{report.stopped_early}; {note}" if report.stopped_early else note
+            )
 
         for query, watches in group_queries(due, self._today()).items():
-            if stop is None and self.clock() >= deadline:
-                stop = SearchAnswer(
+            site = query.program
+            if site not in stops and self.clock() >= deadline:
+                stops[site] = SearchAnswer(
                     AnswerKind.DEFERRED,
                     detail="time limit for this run",
                     retry_at=self.clock() + 900,
                 )
-            if stop is not None:
-                answer = stop
-            else:
-                if not first:
+            answer = stops.get(site)
+            if answer is None:
+                if last_site == site:
                     await self.sleep(self.rng.uniform(*REQUEST_SPACING_S))
-                first = False
+                last_site = site
                 answer = await self.fetcher.search(query, deadline)
                 if answer.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
-                    stop = SearchAnswer(
-                        AnswerKind.DEFERRED, detail=answer.detail, retry_at=answer.retry_at
-                    )
-                    report.stopped_early = f"{answer.kind.value}: {answer.detail}"
+                    stop_site(site, answer)
 
             if answer.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED) and answer.retry_at:
                 for watch in watches:
@@ -136,10 +142,7 @@ class Runner:
                 await self.sleep(self.rng.uniform(*CONFIRM_DELAY_S))
                 recheck = await self.fetcher.search(query, deadline)
                 if recheck.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
-                    stop = SearchAnswer(
-                        AnswerKind.DEFERRED, detail=recheck.detail, retry_at=recheck.retry_at
-                    )
-                    report.stopped_early = f"{recheck.kind.value}: {recheck.detail}"
+                    stop_site(site, recheck)
                 self._apply_confirmation(query, confirm, recheck, report)
             report.alerts_sent += flush_outbox(self.store, self.sender, self.clock())
 
@@ -192,7 +195,7 @@ class Runner:
         now: float,
         shown: CheckResult | None = None,
     ) -> None:
-        url = american.search_url(query_for(watch, day))
+        url = get_site(watch.program).search_url(query_for(watch, day))
         alerts = []
         for kind in decision.alerts:
             subject, body = render_availability(
@@ -205,15 +208,16 @@ class Runner:
 
     # ---- health ---------------------------------------------------------------------
     def _note_parser_health(self, query: Query, watches: list[Watch], answer: SearchAnswer) -> None:
+        site = query.program
         if any(evaluate(w, query.date, answer).suspect_parser for w in watches):
-            count = int(self.store.get("drift_count", "0") or 0) + 1
-            self.store.set("drift_count", str(count))
-            if not self.store.get("drift_since"):
-                self.store.set("drift_since", str(self.clock()))
-            self.store.set("drift_detail", answer.detail or "unreadable result")
+            count = int(self.store.get(f"drift_count:{site}", "0") or 0) + 1
+            self.store.set(f"drift_count:{site}", str(count))
+            if not self.store.get(f"drift_since:{site}"):
+                self.store.set(f"drift_since:{site}", str(self.clock()))
+            self.store.set(f"drift_detail:{site}", answer.detail or "unreadable result")
         elif answer.kind is AnswerKind.ANSWER:
-            self.store.delete("drift_count")
-            self.store.delete("drift_since")
+            self.store.delete(f"drift_count:{site}")
+            self.store.delete(f"drift_since:{site}")
 
     def _health_alerts(self) -> None:
         now = self.clock()
@@ -241,21 +245,22 @@ class Runner:
                     now,
                 )
 
-        count = int(self.store.get("drift_count", "0") or 0)
-        since = self.store.get("drift_since")
-        if count >= DRIFT_ALERT_AFTER and since:
-            detail = self.store.get("drift_detail", "") or ""
-            self.store.enqueue(
-                NewAlert(
-                    "drift",
-                    "jetbridge: aa.com's page format may have changed",
-                    "Recent responses could not be read, so checks are coming back as "
-                    f"'unknown' rather than 'no seats'.\n\nLatest detail: {detail}\n\n"
-                    "The raw responses are saved for repairing the parser.",
-                    dedupe_key=f"drift:{int(float(since))}",
-                ),
-                now,
-            )
+        for site in SITES.values():
+            count = int(self.store.get(f"drift_count:{site.id}", "0") or 0)
+            since = self.store.get(f"drift_since:{site.id}")
+            if count >= DRIFT_ALERT_AFTER and since:
+                detail = self.store.get(f"drift_detail:{site.id}", "") or ""
+                self.store.enqueue(
+                    NewAlert(
+                        "drift",
+                        f"jetbridge: {site.domain}'s page format may have changed",
+                        "Recent responses could not be read, so checks are coming back as "
+                        f"'unknown' rather than 'no seats'.\n\nLatest detail: {detail}\n\n"
+                        "The raw responses are saved for repairing the parser.",
+                        dedupe_key=f"drift:{site.id}:{int(float(since))}",
+                    ),
+                    now,
+                )
 
     def _note_gap(self) -> None:
         now = self.clock()
@@ -298,7 +303,8 @@ class Runner:
                 if status.conclusive
             )
             unknown = self.store.count_recent(watch.id, CheckStatus.UNKNOWN, day_ago)
-            lines.append(f"{watch.label} (watch {watch.id})")
+            domain = get_site(watch.program).domain
+            lines.append(f"{watch.label} via {get_site(watch.program).label} (watch {watch.id})")
             lines.append(f"  Seat alerts go to: {', '.join(watch.recipients) or 'you'}")
             lines.append(f"  Last 24 hours: {good} clear answers, {unknown} inconclusive")
             all_never_seen = True
@@ -313,8 +319,9 @@ class Runner:
                     all_never_seen = False
             if all_never_seen:
                 lines.append(
-                    f"  Note: {watch.flight.code} has never appeared in aa.com's results for "
-                    "this route. The flight number or route may be wrong, or aa.com may just "
+                    f"  Note: {watch.flight.code} has never appeared in "
+                    f"{domain}'s results for this route. The flight number or route may be "
+                    f"wrong, {domain} may not sell this flight with these miles, or it may just "
                     "hide flights with no award space."
                 )
             lines.append("")
@@ -325,9 +332,10 @@ class Runner:
                 f"This PC was off or asleep for up to {gap / 3600:.0f} hours since the "
                 "last digest, so no checks ran during that time."
             )
-        until = self.governor.cooldown_until(american.SITE)
-        if until > now:
-            lines.append(f"aa.com is resting after a block until {format_when(until)}.")
+        for site in SITES.values():
+            until = self.governor.cooldown_until(site.id)
+            if until > now:
+                lines.append(f"{site.domain} is resting after a block until {format_when(until)}.")
         lines.append("If this daily email stops arriving, the watcher isn't running.")
         status = f"{open_count} date(s) OPEN" if open_count else "no seats yet"
         return f"jetbridge daily: {status}, still watching", "\n".join(lines)

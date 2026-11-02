@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 
 from jetbridge import headlines
 from jetbridge.acquire.governor import Governor
+from jetbridge.acquire.sites import PROGRAMS, get_site
 from jetbridge.matcher import evaluate
 from jetbridge.models import (
     AnswerKind,
@@ -30,7 +31,6 @@ _AIRPORT = re.compile(r"^[A-Z]{3}$")
 _EMAIL = re.compile(r"[^@ ,;]+@[^@ ,;.]+(\.[^@ ,;.]+)+")
 MAX_DATES = 14
 MAX_RECIPIENTS = 10
-PROGRAMS = ("american",)
 FIND_FLIGHTS_BUDGET_S = 180
 
 
@@ -156,7 +156,7 @@ def create_watch(
 
 @dataclass(frozen=True)
 class FlightOption:
-    """One flight aa.com listed for a route and date, as a watch would see it."""
+    """One flight a site listed for a route and date, as a watch would see it."""
 
     code: str
     departs: datetime
@@ -187,20 +187,22 @@ def _is_single_flight(item: ParsedSlice, query: Query) -> bool:
 
 
 _NO_ANSWER = {
-    AnswerKind.BLOCKED: "aa.com asked jetbridge to slow down, so it won't try again for a while.",
+    AnswerKind.BLOCKED: "{site} asked jetbridge to slow down, so it won't try again for a while.",
     AnswerKind.DEFERRED: "jetbridge is holding off on searches right now to stay under its limit.",
-    AnswerKind.DRIFT: "aa.com's page wasn't what jetbridge expected, so it can't list flights.",
+    AnswerKind.DRIFT: "{site}'s page wasn't what jetbridge expected, so it can't list flights.",
     AnswerKind.ERROR: "the search didn't finish, so jetbridge can't list flights right now.",
 }
 
 
 def flights_from_answer(answer: SearchAnswer, query: Query, cabin: Cabin) -> FlightSearch:
     """Read the flights out of an answer. Each is judged by the same rules a watch uses."""
+    domain = get_site(query.program).domain
     if answer.kind is not AnswerKind.ANSWER or answer.parsed is None:
-        return FlightSearch(problem=_NO_ANSWER.get(answer.kind, "aa.com gave no clear answer."))
+        problem = _NO_ANSWER.get(answer.kind, "{site} gave no clear answer.")
+        return FlightSearch(problem=problem.format(site=domain))
     parsed = answer.parsed
     if parsed.site_error:
-        return FlightSearch(problem=f"aa.com returned an error ({parsed.site_error}).")
+        return FlightSearch(problem=f"{domain} returned an error ({parsed.site_error}).")
 
     options: dict[str, FlightOption] = {}
     for item in parsed.slices:
@@ -214,6 +216,7 @@ def flights_from_answer(answer: SearchAnswer, query: Query, cabin: Cabin) -> Fli
             destination=query.destination,
             dates=(query.date,),
             cabin=cabin,
+            program=query.program,
             pax=query.pax,
         )
         options.setdefault(

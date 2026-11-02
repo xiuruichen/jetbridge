@@ -9,6 +9,7 @@ import typer
 
 from jetbridge import draft as drafts
 from jetbridge import service
+from jetbridge.acquire.sites import get_site, parse_program
 from jetbridge.draft import WatchDraft
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.service import FlightOption, FlightSearch, TickBusy
@@ -87,7 +88,8 @@ def _show_options(options: list[FlightOption], cabin: Cabin) -> None:
 
 
 def _search(query: Query, cabin: Cabin) -> FlightSearch | None:
-    typer.echo(f"Searching aa.com for flights on {query.date:%b %d, %Y}. This takes a minute...")
+    domain = get_site(query.program).domain
+    typer.echo(f"Searching {domain} for flights on {query.date:%b %d, %Y}. This takes a minute...")
     try:
         return service.find_flights(service.open_store(), query, cabin)
     except TickBusy:
@@ -122,6 +124,7 @@ def _choose_flight(query: Query, cabin: Cabin) -> str | None:
             typer.echo(f"  {exc}")
             return _ask_typed_flight()
 
+    domain = get_site(query.program).domain
     search = _search(query, cabin)
     if search is None:
         return _ask_typed_flight()
@@ -132,7 +135,7 @@ def _choose_flight(query: Query, cabin: Cabin) -> str | None:
         return _ask_typed_flight()
     if not search.options:
         typer.echo(
-            "  aa.com didn't list a single flight for that route and date. It can leave out "
+            f"  {domain} didn't list a single flight for that route and date. It can leave out "
             "flights with no award seats, so the flight may still exist. A flight tracker "
             "will show its number."
         )
@@ -141,8 +144,8 @@ def _choose_flight(query: Query, cabin: Cabin) -> str | None:
     _show_options(search.options, cabin)
     typer.echo("  Connections aren't shown, because jetbridge watches one flight at a time.")
     if search.incomplete:
-        typer.echo("  Part of aa.com's answer couldn't be read, so this list may be incomplete.")
-    typer.echo("  aa.com can leave out flights with no award seats, so yours may not be listed.")
+        typer.echo(f"  Part of {domain}'s answer couldn't be read, so this list may be incomplete.")
+    typer.echo(f"  {domain} can leave out flights with no award seats, so yours may not be listed.")
     while True:
         choice = typer.prompt(
             "Which one? (number, a flight number, or Enter to stop)",
@@ -180,9 +183,10 @@ def add_one(store: Store, owner: str, today: date) -> Watch | None:
         "Which cabin? (economy, premium, business or first)", drafts.parse_cabin, "business"
     )
     pax = _ask("How many passengers?", drafts.parse_pax, "1")
+    program = _ask("Which miles? (american, delta or united)", parse_program, "american")
 
     day = drafts.first_upcoming_day(dates, today)
-    flight = _choose_flight(Query(origin, destination, day, pax), cabin)
+    flight = _choose_flight(Query(origin, destination, day, pax, program), cabin)
     if flight is None:
         typer.echo("OK, nothing was saved.")
         return None
@@ -200,6 +204,7 @@ def add_one(store: Store, owner: str, today: date) -> Watch | None:
         dates=dates,
         flight=flight,
         cabin=cabin,
+        program=program,
         pax=pax,
         max_miles=max_miles,
         recipients=recipients,

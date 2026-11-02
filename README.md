@@ -2,9 +2,12 @@
 
 jetbridge watches award seats on one specific flight and emails you when they open up.
 
-You tell it the flight, cabin and dates, for example *AA100 in business on June 14-16, 2027,
-bookable with American miles*. It searches aa.com several times a day on your own PC, and
-emails you the price and a booking link as soon as seats appear.
+You tell it the flight, cabin, dates and miles, for example *AA100 in business on June 14-16, 2027,
+bookable with American miles*. It searches the airline's website several times a day on your own
+PC, and emails you the price and a booking link as soon as seats appear.
+
+It can search with **American AAdvantage** (aa.com), **Delta SkyMiles** (delta.com) and **United
+MileagePlus** (united.com) miles.
 
 It searches as a guest with no login, and it doesn't book anything or move your miles.
 
@@ -24,7 +27,7 @@ for friends or family without them installing anything.
 - [When you get a SEATS OPEN email](#when-you-get-a-seats-open-email)
 - [How checks work](#how-checks-work)
 - [Limitations](#limitations)
-- [Blocks and aa.com's terms](#blocks-and-aacoms-terms)
+- [Blocks and the airlines' terms](#blocks-and-the-airlines-terms)
 - [Using it through Claude](#using-it-through-claude)
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
@@ -166,19 +169,24 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 | `--checks-per-day` | `6` | How often to check, from 1 to 24 |
 | `--max-miles` | none | Treat seats above this per-person price as not available |
 | `--notify` | asks you | Who gets seat alerts: `a@x.com,b@y.com`, or `me` for only you |
-| `--program` | `american` | Only American is supported today |
+| `--program` | `american` | Whose miles to search: `american`, `delta` or `united` |
 
 ### Getting these right
 
-- **Route:** use the airports of that exact flight, because aa.com searches by route. A flight
-  tracker will show them. With a wrong route, the flight simply never appears.
+- **Program:** this is whose miles you'd use, not who flies the plane. Partner flights can appear:
+  American can show Cathay Pacific, for example. An airline that doesn't sell a flight with its
+  miles will show it as `not_listed`. To compare programs, add one watch for each.
+- **Route:** use the airports of that exact flight, because the sites search by route. A flight
+  tracker will show them. With a wrong route, the flight simply never appears. A city's other
+  airports don't count: a watch to Tokyo Haneda won't match a flight landing at Narita.
 - **Dates:** use the local departure date at the origin airport.
 - **Connections:** only the flight on its own counts. An itinerary that connects onto it from
   another city doesn't, so watch each flight separately if you need more than one.
-- **Cabin:** every leg has to be in the cabin you asked for. If aa.com sells a "business" fare
+- **Cabin:** every leg has to be in the cabin you asked for. If a site sells a "business" fare
   that's actually flown in another cabin, it doesn't count. A first-class seat doesn't count for
-  a business watch either, so add a second watch if you'd take either.
-- **Party size:** a watch for 2 only reports seats aa.com offers to a party of 2. If you could
+  a business watch either, so add a second watch if you'd take either. On US domestic flights,
+  United's and Delta's front cabin usually counts as `first`.
+- **Party size:** a watch for 2 only reports seats the site offers to a party of 2. If you could
   split up, add a separate watch for 1. Prices can also change with party size.
 - **Checks per day:** this is per date, so 6 checks across 3 dates is about 18 searches a day.
   Be conservative: more searching makes a block more likely.
@@ -262,8 +270,8 @@ Each result is one of these:
 | Result | Meaning |
 |---|---|
 | `available` | The flight has seats in your cabin, within any miles limit |
-| `not_offered` | aa.com listed the flight, but with no qualifying seats |
-| `not_listed` | aa.com answered, but this flight wasn't in the results |
+| `not_offered` | The site listed the flight, but with no qualifying seats |
+| `not_listed` | The site answered, but this flight wasn't in the results |
 | `unknown` | jetbridge couldn't tell, for example because of a block or an error |
 
 **`unknown` never means "no seats".** It can't trigger a seats alert, and it can't mark an open
@@ -276,11 +284,11 @@ date as closed.
 | **SEATS OPEN** | Seats appeared, and a live re-check 1-2 minutes later confirmed them |
 | **SEATS MAY BE OPEN (unconfirmed)** | Seats appeared, but the re-check couldn't get a clear answer |
 | **PRICE DROP** | An open date got cheaper |
-| **MORE SEATS** | An open date gained seats (only when aa.com states a count) |
+| **MORE SEATS** | An open date gained seats (only when the site states a count) |
 | **STILL OPEN** | One reminder a day while seats stay open |
 | **Seats gone** | An open date closed |
 | **jetbridge can't see...** | No clear answer on any date for 24 hours |
-| **aa.com's page format may have changed** | Two checks in a row couldn't be read, so the parser may need fixing |
+| **A site's page format may have changed** | Two checks in a row couldn't be read, so the parser may need fixing |
 | **jetbridge daily** | A summary, on the first run after 8 AM |
 
 If seats appear but are gone by the re-check, it's logged in `history` and no email is sent.
@@ -313,7 +321,7 @@ alerts still go out with the built-in wording and `doctor` tells you.
 
 ## When you get a SEATS OPEN email
 
-1. **Open the link in the email.** It goes to aa.com's results for that route, date and party
+1. **Open the link in the email.** It goes to the airline's results for that route, date and party
    size, without logging you in.
 2. **Find your flight** and check the price, cabin and taxes. Award seats can disappear in minutes.
 3. **Book it yourself.** If you need to transfer points first, confirm the seats are still there,
@@ -321,8 +329,9 @@ alerts still go out with the built-in wording and `doctor` tells you.
 
 A few details in the email:
 
-- **`Seats: at least 1`** means aa.com didn't state a count, which is common. The number is the
-  party size searched, and the real count may be higher.
+- **`Seats: at least 1`** means the site didn't state a count, which is common on aa.com. The
+  number is the party size searched, and the real count may be higher.
+- **`Seats: at least 9`** comes from Delta and United, which stop counting at 9.
 - **`Note: dynamic pricing`** comes from aa.com's data, and that price can change.
 - **`Note: aa.com says this must be booked at the airport`** comes from aa.com too, so check it
   before planning around that fare.
@@ -332,8 +341,8 @@ A few details in the email:
 1. Every 15 minutes, Windows runs `jetbridge tick`, which does whatever is due and exits.
 2. Each watch's next check is set from its checks per day, with random variation of 30% either
    way. At 6 a day, that's roughly every 3-5 hours.
-3. Chrome opens off-screen and searches aa.com, waiting 20-60 seconds between searches. Watches on
-   the same route, date and party size share one search.
+3. Chrome opens off-screen and searches one airline at a time, waiting 20-60 seconds between
+   searches on the same site. Watches on the same route, date, party size and program share one search.
 4. If seats have just appeared, it waits 1-2 minutes and searches again before alerting you.
 5. Results are saved, emails are sent and Chrome closes.
 
@@ -346,26 +355,38 @@ After sleep or downtime it runs one catch-up check, never a burst of missed ones
   to **Never** in *Settings > System > Power*.
 - **Short-lived seats can be missed.** Checks are hours apart, so seats that open and close between
   them are never seen. More checks per day narrows that gap but raises the risk of a block.
-- **A flight that's `not_listed` isn't necessarily wrong.** aa.com may leave out flights with no
-  award space. If a flight has never appeared after 6 clear checks on every date, the daily email
+- **A flight that's `not_listed` isn't necessarily wrong.** Sites may leave out flights with no
+  award space, or may not sell that flight with their miles. If a flight has never appeared after 6 clear checks on every date, the daily email
   suggests checking the flight number and route.
-- **Codeshares:** jetbridge matches the flight number aa.com shows. If aa.com lists the flight under
-  a different number, watch that number instead.
-- **American only.** It shows what aa.com offers for American miles, including partner flights like
-  Cathay Pacific. Other programs may see different space.
-- **aa.com can change without notice.** If its pages change, checks turn `unknown`, and you get an
-  email saying so, but jetbridge won't work again until the parser is updated.
+- **Codeshares:** jetbridge matches the flight number the site shows. If a site lists the flight
+  under a different number, watch that number instead.
+- **Three programs.** American, Delta and United are supported. Each shows only what it offers for
+  its own miles, and other programs may see different space.
+- **Dates too far ahead.** Airlines only open their schedules so far in advance. united.com has
+  answered far-off dates with an empty reply, which shows as `unknown` until the date comes into range.
+- **Sites can change without notice.** If a site's pages change, its checks turn `unknown`, and you
+  get an email saying so, but that program won't work again until its parser is updated. Other
+  programs keep working.
 
-## Blocks and aa.com's terms
+## Blocks and the airlines' terms
 
-Automated searching likely goes against aa.com's terms of use, so you're accepting that risk by
-running this. jetbridge keeps the risk low: it never logs in, so your AAdvantage account isn't
-involved, and it searches at low volume (never more than 10 requests per 10 minutes).
+Automated searching likely goes against these airlines' terms of use, so you're accepting that risk
+by running this. jetbridge keeps the risk low: it never logs in, so your frequent flyer accounts
+aren't involved, and it searches at low volume. Each site has its own hard limit:
 
-If aa.com shows a "confirm you're human" page or blocks a request, jetbridge:
+| Site | Most requests |
+|---|---|
+| aa.com | 10 per 10 minutes |
+| delta.com | 20 per 5 minutes |
+| united.com | 30 per 5 minutes |
 
-1. Stops searching immediately and doesn't retry.
-2. Rests for 10 minutes, doubling each time it happens again within 6 hours, up to 4 hours.
+A single check can use more than one request: United needs a guest token and then the search, and
+Delta asks for each page of results separately. Opening a site's home page counts too.
+
+If a site shows a "confirm you're human" page or blocks a request, jetbridge:
+
+1. Stops searching that site immediately and doesn't retry. Other sites carry on.
+2. Rests that site for 10 minutes, doubling each time it happens again within 6 hours, up to 4 hours.
 3. Records the checks it skipped as `unknown` and reschedules them for after the rest.
 
 It never tries to solve the human check. `status` shows any rest in progress. If blocks keep
@@ -422,16 +443,16 @@ from a script. Add `--notify me` or `--notify a@x.com`.
 
 **The test email never arrives.** Check spam, then mark it as "not spam" so alerts land in your inbox.
 
-**A check says `blocked`, or `status` says aa.com is RESTING.** This is normal. Leave it alone and
+**A check says `blocked`, or `status` says a site is RESTING.** This is normal. Leave it alone and
 checks resume after the rest. Running `check` during a rest won't get around it.
 
-**Everything is `unknown` with a site error code.** aa.com returned an error that jetbridge can't
+**Everything is `unknown` with a site error code.** The site returned an error that jetbridge can't
 interpret, so it reports "couldn't tell". Check `uv run jetbridge history ID`. The raw response is
 saved for diagnosis.
 
 **A flight is always `not_listed`.** Check the flight number, route and date against a flight
 tracker, and confirm the airline has opened its schedule for those dates. Then search the route
-yourself on aa.com to see how the flight is listed.
+yourself on the airline's site to see how the flight is listed.
 
 **"another jetbridge check is already running".** Only one check can use its Chrome profile at a
 time. Wait for it to finish and try again.
@@ -450,7 +471,7 @@ $env:JETBRIDGE_SHOW_BROWSER = "1"
 
 ## Where your data lives
 
-Everything is on your PC. Nothing goes anywhere except searches to aa.com and emails through Gmail.
+Everything is on your PC. Nothing goes anywhere except searches to the airline sites and emails through Gmail.
 
 | What | Where |
 |---|---|
@@ -477,21 +498,22 @@ Then, to remove the rest:
 ## Development
 
 ```powershell
-uv run pytest               # offline, using recorded aa.com responses
+uv run pytest               # offline, using recorded airline responses
 uv run ruff check .
 uv run ruff format .
 ```
 
 | Path | What's in it |
 |---|---|
-| `src/jetbridge/matcher.py` | Turns an aa.com answer into a result for one flight (pure) |
+| `src/jetbridge/matcher.py` | Turns a site's answer into a result for one flight (pure) |
 | `src/jetbridge/alerts.py` | Alert rules and email text (pure) |
 | `src/jetbridge/scheduler.py` | What's due, timing and shared searches (pure) |
 | `src/jetbridge/runner.py` | One full run: check, confirm, alert, report health |
 | `src/jetbridge/store.py` | SQLite storage and the email queue |
-| `src/jetbridge/acquire/american.py` | aa.com requests and response parsing |
+| `src/jetbridge/acquire/american.py`, `delta.py`, `united.py` | Each site's requests and response parsing |
+| `src/jetbridge/acquire/sites.py` | The list of sites. Adding a program starts here |
 | `src/jetbridge/acquire/detect.py` | Recognizes blocks and human checks |
-| `src/jetbridge/acquire/governor.py` | Rate limit and rest periods |
+| `src/jetbridge/acquire/governor.py` | Each site's rate limit and rest periods |
 | `src/jetbridge/acquire/broker.py`, `fetcher.py` | Chrome session and classified answers |
 | `src/jetbridge/notify/email.py` | Gmail sending and queue flushing |
 | `src/jetbridge/winsched.py` | The Windows scheduled task |

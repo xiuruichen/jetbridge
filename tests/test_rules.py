@@ -146,7 +146,7 @@ def test_parse_dates():
         {"flight": "CX"},
         {"origin": "JFKX"},
         {"destination": "jfk"},
-        {"program": "delta"},
+        {"program": "nosuchprogram"},
         {"pax": 0},
         {"checks_per_day": 0},
         {"cabin": "luxury"},

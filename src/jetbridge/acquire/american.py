@@ -24,6 +24,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from jetbridge.acquire.detect import CHALLENGE_RE
+from jetbridge.acquire.pagefetch import REQUEST_TIMEOUT_MS, Gate, page_fetch
 from jetbridge.acquire.types import RawResponse, SchemaDrift
 from jetbridge.models import (
     Cabin,
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
 SITE = "american"
 WARMUP_URL = "https://www.aa.com/homePage.do"
 MARKER = 'id="ng-state"'
-REQUEST_TIMEOUT_MS = 90_000
 
 _PRODUCT_CABIN = {
     "COACH": Cabin.ECONOMY,
@@ -51,18 +51,6 @@ _PRODUCT_CABIN = {
     "FIRST": Cabin.FIRST,
 }
 _NG_STATE = re.compile(r'<script[^>]*id="ng-state"[^>]*>(.*?)</script>', re.S)
-
-# Page-context fetch: it uses the page's real cookies and browser networking.
-FETCH_JS = """async ({url, method, headers, body, timeoutMs}) => {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const r = await fetch(url, {method, headers, body, credentials: 'include', signal: ctl.signal});
-    return {status: r.status, text: await r.text()};
-  } catch (e) {
-    return {status: null, text: String(e)};
-  } finally { clearTimeout(t); }
-}"""
 
 
 def search_url(q: Query) -> str:
@@ -129,23 +117,17 @@ def search_request(q: Query) -> dict[str, Any]:
     }
 
 
-async def fetch_form_post(page: Page, q: Query) -> RawResponse:
+async def fetch(page: Page, q: Query, gate: Gate) -> RawResponse:
     """Tier T1: post the same form the site submits, from inside the page."""
-    result = await page.evaluate(
-        FETCH_JS,
-        {
-            "url": f"/booking/choose-flights/1?sid={uuid.uuid4()}&locale=en_US",
-            "method": "POST",
-            "headers": {
-                "content-type": "application/x-www-form-urlencoded",
-                "accept": "text/html",
-            },
-            "body": "searchRequest="
-            + urllib.parse.quote(json.dumps(search_request(q), separators=(",", ":"))),
-            "timeoutMs": REQUEST_TIMEOUT_MS,
-        },
+    await gate()
+    return await page_fetch(
+        page,
+        f"/booking/choose-flights/1?sid={uuid.uuid4()}&locale=en_US",
+        method="POST",
+        headers={"content-type": "application/x-www-form-urlencoded", "accept": "text/html"},
+        body="searchRequest="
+        + urllib.parse.quote(json.dumps(search_request(q), separators=(",", ":"))),
     )
-    return RawResponse(status=result["status"], body=result["text"] or "", tier="T1")
 
 
 async def fetch_navigate(page: Page, q: Query) -> RawResponse:

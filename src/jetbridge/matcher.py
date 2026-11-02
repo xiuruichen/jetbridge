@@ -82,13 +82,14 @@ def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
             detail=f"cheapest is {best.miles:,} miles, above your limit of {watch.max_miles:,}",
         )
 
-    exact = best.seats_remaining if best.seats_remaining > 0 else None
+    # The search was for this party, so the site is offering at least that many seats.
+    exact = max(best.seats_remaining, watch.pax) if best.seats_remaining > 0 else None
     return CheckResult(
         CheckStatus.AVAILABLE,
         miles=best.miles,
         taxes=best.taxes,
         currency=best.currency,
         seats_exact=exact,
-        seats_at_least=None if exact is not None else watch.pax,
+        seats_at_least=None if exact is not None else max(best.seats_at_least, watch.pax),
         notes=best.notes,
     )

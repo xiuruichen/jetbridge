@@ -209,7 +209,7 @@ async def test_a_blocked_search_is_not_retried():
 
 
 # ---- the wizard -----------------------------------------------------------------------
-ROUTE = ("JFK", "HKG", "May 21-23 2027", "business", "2")
+ROUTE = ("JFK", "HKG", "May 21-23 2027", "business", "2", "american")
 
 
 def test_picking_a_flight_saves_exactly_what_was_reviewed(monkeypatch):
@@ -300,6 +300,8 @@ def test_bad_answers_get_asked_again(monkeypatch):
         "business",
         "99",
         "1",
+        "alaska",  # not supported
+        "UA",
         "",
         "7",  # not on the list
         "1",
@@ -315,13 +317,14 @@ def test_bad_answers_get_asked_again(monkeypatch):
     watch = watches()[0]
     assert (watch.origin, watch.destination) == ("YYZ", "HKG")
     assert watch.flight.code == "CX845" and watch.recipients == ("ann@example.com",)
+    assert watch.program == "united"
 
 
 def test_add_another_keeps_going(monkeypatch):
     picker(monkeypatch, FlightSearch((OPTION,)))
     answers = lines(
-        *ROUTE, "CX845", "", "", "y", "y", "JFK", "LHR", "Jun 1 2027", "first", "1", "BA178", "",
-        "", "y", "n",
+        *ROUTE, "CX845", "", "", "y", "y", "JFK", "LHR", "Jun 1 2027", "first", "1", "delta",
+        "BA178", "", "", "y", "n",
     )  # fmt: skip
     result = cli_runner.invoke(app, ["start"], input=answers)
     assert result.exit_code == 0, result.output

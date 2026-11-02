@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from jetbridge import service
+from jetbridge.acquire.sites import get_site
 from jetbridge.models import Cabin, Watch
 from jetbridge.store import Store
 
@@ -141,6 +142,7 @@ class WatchDraft:
     dates: str | None = None  # in the form service.parse_dates accepts
     flight: str | None = None
     cabin: Cabin = Cabin.BUSINESS
+    program: str = "american"
     pax: int = 1
     checks_per_day: int = DEFAULT_CHECKS_PER_DAY
     max_miles: int | None = None
@@ -296,20 +298,22 @@ def review_text(draft: WatchDraft, owner: str) -> str:
     limit = f"{draft.max_miles:,} miles per person" if draft.max_miles else "no limit"
     addresses = service.parse_recipients(draft.recipients)
     searches = draft.searches_per_day
+    site = get_site(draft.program)
     lines = [
         f"Flight:      {draft.flight} from {draft.origin} to {draft.destination}",
         f"Cabin:       {draft.cabin.value}",
+        f"Miles:       {site.label}",
         f"Passengers:  {draft.pax}",
         f"Dates:       {_format_day(days[0])}",
         *(f"             {_format_day(day)}" for day in days[1:]),
         f"Price limit: {limit}",
         f"Alerts go to: {', '.join(addresses) if addresses else owner}",
-        f"Searching:   about {searches} aa.com searches a day",
+        f"Searching:   about {searches} {site.domain} searches a day",
     ]
     if searches > HIGH_VOLUME_SEARCHES:
         lines.append(
-            "             That's a lot, and more searching makes an aa.com block more likely. "
-            "Fewer dates would help."
+            f"             That's a lot, and more searching makes a {site.domain} block more "
+            "likely. Fewer dates would help."
         )
     return "\n".join(lines)
 
@@ -326,6 +330,7 @@ def save(store: Store, draft: WatchDraft) -> Watch:
         destination=draft.destination or "",
         dates=draft.dates or "",
         cabin=draft.cabin.value,
+        program=draft.program,
         pax=draft.pax,
         checks_per_day=draft.checks_per_day,
         max_miles=draft.max_miles,

@@ -32,10 +32,13 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
   its `gate` before every request. A block is never retried: it opens a persisted cooldown for
   that site. Don't add retries or ways around this. Challenges are never solved automatically.
 - Sites are independent: a block, rest or format warning on one never stops or clears another.
-- A seat's cabin comes from what's flown on each leg, not the product name. Add a Delta brand to
-  the cabin table only with evidence from a real response. An unknown brand never hides readable
-  seats on that flight, but it makes "no seats" `UNKNOWN`, as do a cut-off United stream and a
-  missing Delta page.
+- A seat's cabin comes from what's flown on each leg, not the product name. Partner fares need no
+  per-airline code: American and United state the leg's cabin, and Delta's partner brands are
+  worked out from its cabin columns by `delta.learn_brands`. It only trusts a brand heading its
+  column, lets the response override the usual column meanings, and gives up on conflicting or
+  missing evidence. Don't loosen that: a wrong cabin sends a false alert.
+- An unrecognized fare (`UnknownFare`) never hides readable seats on that flight, but it makes "no
+  seats" `UNKNOWN`, as do a cut-off United stream and a missing Delta page.
 - Alerts come from recorded state changes. `Store.commit_check` writes the observation, state
   and alerts in one transaction, and email goes only through the outbox.
 - An opening is re-checked live before its alert goes out.

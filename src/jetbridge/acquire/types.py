@@ -22,5 +22,13 @@ class RawResponse:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
+class UnknownFare(ValueError):
+    """A fare we can't place in a cabin. Only that fare is set aside, never the whole flight."""
+
+    def __init__(self, fare: str):
+        super().__init__(f"unrecognized fare type {fare!r}")
+        self.fare = fare
+
+
 class SchemaDrift(Exception):
     """The response did not match the expected shape. Fail loudly, never as "no seats"."""

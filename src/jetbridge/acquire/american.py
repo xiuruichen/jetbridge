@@ -6,6 +6,8 @@ Recon (2026-10-31):
   server-rendered HTML embedding the result in ``<script id="ng-state">{...}</script>``.
 * ``SearchData.itineraryResult.slices[]`` holds itineraries, with ``pricingDetail[]`` per
   product and the actual per-leg cabin in ``legs[].productDetails``.
+* A product's name isn't the seat: partner flights can sell a BUSINESS product in a FIRST cabin,
+  so the cabin always comes from the leg, whatever the product is called.
 * ``seatsRemaining`` is 0 when unknown (NOT sold out).
 * The meaning of aa.com's error codes (e.g. "309") is unverified, so any error code is
   treated as "could not tell", never as "no flights".
@@ -25,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from jetbridge.acquire.detect import CHALLENGE_RE
 from jetbridge.acquire.pagefetch import REQUEST_TIMEOUT_MS, Gate, page_fetch
-from jetbridge.acquire.types import RawResponse, SchemaDrift
+from jetbridge.acquire.types import RawResponse, SchemaDrift, UnknownFare
 from jetbridge.models import (
     Cabin,
     Leg,
@@ -44,7 +46,7 @@ SITE = "american"
 WARMUP_URL = "https://www.aa.com/homePage.do"
 MARKER = 'id="ng-state"'
 
-_PRODUCT_CABIN = {
+_LEG_CABIN = {
     "COACH": Cabin.ECONOMY,
     "PREMIUM_ECONOMY": Cabin.PREMIUM,
     "BUSINESS": Cabin.BUSINESS,
@@ -199,12 +201,17 @@ def _parse_slice(raw: dict[str, Any]) -> ParsedSlice:
     details = raw["pricingDetail"]  # required: its absence must not read as "no seats"
     if not isinstance(details, list):
         raise ValueError("pricingDetail is not a list")
-    return ParsedSlice(
-        legs=legs,
-        offers=tuple(
-            offer for detail in details if (offer := _parse_offer(detail, pairs)) is not None
-        ),
-    )
+    offers = []
+    unknown = []
+    for detail in details:
+        try:
+            offer = _parse_offer(detail, pairs)
+        except UnknownFare as exc:
+            unknown.append(exc.fare)
+            continue
+        if offer is not None:
+            offers.append(offer)
+    return ParsedSlice(legs=legs, offers=tuple(offers), unknown_fares=tuple(unknown))
 
 
 def _parse_leg(seg: dict[str, Any], leg: dict[str, Any]) -> Leg:
@@ -226,8 +233,7 @@ def _parse_offer(
     detail: dict[str, Any], pairs: list[tuple[dict[str, Any], dict[str, Any]]]
 ) -> ProductOffer | None:
     product = detail.get("productType")
-    cabin = _PRODUCT_CABIN.get(product)
-    if cabin is None or not detail.get("productAvailable"):
+    if not detail.get("productAvailable"):
         return None
     miles = detail.get("perPassengerAwardPoints")
     if not miles:
@@ -239,9 +245,12 @@ def _parse_offer(
             (p for p in leg.get("productDetails") or [] if p.get("productType") == product),
             None,
         )
-        if leg_product is None or leg_product.get("cabinType") not in _PRODUCT_CABIN:
-            raise ValueError(f"no cabin for {product} on leg {leg.get('origin', {}).get('code')}")
-        leg_cabins.append(_PRODUCT_CABIN[leg_product["cabinType"]])
+        if leg_product is None:
+            raise UnknownFare(str(product))
+        cabin = _LEG_CABIN.get(leg_product.get("cabinType"))
+        if cabin is None:
+            raise UnknownFare(str(leg_product.get("cabinType")))
+        leg_cabins.append(cabin)
 
     tax = detail["perPassengerTaxesAndFees"]
     notes = []
@@ -250,7 +259,7 @@ def _parse_offer(
     if detail.get("mustBookAtAirport"):
         notes.append("aa.com says this must be booked at the airport")
     return ProductOffer(
-        cabin=cabin,
+        cabin=leg_cabins[0],  # the matcher also requires every leg to be in the watched cabin
         leg_cabins=tuple(leg_cabins),
         miles=int(miles),
         taxes=Decimal(str(tax["amount"])).quantize(Decimal("0.01")),

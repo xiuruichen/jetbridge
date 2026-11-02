@@ -362,6 +362,10 @@ After sleep or downtime it runs one catch-up check, never a burst of missed ones
   under a different number, watch that number instead.
 - **Three programs.** American, Delta and United are supported. Each shows only what it offers for
   its own miles, and other programs may see different space.
+- **Partner flights.** Any partner a program sells works, with no setup per airline. If a site ever
+  shows a fare jetbridge can't place in a cabin, seats it can read still alert you, and the rest
+  show as `unknown` with the fare named. On Delta, a partner's top cabin is read from Delta's
+  business column, so a partner's first class would show as `business`.
 - **Dates too far ahead.** Airlines only open their schedules so far in advance. united.com has
   answered far-off dates with an empty reply, which shows as `unknown` until the date comes into range.
 - **Sites can change without notice.** If a site's pages change, its checks turn `unknown`, and you

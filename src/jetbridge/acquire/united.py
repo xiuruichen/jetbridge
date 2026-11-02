@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from jetbridge.acquire.pagefetch import Gate, page_fetch
-from jetbridge.acquire.types import RawResponse, SchemaDrift
+from jetbridge.acquire.types import RawResponse, SchemaDrift, UnknownFare
 from jetbridge.models import (
     Cabin,
     Leg,
@@ -171,11 +171,16 @@ def _parse_flight(flight: dict[str, Any]) -> ParsedSlice:
     if not isinstance(products, list):
         raise ValueError("products is not a list")
     offers = []
+    unknown = []
     for index, product in enumerate(products):
-        offer = _parse_offer(product, index, segments)
+        try:
+            offer = _parse_offer(product, index, segments)
+        except UnknownFare as exc:
+            unknown.append(exc.fare)
+            continue
         if offer is not None:
             offers.append(offer)
-    return ParsedSlice(legs=legs, offers=tuple(offers))
+    return ParsedSlice(legs=legs, offers=tuple(offers), unknown_fares=tuple(unknown))
 
 
 def _parse_leg(segment: dict[str, Any]) -> Leg:
@@ -208,8 +213,11 @@ def _parse_offer(
     for position, segment in enumerate(segments):
         leg_product = product if position == 0 else _same_product(segment, product_type, index)
         if leg_product is None or not leg_product.get("cabinType"):
-            raise ValueError(f"no cabin for {product_type} on flight {position + 1}")
-        cabins.append(_LEG_CABIN[leg_product["cabinType"].lower()])
+            raise UnknownFare(str(product_type))
+        cabin = _LEG_CABIN.get(leg_product["cabinType"].lower())
+        if cabin is None:
+            raise UnknownFare(leg_product["cabinType"])
+        cabins.append(cabin)
         codes.append(leg_product.get("bookingCode") or "")
 
     exact, at_least = _seats(segments, codes)

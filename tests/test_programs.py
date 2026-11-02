@@ -201,14 +201,6 @@ def test_delta_sold_out_is_not_offered():
     assert dl(body=json.dumps(data)).status is CheckStatus.NOT_OFFERED
 
 
-def test_delta_unknown_brand_is_unknown_not_no_seats():
-    data = _only_dl159(_delta_data())
-    text = json.dumps(data).replace('"D1"', '"NEWBRAND"').replace('"BD1"', '"NEWBRAND"')
-    text = text.replace('"CD1"', '"NEWBRAND"')
-    result = dl(body=text)
-    assert result.status is CheckStatus.UNKNOWN and result.suspect_parser
-
-
 # A real ATL-CDG response from 2026-11-01, trimmed to three flights. It first exposed AFPE.
 ATL_CDG = (FIXTURES / "delta" / "atl_cdg_award_20270521.json").read_text(encoding="utf-8")
 
@@ -244,23 +236,273 @@ def test_recorded_atl_cdg_response_reads_completely():
     assert not parsed.unreadable and not any(s.unknown_fares for s in parsed.slices)
 
 
-def test_unknown_fare_does_not_hide_readable_seats_on_the_same_flight():
-    body = ATL_CDG.replace('"CDPS"', '"CNEWFARE"')
-    assert atl_cdg("DL90", Cabin.BUSINESS, body).miles == 499_900
-    assert atl_cdg("DL90", Cabin.ECONOMY, body).status is CheckStatus.AVAILABLE
+# ---- partner fares: Delta's cabin columns ------------------------------------------------
+# A real CDG-NBO response from 2026-11-01. Every flight is a partner's, so it has no Delta brands.
+CDG_NBO = (FIXTURES / "delta" / "cdg_nbo_award_20270521.json").read_text(encoding="utf-8")
+PARTNER_DAY = DAY
 
 
-def test_unknown_fare_makes_no_seats_unknown_and_names_the_fare():
-    body = ATL_CDG.replace('"CDPS"', '"CNEWFARE"')
-    result = atl_cdg("DL90", Cabin.PREMIUM, body)
+def fare(brands, column, *, dominant=None, label=None, miles=100_000, seats=4, sold_out=False):
+    """One column of a Delta itinerary, in the shape of a recorded response."""
+    brands = [brands] if isinstance(brands, str) else brands
+    return {
+        "soldOut": sold_out,
+        "additionalOfferProperties": {
+            "offerPriorityNum": column,
+            "dominantSegmentBrandId": dominant or brands[0],
+        },
+        "offerItems": [
+            {
+                "retailItems": [
+                    {
+                        "retailItemMetaData": {
+                            "fareInformation": [
+                                {
+                                    "solutionId": f"x/USD/{label}" if label else "x",
+                                    "availableSeatCnt": seats,
+                                    "brandByFlightLegs": [{"brandId": b} for b in brands],
+                                    "farePrice": [
+                                        {
+                                            "totalFarePrice": {
+                                                "milesEquivalentPrice": {"mileCnt": miles},
+                                                "currencyEquivalentPrice": {
+                                                    "formattedCurrencyAmt": "5.60"
+                                                },
+                                            }
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+    }
+
+
+def itinerary(code, *offers, legs=1):
+    carrier, number = code[:2], code[2:]
+    stops = ["AAA", *[f"X{i:02d}" for i in range(legs - 1)], "BBB"]
+    return {
+        "trips": [
+            {
+                "flightSegment": [
+                    {
+                        "marketingCarrier": {"carrierCode": carrier, "carrierNum": number},
+                        "flightLeg": [
+                            {
+                                "originAirportCode": stops[i],
+                                "destinationAirportCode": stops[i + 1],
+                                "scheduledDepartureLocalTs": f"{DAY}T10:00",
+                                "scheduledArrivalLocalTs": f"{DAY}T20:00",
+                            }
+                            for i in range(legs)
+                        ],
+                    }
+                ]
+            }
+        ],
+        "offers": list(offers),
+    }
+
+
+def reply(*itineraries) -> str:
+    return json.dumps({"data": {"gqlSearchOffers": {"gqlOffersSets": list(itineraries)}}})
+
+
+def seat(body, cabin, code="XX1"):
+    w = Watch(
+        id=1,
+        flight=Flight.parse(code),
+        origin="AAA",
+        destination="BBB",
+        dates=(DAY,),
+        cabin=cabin,
+        program="delta",
+    )
+    return evaluate(w, DAY, SearchAnswer(AnswerKind.ANSWER, parsed=delta.parse(body)))
+
+
+OWN = itinerary("DL1", fare("CD1", 8), fare("CDPS", 5), fare("CMAIN", 2))
+
+
+@pytest.mark.parametrize(
+    ("column", "cabin"), [(2, Cabin.ECONOMY), (5, Cabin.PREMIUM), (8, Cabin.BUSINESS)]
+)
+def test_new_partner_brand_is_read_from_its_column(column, cabin):
+    body = reply(OWN, itinerary("XX1", fare("NEWPARTNER", column)))
+    assert seat(body, cabin).status is CheckStatus.AVAILABLE
+
+
+def test_new_partner_brand_is_not_reported_in_any_other_cabin():
+    body = reply(OWN, itinerary("XX1", fare("NEWPARTNER", 5)))
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.NOT_OFFERED
+    assert seat(body, Cabin.ECONOMY).status is CheckStatus.NOT_OFFERED
+
+
+def test_sold_out_delta_columns_still_teach_the_rule():
+    own = itinerary("DL1", fare("CD1", 77, sold_out=True))
+    body = reply(own, itinerary("XX1", fare("NEWPARTNER", 77)))
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.AVAILABLE
+
+
+def test_this_response_beats_what_columns_usually_mean():
+    own = itinerary("DL1", fare("CDPS", 8))  # Delta has renumbered its columns
+    body = reply(own, itinerary("XX1", fare("NEWPARTNER", 8)))
+    assert seat(body, Cabin.PREMIUM).status is CheckStatus.AVAILABLE
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.NOT_OFFERED
+
+
+def test_column_never_seen_before_is_unknown_and_names_the_fare():
+    result = seat(reply(OWN, itinerary("XX1", fare("NEWPARTNER", 99))), Cabin.BUSINESS)
     assert result.status is CheckStatus.UNKNOWN and result.suspect_parser
-    assert "CNEWFARE" in result.detail
+    assert "NEWPARTNER" in result.detail
+
+
+def test_column_holding_two_cabins_is_unknown():
+    own = itinerary("DL1", fare("CD1", 77), fare("CDPS", 77))
+    body = reply(own, itinerary("XX1", fare("NEWPARTNER", 77)))
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.UNKNOWN
+
+
+def test_column_and_label_disagreeing_is_unknown():
+    labelled = fare("NEWPARTNER", 8, label="NEWPARTNER:AWARD-PREMIUM-PLUS")
+    body = reply(OWN, itinerary("XX1", labelled))
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.UNKNOWN
+    assert seat(body, Cabin.PREMIUM).status is CheckStatus.UNKNOWN
+
+
+def test_a_brand_not_heading_its_column_learns_nothing_from_it():
+    # A cheaper cabin can be on one leg of a business column, so this must not read as business.
+    connection = fare(["NEWPARTNER", "CD1"], 8, dominant="CD1")
+    body = reply(OWN, itinerary("XX1", connection, legs=2))
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.UNKNOWN
+
+
+def test_a_brand_learned_elsewhere_applies_on_a_lesser_leg():
+    # AFST really appeared like this: economy in Main, and on a leg of a KLM business column.
+    connection = fare(["NEWPARTNER", "CD1"], 8, dominant="CD1")
+    body = reply(
+        OWN,
+        itinerary("XX2", fare("NEWPARTNER", 2)),
+        itinerary("XX1", connection, legs=2),
+    )
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.NOT_OFFERED
+
+
+def test_partner_flight_can_use_a_label_alone():
+    labelled = fare("NEWPARTNER", 99, label="NEWPARTNER:AWARD-PREMIUM-PLUS")
+    assert seat(reply(itinerary("XX1", labelled)), Cabin.PREMIUM).status is CheckStatus.AVAILABLE
+
+
+def test_unknown_fare_does_not_hide_readable_seats_on_the_same_flight():
+    body = reply(OWN, itinerary("XX1", fare("CD1", 8, miles=90_000), fare("NEWPARTNER", 99)))
+    assert seat(body, Cabin.BUSINESS).miles == 90_000
+    assert seat(body, Cabin.ECONOMY).status is CheckStatus.UNKNOWN
 
 
 def test_unknown_fare_on_another_flight_changes_nothing():
-    body = ATL_CDG.replace('"FAFPE"', '"FNEWFARE"')
-    assert atl_cdg("DL90", Cabin.BUSINESS, body).miles == 499_900
-    assert atl_cdg("DL84", Cabin.BUSINESS, body).seats_exact == 1
+    body = reply(OWN, itinerary("XX2", fare("NEWPARTNER", 99)), itinerary("XX1", fare("CD1", 8)))
+    assert seat(body, Cabin.BUSINESS).status is CheckStatus.AVAILABLE
+    assert seat(body, Cabin.PREMIUM).status is CheckStatus.NOT_OFFERED
+
+
+def test_real_all_partner_response_uses_the_usual_columns():
+    decoded = json.loads(CDG_NBO)
+    learned = delta.learn_brands(decoded if isinstance(decoded, list) else [decoded])
+    assert learned["AFST"] is Cabin.ECONOMY and learned["KLBU"] is Cabin.BUSINESS
+
+
+def test_real_partner_flight_with_only_economy_is_clear_in_every_cabin():
+    w = Watch(
+        id=1,
+        flight=Flight.parse("AF828"),
+        origin="CDG",
+        destination="NBO",
+        dates=(DAY,),
+        cabin=Cabin.ECONOMY,
+        program="delta",
+    )
+    answer = SearchAnswer(AnswerKind.ANSWER, parsed=delta.parse(CDG_NBO))
+    assert evaluate(w, DAY, answer).status is CheckStatus.AVAILABLE
+    business = Watch(**{**w.__dict__, "cabin": Cabin.BUSINESS})
+    assert evaluate(business, DAY, answer).status is CheckStatus.NOT_OFFERED
+
+
+# ---- partner fares: American and United read the seat, whatever the product is called -----
+def _aa_answer(product="BUSINESS", cabin_type="BUSINESS", extra=None):
+    item = cx_slice()
+    item["pricingDetail"].append(
+        {
+            "productType": product,
+            "productAvailable": True,
+            "perPassengerAwardPoints": 88_000,
+            "perPassengerTaxesAndFees": {"amount": 5.6, "currency": "USD"},
+        }
+    )
+    item["segments"][0]["legs"][0]["productDetails"].append(
+        {"productType": product, "cabinType": cabin_type}
+    )
+    return SearchAnswer(AnswerKind.ANSWER, parsed=american.parse(to_html(response(item))))
+
+
+def _aa_watch(cabin):
+    return Watch(
+        id=1,
+        flight=Flight.parse("CX805"),
+        origin="JFK",
+        destination="HKG",
+        dates=(DAY,),
+        cabin=cabin,
+        program="american",
+    )
+
+
+def test_american_new_product_name_is_read_from_the_seat():
+    result = evaluate(_aa_watch(Cabin.FIRST), DAY, _aa_answer("NEW_PRODUCT", "FIRST"))
+    assert result.status is CheckStatus.AVAILABLE and result.miles == 88_000
+
+
+def test_american_business_product_flown_in_first_counts_as_first():
+    answer = _aa_answer("PARTNER_BUSINESS", "FIRST")
+    assert evaluate(_aa_watch(Cabin.FIRST), DAY, answer).status is CheckStatus.AVAILABLE
+
+
+def test_american_unknown_seat_does_not_hide_readable_seats_or_claim_none():
+    answer = _aa_answer("NEW_PRODUCT", "SUITE")
+    assert evaluate(_aa_watch(Cabin.BUSINESS), DAY, answer).status is CheckStatus.AVAILABLE
+    first = evaluate(_aa_watch(Cabin.FIRST), DAY, answer)
+    assert first.status is CheckStatus.UNKNOWN and "SUITE" in first.detail
+
+
+def test_united_unknown_seat_does_not_hide_readable_seats_or_claim_none():
+    def product(kind, cabin, code, miles):
+        return {
+            "productType": kind,
+            "cabinType": cabin,
+            "bookingCode": code,
+            "prices": [
+                {"currency": "MILES", "amount": miles},
+                {"pricingType": "Tax", "amount": 5.6, "currency": "USD"},
+            ],
+        }
+
+    flight = {
+        "marketingCarrier": "UA",
+        "flightNumber": "1",
+        "origin": "ORD",
+        "destination": "LAX",
+        "departDateTime": "2027-05-28 08:00",
+        "destinationDateTime": "2027-05-28 10:00",
+        "bookingClassAvailability": "JN3",
+        "products": [product("A", "Business", "JN", 50_000), product("B", "Suite", "Z", 90_000)],
+    }
+    parsed = united.parse(_stream(flight))
+    business = check(parsed, watch("UA1", "ORD", "LAX", Cabin.BUSINESS, "united"))
+    assert (business.status, business.miles) == (CheckStatus.AVAILABLE, 50_000)
+    first = check(parsed, watch("UA1", "ORD", "LAX", Cabin.FIRST, "united"))
+    assert first.status is CheckStatus.UNKNOWN and "Suite" in first.detail
 
 
 async def test_format_warning_email_names_the_unknown_fare(store, clock):

@@ -5,6 +5,9 @@ Recon (2026-10-31):
   ``authorization: GUEST`` returns award offers, called from inside a warmed delta.com page.
 * Results come in pages. Each offer set is one itinerary, and its offers are the brand columns,
   with ``availableSeatCnt`` (capped at 9) and the actual per-leg brand in ``brandByFlightLegs``.
+* Partner fares have their own brand ids (AFPE, KLBU, WSEC...), and new ones can appear at any
+  time, but Delta places every fare in one of its own cabin columns. ``learn_brands`` works out
+  each unfamiliar brand's cabin from that, using only the response itself.
 * Delta says "RetailOfferError ... Unable to retrieve Flight offers" when a market has no offers,
   which is a genuine empty answer. Any other error isn't.
 * Timestamps are airport-local with no offset, and are kept that way, because the watched date
@@ -16,6 +19,7 @@ Recon (2026-10-31):
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from datetime import datetime
@@ -24,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from jetbridge.acquire.pagefetch import Gate, page_fetch
-from jetbridge.acquire.types import RawResponse, SchemaDrift
+from jetbridge.acquire.types import RawResponse, SchemaDrift, UnknownFare
 from jetbridge.models import (
     Cabin,
     Leg,
@@ -48,13 +52,13 @@ _SEAT_CAP = 9
 _NO_OFFERS = "Unable to retrieve Flight offers"
 _RESULTS_QUERY = Path(__file__).parent / "gql" / "delta_results.graphql"
 
-# Brand ids can be prefixed B or C by fare type.
+# Delta's own brands, plus partner brands confirmed by hand. Other partners are learned from each
+# response. Brand ids can be prefixed B or C by fare type.
 _BRAND_CABIN = {
     "MAIN": Cabin.ECONOMY,  # Main and Basic
     "DCP": Cabin.ECONOMY,  # Comfort: economy cabin with extra legroom
     "DPPS": Cabin.PREMIUM,  # Premium Select
     "DPS": Cabin.PREMIUM,
-    "AFPE": Cabin.PREMIUM,  # Air France: labelled AWARD-PREMIUM-PLUS, in the Premium column
     "PE": Cabin.PREMIUM,
     "D1": Cabin.BUSINESS,  # Delta One
     "FIRST": Cabin.FIRST,  # domestic First
@@ -64,20 +68,119 @@ _BRAND_CABIN = {
 }
 
 
-class UnknownBrand(ValueError):
-    """A fare type we can't place in a cabin. Only that fare is affected, not the itinerary."""
+# What Delta's columns and award labels have meant in every response seen so far (2026-10-31 and
+# 2026-11-01). Only used when a response doesn't show it, because it's all partner flights.
+_USUAL_COLUMNS = {
+    1: Cabin.ECONOMY,
+    2: Cabin.ECONOMY,
+    4: Cabin.ECONOMY,
+    5: Cabin.PREMIUM,
+    8: Cabin.BUSINESS,
+}
+_USUAL_LABELS = {
+    "AWARD-BASIC": Cabin.ECONOMY,
+    "AWARD-COMFORT-PLUS-INT": Cabin.ECONOMY,
+    "AWARD-PREMIUM-PLUS": Cabin.PREMIUM,
+    "AWARD-BUSINESS-FIRST": Cabin.BUSINESS,
+}
+_FARE_LABEL = re.compile(r"([A-Z0-9]+):(AWARD[A-Z-]*)")
 
-    def __init__(self, brand: str):
-        super().__init__(f"unknown Delta brand id {brand!r}")
-        self.brand = brand
 
-
-def brand_cabin(brand: str) -> Cabin:
+def _known_cabin(brand: str) -> Cabin | None:
     upper = brand.upper()
     for candidate in (upper, upper[1:]):
         if candidate in _BRAND_CABIN:
             return _BRAND_CABIN[candidate]
-    raise UnknownBrand(brand)
+    return None
+
+
+def brand_cabin(brand: str, learned: dict[str, Cabin] | None = None) -> Cabin:
+    cabin = _known_cabin(brand) or (learned or {}).get(brand)
+    if cabin is None:
+        raise UnknownFare(brand)
+    return cabin
+
+
+def _fares_of(offer: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        fare
+        for item in offer.get("offerItems") or []
+        for retail in item.get("retailItems") or []
+        for fare in (retail.get("retailItemMetaData") or {}).get("fareInformation") or []
+    ]
+
+
+def _labels_of(fare: dict[str, Any]) -> dict[str, str]:
+    """The award label Delta puts in a fare's solution id, by brand: AFPE -> AWARD-PREMIUM-PLUS."""
+    return dict(_FARE_LABEL.findall(str(fare.get("solutionId") or "")))
+
+
+def _label_for(brand: str, labels: dict[str, str]) -> str | None:
+    return labels.get(brand) or labels.get(brand[1:])
+
+
+def learn_brands(pages: list[dict[str, Any]]) -> dict[str, Cabin]:
+    """Work out unfamiliar brands' cabins from how this response treats Delta's own brands.
+
+    A column's main fare is named by ``dominantSegmentBrandId``. If that column only ever holds one
+    cabin of Delta's own, an unfamiliar brand heading it is in that cabin. Other fares in a column
+    say nothing, because a connection can put a cheaper cabin on one leg of a business column. The
+    award label is a second opinion. Evidence in the response beats what's usually true, which only
+    fills in for responses that are all partner flights. If the evidence disagrees, or there's none,
+    the brand stays unknown: a wrong cabin would send a false alert.
+    """
+    offers = [
+        offer
+        for page in pages
+        for offer_set in ((page.get("data") or {}).get("gqlSearchOffers") or {}).get(
+            "gqlOffersSets"
+        )
+        or []
+        for offer in offer_set.get("offers") or []
+    ]
+
+    column_cabins: dict[Any, set[Cabin]] = {}
+    label_cabins: dict[str, set[Cabin]] = {}
+    for offer in offers:
+        properties = offer.get("additionalOfferProperties") or {}
+        cabin = _known_cabin(str(properties.get("dominantSegmentBrandId") or ""))
+        if cabin is not None:
+            column_cabins.setdefault(properties.get("offerPriorityNum"), set()).add(cabin)
+        for fare in _fares_of(offer):
+            labels = _labels_of(fare)
+            for leg in fare.get("brandByFlightLegs") or []:
+                brand = leg.get("brandId") or ""
+                known, label = _known_cabin(brand), _label_for(brand, labels)
+                if known is not None and label is not None:
+                    label_cabins.setdefault(label, set()).add(known)
+
+    evidence: dict[str, set[Cabin | None]] = {}
+    for offer in offers:
+        properties = offer.get("additionalOfferProperties") or {}
+        brand = properties.get("dominantSegmentBrandId")
+        if not brand or _known_cabin(brand) is not None:
+            continue
+        opinions: set[Cabin] = set()
+        priority = properties.get("offerPriorityNum")
+        column = column_cabins.get(priority)
+        if column is None and priority in _USUAL_COLUMNS:
+            column = {_USUAL_COLUMNS[priority]}
+        if column is not None and len(column) == 1:
+            opinions |= column
+        for fare in _fares_of(offer):
+            label = _label_for(brand, _labels_of(fare))
+            cabins = label_cabins.get(label or "")
+            if cabins is None and label in _USUAL_LABELS:
+                cabins = {_USUAL_LABELS[label]}
+            if cabins is not None and len(cabins) == 1:
+                opinions |= cabins
+        evidence.setdefault(brand, set()).update(opinions if len(opinions) <= 1 else {None})
+
+    learned: dict[str, Cabin] = {}
+    for brand, opinions in evidence.items():
+        if len(opinions) == 1 and None not in opinions:
+            learned[brand] = next(iter(opinions))  # type: ignore[assignment]
+    return learned
 
 
 def search_url(q: Query) -> str:
@@ -195,6 +298,7 @@ def parse(body: str) -> ParsedResponse:
 
     out = ParsedResponse()
     expected = 1
+    learned = learn_brands(pages)
     for data in pages:
         if _is_no_offers(data):
             continue
@@ -210,7 +314,7 @@ def parse(body: str) -> ParsedResponse:
         expected = max(expected, _page_count(json.dumps(data)))
         for offer_set in result.get("gqlOffersSets") or []:
             try:
-                out.slices.append(_parse_set(offer_set))
+                out.slices.append(_parse_set(offer_set, learned))
             except (KeyError, TypeError, ValueError, AttributeError) as exc:
                 out.unreadable.append(UnreadableSlice(_flight_hints(offer_set), repr(exc)))
     if len(pages) < expected:
@@ -229,7 +333,7 @@ def _legs_of(offer_set: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, 
     ]
 
 
-def _parse_set(offer_set: dict[str, Any]) -> ParsedSlice:
+def _parse_set(offer_set: dict[str, Any], learned: dict[str, Cabin]) -> ParsedSlice:
     pairs = _legs_of(offer_set)
     if not pairs:
         raise ValueError("itinerary has no legs")
@@ -240,17 +344,14 @@ def _parse_set(offer_set: dict[str, Any]) -> ParsedSlice:
         properties = offer.get("additionalOfferProperties") or {}
         if offer.get("soldOut") or properties.get("soldOut"):
             continue
-        for item in offer.get("offerItems") or []:
-            for retail in item.get("retailItems") or []:
-                metadata = retail.get("retailItemMetaData") or {}
-                for fare in metadata.get("fareInformation") or []:
-                    try:
-                        parsed = _parse_fare(fare, len(legs))
-                    except UnknownBrand as exc:
-                        unknown.append(exc.brand)
-                        continue
-                    if parsed is not None:
-                        offers.append(parsed)
+        for fare in _fares_of(offer):
+            try:
+                parsed = _parse_fare(fare, len(legs), learned)
+            except UnknownFare as exc:
+                unknown.append(exc.fare)
+                continue
+            if parsed is not None:
+                offers.append(parsed)
     return ParsedSlice(legs=legs, offers=tuple(offers), unknown_fares=tuple(unknown))
 
 
@@ -269,7 +370,9 @@ def _parse_leg(segment: dict[str, Any], leg: dict[str, Any]) -> Leg:
     )
 
 
-def _parse_fare(fare: dict[str, Any], leg_count: int) -> ProductOffer | None:
+def _parse_fare(
+    fare: dict[str, Any], leg_count: int, learned: dict[str, Cabin]
+) -> ProductOffer | None:
     prices = fare.get("farePrice") or []
     if not prices:
         return None
@@ -285,7 +388,7 @@ def _parse_fare(fare: dict[str, Any], leg_count: int) -> ProductOffer | None:
         raise ValueError(f"{len(brands)} brands for {leg_count} legs")
     if not all(brand.get("brandId") for brand in brands):
         return None  # this column isn't offered on every leg
-    cabins = tuple(brand_cabin(brand["brandId"]) for brand in brands)
+    cabins = tuple(brand_cabin(brand["brandId"], learned) for brand in brands)
 
     count = fare.get("availableSeatCnt")
     exact, at_least = 0, 0

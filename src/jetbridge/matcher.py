@@ -73,6 +73,14 @@ def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
         and all(cabin is watch.cabin for cabin in offer.leg_cabins)
     ]
     if not qualifying:
+        # An unrecognized fare could be in this cabin, so "no seats" can't be claimed.
+        unknown = sorted({fare for s in matches for fare in s.unknown_fares})
+        if unknown:
+            return CheckResult(
+                CheckStatus.UNKNOWN,
+                detail=f"unrecognized fare type: {', '.join(unknown)}",
+                suspect_parser=True,
+            )
         return CheckResult(CheckStatus.NOT_OFFERED, detail=f"no {watch.cabin.value} seats")
 
     best = min(qualifying, key=lambda o: o.miles)

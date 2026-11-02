@@ -8,7 +8,16 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from conftest import DAY, add_cx, answer_from, block_page, cx_slice, make_runner, response
+from conftest import (
+    DAY,
+    add_cx,
+    answer_from,
+    block_page,
+    cx_slice,
+    make_runner,
+    response,
+    to_html,
+)
 
 from jetbridge.acquire import american, delta, united
 from jetbridge.acquire.detect import classify
@@ -198,6 +207,74 @@ def test_delta_unknown_brand_is_unknown_not_no_seats():
     text = text.replace('"CD1"', '"NEWBRAND"')
     result = dl(body=text)
     assert result.status is CheckStatus.UNKNOWN and result.suspect_parser
+
+
+# A real ATL-CDG response from 2026-11-01, trimmed to three flights. It first exposed AFPE.
+ATL_CDG = (FIXTURES / "delta" / "atl_cdg_award_20270521.json").read_text(encoding="utf-8")
+
+
+def atl_cdg(code, cabin, body=ATL_CDG):
+    w = Watch(
+        id=1,
+        flight=Flight.parse(code),
+        origin="ATL",
+        destination="CDG",
+        dates=(DAY,),
+        cabin=cabin,
+        program="delta",
+    )
+    return evaluate(w, DAY, SearchAnswer(AnswerKind.ANSWER, parsed=delta.parse(body)))
+
+
+def test_air_france_premium_fare_is_read_as_premium():
+    result = atl_cdg("AF33", Cabin.PREMIUM)
+    assert (result.status, result.miles, result.seats_exact) == (
+        CheckStatus.AVAILABLE,
+        411_700,
+        7,
+    )
+
+
+def test_air_france_premium_fare_is_never_business():
+    assert atl_cdg("AF33", Cabin.BUSINESS).status is CheckStatus.NOT_OFFERED
+
+
+def test_recorded_atl_cdg_response_reads_completely():
+    parsed = delta.parse(ATL_CDG)
+    assert not parsed.unreadable and not any(s.unknown_fares for s in parsed.slices)
+
+
+def test_unknown_fare_does_not_hide_readable_seats_on_the_same_flight():
+    body = ATL_CDG.replace('"CDPS"', '"CNEWFARE"')
+    assert atl_cdg("DL90", Cabin.BUSINESS, body).miles == 499_900
+    assert atl_cdg("DL90", Cabin.ECONOMY, body).status is CheckStatus.AVAILABLE
+
+
+def test_unknown_fare_makes_no_seats_unknown_and_names_the_fare():
+    body = ATL_CDG.replace('"CDPS"', '"CNEWFARE"')
+    result = atl_cdg("DL90", Cabin.PREMIUM, body)
+    assert result.status is CheckStatus.UNKNOWN and result.suspect_parser
+    assert "CNEWFARE" in result.detail
+
+
+def test_unknown_fare_on_another_flight_changes_nothing():
+    body = ATL_CDG.replace('"FAFPE"', '"FNEWFARE"')
+    assert atl_cdg("DL90", Cabin.BUSINESS, body).miles == 499_900
+    assert atl_cdg("DL84", Cabin.BUSINESS, body).seats_exact == 1
+
+
+async def test_format_warning_email_names_the_unknown_fare(store, clock):
+    add_cx(store, clock, program="delta")
+    slices = cx_slice()
+    parsed = american.parse(to_html(response(slices)))
+    item = parsed.slices[0]
+    parsed.slices[0] = type(item)(legs=item.legs, offers=(), unknown_fares=("CNEWFARE",))
+    answer = SearchAnswer(AnswerKind.ANSWER, parsed=parsed)
+    runner, _, sender, _ = make_runner(store, clock, [answer, answer])
+    await runner.tick()
+    clock.now += 86400 / 3
+    await runner.tick()
+    assert "delta.com" in sender.subjects[0] and "CNEWFARE" in sender.sent[0][1]
 
 
 def test_delta_says_no_offers_is_a_genuine_empty():

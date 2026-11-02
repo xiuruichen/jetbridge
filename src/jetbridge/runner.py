@@ -209,12 +209,14 @@ class Runner:
     # ---- health ---------------------------------------------------------------------
     def _note_parser_health(self, query: Query, watches: list[Watch], answer: SearchAnswer) -> None:
         site = query.program
-        if any(evaluate(w, query.date, answer).suspect_parser for w in watches):
+        results = [evaluate(w, query.date, answer) for w in watches]
+        suspect = next((r for r in results if r.suspect_parser), None)
+        if suspect is not None:
             count = int(self.store.get(f"drift_count:{site}", "0") or 0) + 1
             self.store.set(f"drift_count:{site}", str(count))
             if not self.store.get(f"drift_since:{site}"):
                 self.store.set(f"drift_since:{site}", str(self.clock()))
-            self.store.set(f"drift_detail:{site}", answer.detail or "unreadable result")
+            self.store.set(f"drift_detail:{site}", suspect.detail or "unreadable result")
         elif answer.kind is AnswerKind.ANSWER:
             self.store.delete(f"drift_count:{site}")
             self.store.delete(f"drift_since:{site}")

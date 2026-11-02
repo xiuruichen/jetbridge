@@ -54,6 +54,7 @@ _BRAND_CABIN = {
     "DCP": Cabin.ECONOMY,  # Comfort: economy cabin with extra legroom
     "DPPS": Cabin.PREMIUM,  # Premium Select
     "DPS": Cabin.PREMIUM,
+    "AFPE": Cabin.PREMIUM,  # Air France: labelled AWARD-PREMIUM-PLUS, in the Premium column
     "PE": Cabin.PREMIUM,
     "D1": Cabin.BUSINESS,  # Delta One
     "FIRST": Cabin.FIRST,  # domestic First
@@ -63,13 +64,20 @@ _BRAND_CABIN = {
 }
 
 
+class UnknownBrand(ValueError):
+    """A fare type we can't place in a cabin. Only that fare is affected, not the itinerary."""
+
+    def __init__(self, brand: str):
+        super().__init__(f"unknown Delta brand id {brand!r}")
+        self.brand = brand
+
+
 def brand_cabin(brand: str) -> Cabin:
     upper = brand.upper()
     for candidate in (upper, upper[1:]):
         if candidate in _BRAND_CABIN:
             return _BRAND_CABIN[candidate]
-    # Raising marks the itinerary unreadable, so an unknown brand can't read as "no seats".
-    raise ValueError(f"unknown Delta brand id {brand!r}")
+    raise UnknownBrand(brand)
 
 
 def search_url(q: Query) -> str:
@@ -227,6 +235,7 @@ def _parse_set(offer_set: dict[str, Any]) -> ParsedSlice:
         raise ValueError("itinerary has no legs")
     legs = tuple(_parse_leg(segment, leg) for segment, leg in pairs)
     offers: list[ProductOffer] = []
+    unknown: list[str] = []
     for offer in offer_set.get("offers") or []:
         properties = offer.get("additionalOfferProperties") or {}
         if offer.get("soldOut") or properties.get("soldOut"):
@@ -235,10 +244,14 @@ def _parse_set(offer_set: dict[str, Any]) -> ParsedSlice:
             for retail in item.get("retailItems") or []:
                 metadata = retail.get("retailItemMetaData") or {}
                 for fare in metadata.get("fareInformation") or []:
-                    parsed = _parse_fare(fare, len(legs))
+                    try:
+                        parsed = _parse_fare(fare, len(legs))
+                    except UnknownBrand as exc:
+                        unknown.append(exc.brand)
+                        continue
                     if parsed is not None:
                         offers.append(parsed)
-    return ParsedSlice(legs=legs, offers=tuple(offers))
+    return ParsedSlice(legs=legs, offers=tuple(offers), unknown_fares=tuple(unknown))
 
 
 def _parse_leg(segment: dict[str, Any], leg: dict[str, Any]) -> Leg:

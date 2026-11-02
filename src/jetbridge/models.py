@@ -118,6 +118,7 @@ class ProductOffer:
 class ParsedSlice:
     legs: tuple[Leg, ...]
     offers: tuple[ProductOffer, ...]
+    unknown_fares: tuple[str, ...] = ()  # fares we couldn't place in a cabin
 
 
 @dataclass(frozen=True)

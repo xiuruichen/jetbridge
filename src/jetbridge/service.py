@@ -102,8 +102,20 @@ def parse_recipients(text: str | None) -> tuple[str, ...]:
     return tuple(found)
 
 
-def create_watch(
-    store: Store,
+@dataclass(frozen=True)
+class ValidWatch:
+    """The fields of a watch that passed validation, in the form the store takes."""
+
+    flight: Flight
+    origin: str
+    destination: str
+    days: tuple[date, ...]
+    cabin: Cabin
+    recipients: tuple[str, ...]
+    now: float
+
+
+def validate_watch(
     *,
     flight: str,
     origin: str,
@@ -116,8 +128,8 @@ def create_watch(
     max_miles: int | None = None,
     recipients: str | None = None,
     now: float | None = None,
-) -> Watch:
-    """Validate and create a watch. The one entry point for the CLI and MCP server."""
+) -> ValidWatch:
+    """Raise ``ValueError`` unless these fields make a watch. Saves nothing."""
     parsed = Flight.parse(flight)
     origin, destination = origin.strip().upper(), destination.strip().upper()
     for airport in (origin, destination):
@@ -139,18 +151,52 @@ def create_watch(
     today = datetime.fromtimestamp(current).date()
     if all(d < today for d in days):
         raise ValueError("all of those dates have passed")
-    return store.add_watch(
-        parsed,
-        origin,
-        destination,
-        days,
-        Cabin(cabin.strip().lower()),
-        now=current,
+    return ValidWatch(
+        parsed, origin, destination, days, Cabin(cabin.strip().lower()), addresses, current
+    )
+
+
+def create_watch(
+    store: Store,
+    *,
+    flight: str,
+    origin: str,
+    destination: str,
+    dates: str,
+    cabin: str,
+    program: str = "american",
+    pax: int = 1,
+    checks_per_day: int = 6,
+    max_miles: int | None = None,
+    recipients: str | None = None,
+    now: float | None = None,
+) -> Watch:
+    """Validate and create a watch. The one way a watch gets saved."""
+    valid = validate_watch(
+        flight=flight,
+        origin=origin,
+        destination=destination,
+        dates=dates,
+        cabin=cabin,
         program=program,
         pax=pax,
         checks_per_day=checks_per_day,
         max_miles=max_miles,
-        recipients=addresses,
+        recipients=recipients,
+        now=now,
+    )
+    return store.add_watch(
+        valid.flight,
+        valid.origin,
+        valid.destination,
+        valid.days,
+        valid.cabin,
+        now=valid.now,
+        program=program,
+        pax=pax,
+        checks_per_day=checks_per_day,
+        max_miles=max_miles,
+        recipients=valid.recipients,
     )
 
 

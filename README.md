@@ -402,11 +402,13 @@ happening, lower `--checks-per-day`.
 Open [Claude Code](https://claude.com/claude-code) in this folder and approve the `jetbridge` MCP
 server when asked. Then you can ask things like:
 
-- "Watch AA100 from New York to London in business on June 14-16."
+- "Watch AA100 from JFK to LHR in business on June 14-16 2027 using American miles."
 - "What's happened with my watches this week?"
 - "Is the watcher healthy?"
 
-It uses the same engine as the commands above, so results and alerts are the same. Claude is
+To add a watch, Claude asks for anything missing and shows you the same review `jetbridge start`
+does. It's saved only after you say yes. It uses the same engine as the commands above, so results
+and alerts are the same. Claude is
 optional: checks and emails never depend on it. It needs `uv` on your PATH.
 
 ## Command reference

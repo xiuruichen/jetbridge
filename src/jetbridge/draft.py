@@ -11,6 +11,7 @@ import calendar
 import re
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 from jetbridge import service
 from jetbridge.acquire.sites import get_site
@@ -318,24 +319,32 @@ def review_text(draft: WatchDraft, owner: str) -> str:
     return "\n".join(lines)
 
 
-def save(store: Store, draft: WatchDraft) -> Watch:
-    """Save a finished draft through the one validated way of creating a watch."""
+def _fields(draft: WatchDraft) -> dict[str, Any]:
     missing = draft.missing()
     if missing:
         raise ValueError(f"still needed: {', '.join(missing)}")
-    return service.create_watch(
-        store,
-        flight=draft.flight or "",
-        origin=draft.origin or "",
-        destination=draft.destination or "",
-        dates=draft.dates or "",
-        cabin=draft.cabin.value,
-        program=draft.program,
-        pax=draft.pax,
-        checks_per_day=draft.checks_per_day,
-        max_miles=draft.max_miles,
-        recipients=draft.recipients,
-    )
+    return {
+        "flight": draft.flight or "",
+        "origin": draft.origin or "",
+        "destination": draft.destination or "",
+        "dates": draft.dates or "",
+        "cabin": draft.cabin.value,
+        "program": draft.program,
+        "pax": draft.pax,
+        "checks_per_day": draft.checks_per_day,
+        "max_miles": draft.max_miles,
+        "recipients": draft.recipients,
+    }
+
+
+def validate(draft: WatchDraft) -> None:
+    """Raise ``ValueError`` if saving this draft would be refused, so a review can't mislead."""
+    service.validate_watch(**_fields(draft))
+
+
+def save(store: Store, draft: WatchDraft) -> Watch:
+    """Save a finished draft through the one validated way of creating a watch."""
+    return service.create_watch(store, **_fields(draft))
 
 
 def first_upcoming_day(dates: str, today: date) -> date:

@@ -5,24 +5,31 @@ Checks and alerts never depend on this. All results come from the deterministic 
 
 from __future__ import annotations
 
+import secrets
 import time
+from datetime import date
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
+from jetbridge import draft as drafts
 from jetbridge import service
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import format_when
-from jetbridge.models import Watch
+from jetbridge.models import Flight, Watch
+from jetbridge.notify.email import load_config
 
 server = MCPServer(
     "jetbridge",
     instructions=(
         "Watches award availability for one specific flight. To add a watch you need the "
-        "flight number, its departure and arrival airports, dates, cabin, party size and who "
-        "should get the alerts; ask if any are missing and never guess a route or an address. "
-        "Quote only numbers returned by these "
+        "flight number, its departure and arrival airports, dates, cabin, miles program, party "
+        "size and who should get the alerts; ask if any are missing and never guess a flight, a "
+        "route or an address. Adding a watch takes two steps: call review_watch, show the person "
+        "the review word for word, and call confirm_watch only after they say yes to it. If they "
+        "want a change, call review_watch again. Quote only numbers returned by these "
         "tools. 'unknown' means the check couldn't tell, so never describe it as no seats."
     ),
 )
@@ -59,35 +66,67 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
     }
 
 
+# Reviews waiting for a yes. Kept in memory, so one can't outlast this Claude session.
+_reviews: dict[str, drafts.WatchDraft] = {}
+
+
 @server.tool()
-def add_watch(
+def review_watch(
     flight: str,
     origin: str,
     destination: str,
     dates: str,
-    cabin: str = "business",
-    program: str = "american",
-    pax: int = 1,
-    checks_per_day: int = 6,
+    cabin: str,
+    program: str,
+    pax: int,
+    checks_per_day: int = drafts.DEFAULT_CHECKS_PER_DAY,
     max_miles: int | None = None,
     notify: str | None = None,
 ) -> dict[str, Any]:
-    """Start watching a flight. dates is like 2027-06-14..2027-06-16 or a comma-separated list.
-    notify is who gets seat alerts, comma-separated; leave it out to alert only the owner."""
-    watch = service.create_watch(
-        service.open_store(),
-        flight=flight,
-        origin=origin,
-        destination=destination,
-        dates=dates,
-        cabin=cabin,
-        program=program,
-        pax=pax,
-        checks_per_day=checks_per_day,
-        max_miles=max_miles,
-        recipients=notify,
-    )
-    return _watch_view(watch)
+    """Check the details of a new watch and return a review. This saves nothing.
+
+    Show the person the review word for word and ask them to confirm it. origin and destination
+    are airport codes. program is american, delta or united. dates is like May 21-23 2027 or
+    2027-06-14..2027-06-16. notify is who gets seat alerts, comma-separated; leave it out to
+    alert only the owner."""
+    try:
+        draft = drafts.WatchDraft(
+            origin=origin.strip().upper(),
+            destination=destination.strip().upper(),
+            dates=drafts.parse_dates(dates, date.today()),
+            flight=Flight.parse(flight).code,
+            cabin=drafts.parse_cabin(cabin),
+            program=program.strip().lower(),
+            pax=pax,
+            checks_per_day=checks_per_day,
+            max_miles=max_miles,
+            recipients=notify,
+        )
+        drafts.validate(draft)
+    except ValueError as exc:
+        # A plain exception reaches the client as a bare "Error executing tool".
+        raise ToolError(str(exc)) from exc
+    config = load_config()
+    review_id = secrets.token_hex(8)
+    _reviews[review_id] = draft
+    return {
+        "saved": False,
+        "review_id": review_id,
+        "review": drafts.review_text(draft, config.to_address if config else "you"),
+    }
+
+
+@server.tool()
+def confirm_watch(review_id: str) -> dict[str, Any]:
+    """Save a reviewed watch. Call this only after the person has seen the review from
+    review_watch and said yes to it. Each review can be saved once."""
+    draft = _reviews.pop(review_id, None)
+    if draft is None:
+        raise ToolError("no review with that id, so nothing was saved. Call review_watch first")
+    try:
+        return _watch_view(drafts.save(service.open_store(), draft))
+    except ValueError as exc:
+        raise ToolError(f"{exc}. Nothing was saved. Call review_watch again") from exc
 
 
 @server.tool()

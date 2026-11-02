@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="690" viewBox="0 0 860 690" role="img" aria-labelledby="title desc">
+  <title id="title">An example conversation with jetbridge in Claude Desktop</title>
+  <desc id="desc">Someone asks Claude to watch a flight. Claude asks which New York airport, shows what it will watch, and saves it after a yes.</desc>
+  <style>
+    .sans { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 15px; fill: #ece9e2; }
+    .small { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 12.5px; fill: #9a968c; }
+    .title { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 13px; fill: #b9b5ab; }
+    .mono { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 14px; fill: #ece9e2; }
+    .label { fill: #a8a49a; }
+  </style>
+  <rect width="860" height="690" rx="14" fill="#1b1b1a"/>
+  <path d="M14 0H846A14 14 0 0 1 860 14V44H0V14A14 14 0 0 1 14 0Z" fill="#262624"/>
+  <circle cx="24" cy="22" r="5.5" fill="#d97757"/>
+  <text x="40" y="27" class="title">Claude Desktop, with jetbridge connected</text>
+
+  <rect x="238" y="66" width="596" height="58" rx="12" fill="#30302e"/>
+  <text x="258" y="90" class="sans">Watch CX845 from New York to Hong Kong on May 21 2027,</text>
+  <text x="258" y="111" class="sans">business, with American miles. It's just me flying.</text>
+
+  <text x="28" y="156" class="sans">New York has three airports. Which one does this flight use: JFK, EWR or LGA?</text>
+
+  <rect x="690" y="176" width="144" height="42" rx="12" fill="#30302e"/>
+  <text x="710" y="202" class="sans">JFK, alert me</text>
+
+  <text x="28" y="250" class="sans">Here's what I'll watch. Nothing is saved yet:</text>
+
+  <rect x="28" y="266" width="620" height="204" rx="10" fill="#141413" stroke="#3a3a37"/>
+  <text x="48" y="294" class="mono" xml:space="preserve"><tspan class="label">Flight:      </tspan>CX845 from JFK to HKG</text>
+  <text x="48" y="317" class="mono" xml:space="preserve"><tspan class="label">Cabin:       </tspan>business</text>
+  <text x="48" y="340" class="mono" xml:space="preserve"><tspan class="label">Miles:       </tspan>American AAdvantage</text>
+  <text x="48" y="363" class="mono" xml:space="preserve"><tspan class="label">Passengers:  </tspan>1</text>
+  <text x="48" y="386" class="mono" xml:space="preserve"><tspan class="label">Dates:       </tspan>Fri, May 21, 2027</text>
+  <text x="48" y="409" class="mono" xml:space="preserve"><tspan class="label">Price limit: </tspan>no limit</text>
+  <text x="48" y="432" class="mono" xml:space="preserve"><tspan class="label">Alerts go to:</tspan> you@example.com</text>
+  <text x="48" y="455" class="mono" xml:space="preserve"><tspan class="label">Searching:   </tspan>about 6 aa.com searches a day</text>
+
+  <text x="28" y="500" class="sans">Shall I save it?</text>
+
+  <rect x="772" y="516" width="62" height="42" rx="12" fill="#30302e"/>
+  <text x="791" y="542" class="sans">Yes</text>
+
+  <text x="28" y="592" class="sans">Saved, and automatic checks are on. The first check runs within about 15 minutes,</text>
+  <text x="28" y="614" class="sans">and I'll email you as soon as seats open.</text>
+
+  <line x1="28" y1="642" x2="832" y2="642" stroke="#30302e"/>
+  <text x="28" y="668" class="small">An illustration of a typical conversation. Claude's wording varies.</text>
+</svg>

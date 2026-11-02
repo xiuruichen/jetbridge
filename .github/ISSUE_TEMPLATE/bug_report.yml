@@ -1,0 +1,47 @@
+name: Something isn't working
+description: Report a problem with jetbridge
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove email addresses and anything else personal before posting. Never post your Gmail app password.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you see it?
+      options:
+        - Chatting in Claude Desktop
+        - Claude Code
+        - Commands in PowerShell
+        - The installer
+        - An alert email
+    validations:
+      required: true
+  - type: dropdown
+    id: program
+    attributes:
+      label: Which miles program, if it's about a search?
+      options:
+        - Not about a search
+        - American AAdvantage
+        - Delta SkyMiles
+        - United MileagePlus
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `jetbridge doctor`
+      description: Remove anything personal first. In chat, you can ask Claude "What's wrong with jetbridge?" and paste its answer.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From `jetbridge --version`.

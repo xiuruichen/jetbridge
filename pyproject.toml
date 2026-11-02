@@ -1,7 +1,7 @@
 [project]
 name = "jetbridge"
 version = "0.3.0"
-description = "Watches award availability for a specific flight and emails you when seats open"
+description = "Get an email when award seats open on the exact flight you want. Works with Claude Desktop."
 readme = "README.md"
 authors = [{ name = "xiuruichen" }]
 license = "MIT"
@@ -24,6 +24,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/xiuruichen/jetbridge"
 Issues = "https://github.com/xiuruichen/jetbridge/issues"
+Changelog = "https://github.com/xiuruichen/jetbridge/blob/main/CHANGELOG.md"
 
 [project.scripts]
 jetbridge = "jetbridge.cli:app"

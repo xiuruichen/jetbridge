@@ -1,31 +1,41 @@
 # jetbridge
 
-jetbridge watches award seats on one specific flight and emails you when they open up.
+[![CI](https://github.com/xiuruichen/jetbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/xiuruichen/jetbridge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
+![Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
+![Works with Claude Desktop](https://img.shields.io/badge/works%20with-Claude%20Desktop-d97757.svg)
 
-You tell it the flight, cabin, dates and miles, for example *AA100 in business on June 14-16, 2027,
-bookable with American miles*. It searches the airline's website several times a day on your own
-PC, and emails you the price and a booking link as soon as seats appear.
+**Get an email when award seats open on the exact flight you want.**
 
-It can search with **American AAdvantage** (aa.com), **Delta SkyMiles** (delta.com) and **United
-MileagePlus** (united.com) miles.
+Tell jetbridge the flight, cabin, dates and miles, for example *AA100 in business on June 14-16,
+2027, bookable with American miles*. It searches the airline's website several times a day on your
+own PC, and emails you the price and a booking link as soon as seats appear.
 
-It searches as a guest with no login, and it doesn't book anything or move your miles.
+![An example conversation: someone asks Claude to watch a flight, Claude asks which New York airport, shows what it will watch, and saves it after a yes.](docs/chat-demo.svg)
 
-One computer does the searching, and each watch can alert different people, so you can run it
-for friends or family without them installing anything.
+- **Three miles programs:** American AAdvantage, Delta SkyMiles and United MileagePlus, including
+  partner flights they sell.
+- **Chat or commands:** run it all by [chatting in Claude Desktop](#using-it-through-claude), or with
+  [simple commands](#command-reference). Claude is optional.
+- **Runs on your PC:** there's no account or subscription, and your details stay on your computer.
+- **Alerts for anyone:** each watch can alert different people, so friends and family don't need to
+  install anything.
+- **Careful by design:** it searches as a guest at low volume, and backs off if a site pushes back. It
+  never logs in, books anything or moves your miles.
 
-Set it up with one line in PowerShell. Then, if you use the Claude Desktop app, you can run it all
-[by chatting with Claude](#using-it-through-claude):
+> [!IMPORTANT]
+> Automated searching likely goes against the airlines' terms of use, so [read how jetbridge handles
+> that](#blocks-and-the-airlines-terms) first. Checks only run while your PC is on, so seats that
+> open and close between checks can be missed. Don't rely on it as your only way of finding seats.
 
-> **You:** Watch CX845 from New York to Hong Kong on May 21-23 2027, business, with American miles.
->
-> **Claude:** New York has three airports. Which does this flight use: JFK, EWR or LGA?
->
-> **You:** JFK, and just alert me.
->
-> **Claude:** *(shows exactly what it will watch)* Shall I save it?
+## Get started
 
-You can also do everything with [simple commands](#command-reference).
+Open PowerShell on Windows and paste this line. [Quick start](#quick-start) explains what it does.
+
+```powershell
+irm https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.ps1 | iex
+```
 
 ## Contents
 
@@ -47,6 +57,7 @@ You can also do everything with [simple commands](#command-reference).
 - [Where your data lives](#where-your-data-lives)
 - [Uninstalling](#uninstalling)
 - [Development](#development)
+- [Changelog](CHANGELOG.md)
 - [License](#license)
 
 ## Requirements
@@ -628,6 +639,9 @@ uv run ruff format .
 | `src/jetbridge/winsched.py` | The Windows scheduled task |
 | `src/jetbridge/cli.py`, `mcp_server.py`, `service.py` | Commands, Claude tools and shared wiring |
 | `src/jetbridge/claude_desktop.py`, `doctor.py`, `uninstall.py` | Connecting Claude, health checks, removal |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to get involved, and [SECURITY.md](SECURITY.md) for how
+your details are handled and how to report a problem.
 
 Set `JETBRIDGE_KEEP_RAW=1` to save successful responses too, which is useful for recording test
 fixtures. Rules that must not be broken, such as "only a recognized answer can mean no seats", are

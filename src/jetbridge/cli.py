@@ -44,8 +44,32 @@ def _describe(watch: Watch) -> str:
     limit = f", max {watch.max_miles:,} miles" if watch.max_miles else ""
     return (
         f"[{watch.id}] {watch.label} via {watch.program}, {watch.pax} pax, "
-        f"{watch.checks_per_day}/day{limit} ({watch.status})\n    Dates: {days}"
+        f"{watch.checks_per_day}/day{limit} ({watch.status})\n    Dates: {days}\n"
+        f"    Seat alerts to: {_recipients_text(watch)}"
     )
+
+
+def _recipients_text(watch: Watch) -> str:
+    if watch.recipients:
+        return ", ".join(watch.recipients)
+    owner = mail.load_config()
+    return f"you ({owner.to_address})" if owner else "you (email isn't set up yet)"
+
+
+def _ask_recipients() -> str:
+    """Ask who gets this watch's alerts. With no one to answer, stop rather than guess."""
+    owner = mail.load_config()
+    who = owner.to_address if owner else "you"
+    try:
+        return typer.prompt(
+            f"Send seat alerts to (comma-separated; Enter for {who})",
+            default="",
+            show_default=False,
+        )
+    except typer.Abort as exc:
+        raise _fail(
+            "no recipient given, so no watch was added. Use --notify a@x.com or me"
+        ) from exc
 
 
 # ---- watch ----------------------------------------------------------------------------
@@ -60,10 +84,16 @@ def watch_add(
     pax: int = typer.Option(1, help="Party size; searched at this real size"),
     checks_per_day: int = typer.Option(6, help="Checks per day, per date"),
     max_miles: int | None = typer.Option(None, help="Only alert at or below this price"),
+    notify: str | None = typer.Option(
+        None, help="Who gets seat alerts: a@x.com,b@y.com or 'me'. Prompts if left out"
+    ),
 ) -> None:
     """Start watching a flight. The first check runs on the next tick."""
     store = service.open_store()
     try:
+        service.parse_dates(dates)  # catch a bad date before asking anything else
+        if notify is None:
+            notify = _ask_recipients()
         watch = service.create_watch(
             store,
             flight=flight,
@@ -75,11 +105,31 @@ def watch_add(
             pax=pax,
             checks_per_day=checks_per_day,
             max_miles=max_miles,
+            recipients=notify,
         )
     except ValueError as exc:
         raise _fail(str(exc)) from exc
     typer.echo(_describe(watch))
     typer.echo(f"Run 'jetbridge check {watch.id}' to check it now.")
+
+
+@watch_app.command("recipients")
+def watch_recipients(
+    watch_id: int,
+    addresses: str | None = typer.Argument(
+        None, help="a@x.com,b@y.com replaces the list; 'me' means only you; omit to show it"
+    ),
+) -> None:
+    """Show or replace who gets a watch's seat alerts."""
+    store = service.open_store()
+    watch = _require(store, watch_id)
+    if addresses is not None:
+        try:
+            store.set_recipients(watch_id, service.parse_recipients(addresses))
+        except ValueError as exc:
+            raise _fail(str(exc)) from exc
+        watch = _require(store, watch_id)
+    typer.echo(f"Seat alerts for watch {watch_id} go to: {_recipients_text(watch)}")
 
 
 @watch_app.command("list")
@@ -270,19 +320,26 @@ def notify_setup() -> None:
     password = typer.prompt("Gmail app password (hidden)", hide_input=True).strip()
     mail.save_config(mail.EmailConfig(sender, to), password)
     typer.echo("Saved. Sending a test email...")
-    notify_test()
+    notify_test(to=None)
 
 
 @notify_app.command("test")
-def notify_test() -> None:
-    """Send a test email now."""
+def notify_test(
+    to: str | None = typer.Option(None, help="Send to this address instead of your own"),
+) -> None:
+    """Send a test email now, to you or to someone you're adding."""
     try:
+        address = service.parse_recipients(to)
+        if len(address) > 1:
+            raise ValueError("test one address at a time")
         mail.GmailSender().send(
-            "jetbridge test email", "If you can read this, jetbridge alerts will reach you."
+            "jetbridge test email",
+            "If you can read this, jetbridge alerts will reach you.",
+            address[0] if address else None,
         )
     except Exception as exc:
         raise _fail(f"couldn't send: {exc}") from exc
-    typer.echo("Sent. Check your inbox, and your spam folder if it isn't there.")
+    typer.echo("Sent. Check the inbox, and the spam folder if it isn't there.")
 
 
 @notify_app.command("digest")

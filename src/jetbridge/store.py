@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS watches (
   origin TEXT NOT NULL, destination TEXT NOT NULL,
   dates TEXT NOT NULL, cabin TEXT NOT NULL, program TEXT NOT NULL,
   pax INTEGER NOT NULL, checks_per_day INTEGER NOT NULL, max_miles INTEGER,
-  status TEXT NOT NULL, created_at REAL NOT NULL, next_check_at REAL NOT NULL
+  status TEXT NOT NULL, created_at REAL NOT NULL, next_check_at REAL NOT NULL,
+  recipients TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS date_state (
   watch_id INTEGER NOT NULL, day TEXT NOT NULL,
@@ -44,7 +45,8 @@ CREATE TABLE IF NOT EXISTS outbox (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT NOT NULL, dedupe_key TEXT UNIQUE,
   subject TEXT NOT NULL, body TEXT NOT NULL,
-  created_at REAL NOT NULL, sent_at REAL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT
+  created_at REAL NOT NULL, sent_at REAL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+  recipient TEXT
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS site_starts (site TEXT NOT NULL, started_at REAL NOT NULL);
@@ -60,6 +62,7 @@ class OutboxItem:
     body: str
     created_at: float
     attempts: int
+    recipient: str | None = None  # None means the owner's address
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,7 @@ class NewAlert:
     subject: str
     body: str
     dedupe_key: str | None = None
+    recipient: str | None = None  # None means the owner's address
 
 
 def _watch(row: sqlite3.Row) -> Watch:
@@ -82,6 +86,7 @@ def _watch(row: sqlite3.Row) -> Watch:
         pax=row["pax"],
         checks_per_day=row["checks_per_day"],
         max_miles=row["max_miles"],
+        recipients=tuple(json.loads(row["recipients"])),
         status=row["status"],
         created_at=row["created_at"],
         next_check_at=row["next_check_at"],
@@ -94,6 +99,17 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns that databases created by earlier versions don't have yet."""
+        for table, column, definition in (
+            ("watches", "recipients", "TEXT NOT NULL DEFAULT '[]'"),
+            ("outbox", "recipient", "TEXT"),
+        ):
+            existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def close(self) -> None:
         self.conn.close()
@@ -122,11 +138,12 @@ class Store:
         pax: int = 1,
         checks_per_day: int = 6,
         max_miles: int | None = None,
+        recipients: tuple[str, ...] = (),
     ) -> Watch:
         cur = self.conn.execute(
             "INSERT INTO watches (carrier, number, origin, destination, dates, cabin, program,"
-            " pax, checks_per_day, max_miles, status, created_at, next_check_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " pax, checks_per_day, max_miles, status, created_at, next_check_at, recipients)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 flight.carrier,
                 flight.number,
@@ -141,6 +158,7 @@ class Store:
                 "active",
                 now,
                 now,
+                json.dumps(list(recipients)),
             ),
         )
         return self.get_watch(int(cur.lastrowid))  # type: ignore[arg-type,return-value]
@@ -158,6 +176,11 @@ class Store:
 
     def set_watch_status(self, watch_id: int, status: str) -> None:
         self.conn.execute("UPDATE watches SET status=? WHERE id=?", (status, watch_id))
+
+    def set_recipients(self, watch_id: int, recipients: tuple[str, ...]) -> None:
+        self.conn.execute(
+            "UPDATE watches SET recipients=? WHERE id=?", (json.dumps(list(recipients)), watch_id)
+        )
 
     def set_next_check(self, watch_id: int, at: float) -> None:
         self.conn.execute("UPDATE watches SET next_check_at=? WHERE id=?", (at, watch_id))
@@ -252,9 +275,9 @@ class Store:
     @staticmethod
     def _enqueue(c: sqlite3.Connection, alert: NewAlert, now: float) -> None:
         c.execute(
-            "INSERT INTO outbox (kind, dedupe_key, subject, body, created_at)"
-            " VALUES (?,?,?,?,?) ON CONFLICT (dedupe_key) DO NOTHING",
-            (alert.kind, alert.dedupe_key, alert.subject, alert.body, now),
+            "INSERT INTO outbox (kind, dedupe_key, subject, body, created_at, recipient)"
+            " VALUES (?,?,?,?,?,?) ON CONFLICT (dedupe_key) DO NOTHING",
+            (alert.kind, alert.dedupe_key, alert.subject, alert.body, now, alert.recipient),
         )
 
     def enqueue(self, alert: NewAlert, now: float) -> None:
@@ -263,7 +286,7 @@ class Store:
 
     def pending_alerts(self) -> list[OutboxItem]:
         rows = self.conn.execute(
-            "SELECT id, kind, subject, body, created_at, attempts FROM outbox"
+            "SELECT id, kind, subject, body, created_at, attempts, recipient FROM outbox"
             " WHERE sent_at IS NULL ORDER BY id"
         )
         return [OutboxItem(**dict(r)) for r in rows]

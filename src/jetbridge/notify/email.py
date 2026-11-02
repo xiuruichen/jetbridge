@@ -15,12 +15,18 @@ from typing import Protocol
 import keyring
 
 from jetbridge.paths import config_path
-from jetbridge.store import Store
+from jetbridge.store import NewAlert, Store
 
 KEYRING_SERVICE = "jetbridge-gmail"
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
 SMTP_TIMEOUT_S = 30
+OTHER_PERSON_FOOTER = """
+
+--
+You're getting this because someone added your address to a jetbridge flight watch.
+To stop these emails, reply and ask them to remove you.
+"""
 DIGEST_MAX_AGE_S = 86400
 
 
@@ -28,8 +34,12 @@ class NotConfigured(Exception):
     pass
 
 
+class BadRecipient(Exception):
+    """The mail server refused this one address. Other emails can still go out."""
+
+
 class Sender(Protocol):
-    def send(self, subject: str, body: str) -> None: ...
+    def send(self, subject: str, body: str, to: str | None = None) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -56,22 +66,32 @@ def save_config(config: EmailConfig, app_password: str) -> None:
     )
 
 
+def build_message(config: EmailConfig, subject: str, body: str, to: str | None) -> EmailMessage:
+    """``to`` of None means the owner's address. Each email has exactly one recipient."""
+    address = to or config.to_address
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = config.from_address
+    message["To"] = address
+    message.set_content(body if address == config.to_address else body + OTHER_PERSON_FOOTER)
+    return message
+
+
 class GmailSender:
-    def send(self, subject: str, body: str) -> None:
+    def send(self, subject: str, body: str, to: str | None = None) -> None:
         config = load_config()
         if config is None:
             raise NotConfigured("email isn't set up. Run: jetbridge notify setup")
         password = keyring.get_password(KEYRING_SERVICE, config.from_address)
         if not password:
             raise NotConfigured("no saved app password. Run: jetbridge notify setup")
-        message = EmailMessage()
-        message["Subject"] = subject
-        message["From"] = config.from_address
-        message["To"] = config.to_address
-        message.set_content(body)
+        message = build_message(config, subject, body, to)
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_S) as smtp:
             smtp.login(config.from_address, password)
-            smtp.send_message(message)
+            try:
+                smtp.send_message(message)
+            except smtplib.SMTPRecipientsRefused as exc:
+                raise BadRecipient(str(exc)) from exc
 
 
 def flush_outbox(store: Store, sender: Sender, now: float) -> int:
@@ -83,7 +103,23 @@ def flush_outbox(store: Store, sender: Sender, now: float) -> int:
             store.drop_alert(item.id)  # a stale summary is noise; real alerts are always kept
             continue
         try:
-            sender.send(item.subject, item.body)
+            sender.send(item.subject, item.body, item.recipient)
+        except BadRecipient as exc:
+            if item.recipient is None:  # the owner's own address: keep it, doctor reports it
+                store.mark_failed(item.id, f"BadRecipient: {exc}"[:300])
+                break
+            # One bad address must not hold up everyone else, so tell the owner instead.
+            store.drop_alert(item.id)
+            store.enqueue(
+                NewAlert(
+                    "undeliverable",
+                    f"jetbridge couldn't email {item.recipient}: {item.subject}",
+                    f"The mail server refused {item.recipient}. Fix the address with "
+                    f"'jetbridge watch recipients'. This is the alert they missed:\n\n{item.body}",
+                ),
+                now,
+            )
+            continue
         except Exception as exc:
             store.mark_failed(item.id, f"{type(exc).__name__}: {exc}"[:300])
             break

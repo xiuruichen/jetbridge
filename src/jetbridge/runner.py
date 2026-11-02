@@ -194,7 +194,9 @@ class Runner:
         alerts = []
         for kind in decision.alerts:
             subject, body = render_availability(kind, watch, day, shown or result, prev, now, url)
-            alerts.append(NewAlert(kind.value, subject, body))
+            # One email per person, so recipients never see each other's addresses.
+            for recipient in watch.recipients or (None,):
+                alerts.append(NewAlert(kind.value, subject, body, recipient=recipient))
         self.store.commit_check(watch.id, day, result, decision.state, alerts, now)
 
     # ---- health ---------------------------------------------------------------------
@@ -293,6 +295,7 @@ class Runner:
             )
             unknown = self.store.count_recent(watch.id, CheckStatus.UNKNOWN, day_ago)
             lines.append(f"{watch.label} (watch {watch.id})")
+            lines.append(f"  Seat alerts go to: {', '.join(watch.recipients) or 'you'}")
             lines.append(f"  Last 24 hours: {good} clear answers, {unknown} inconclusive")
             all_never_seen = True
             for day in upcoming_dates(watch, today):

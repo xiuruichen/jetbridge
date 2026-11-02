@@ -31,4 +31,6 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 - Alerts come from recorded state changes. `Store.commit_check` writes the observation, state
   and alerts in one transaction, and email goes only through the outbox.
 - An opening is re-checked live before its alert goes out.
+- Seat alerts go only to the watch's recipients (the owner if none), one email per person so
+  addresses are never shared. Health warnings and digests go only to the owner.
 - The Gmail app password stays in Windows Credential Manager, never in files or logs.

@@ -15,7 +15,9 @@ from jetbridge.paths import db_path, lock_path
 from jetbridge.store import Store
 
 _AIRPORT = re.compile(r"^[A-Z]{3}$")
+_EMAIL = re.compile(r"[^@ ,;]+@[^@ ,;.]+(\.[^@ ,;.]+)+")
 MAX_DATES = 14
+MAX_RECIPIENTS = 10
 PROGRAMS = ("american",)
 
 
@@ -70,6 +72,23 @@ def parse_dates(text: str) -> tuple[date, ...]:
     return tuple(sorted(days))
 
 
+def parse_recipients(text: str | None) -> tuple[str, ...]:
+    """Comma, semicolon or space separated addresses. Empty or 'me' means the owner."""
+    parts = (text or "").replace(";", " ").replace(",", " ").split()
+    if [p.lower() for p in parts] == ["me"]:
+        return ()
+    found: list[str] = []
+    for part in parts:
+        address = part.lower()
+        if not _EMAIL.fullmatch(address):
+            raise ValueError(f"not an email address: {part!r}")
+        if address not in found:
+            found.append(address)
+    if len(found) > MAX_RECIPIENTS:
+        raise ValueError(f"at most {MAX_RECIPIENTS} recipients per watch")
+    return tuple(found)
+
+
 def create_watch(
     store: Store,
     *,
@@ -82,6 +101,7 @@ def create_watch(
     pax: int = 1,
     checks_per_day: int = 6,
     max_miles: int | None = None,
+    recipients: str | None = None,
     now: float | None = None,
 ) -> Watch:
     """Validate and create a watch. The one entry point for the CLI and MCP server."""
@@ -101,6 +121,7 @@ def create_watch(
     if max_miles is not None and max_miles <= 0:
         raise ValueError("max miles must be positive")
     days = parse_dates(dates)
+    addresses = parse_recipients(recipients)
     current = now if now is not None else time.time()
     today = datetime.fromtimestamp(current).date()
     if all(d < today for d in days):
@@ -116,6 +137,7 @@ def create_watch(
         pax=pax,
         checks_per_day=checks_per_day,
         max_miles=max_miles,
+        recipients=addresses,
     )
 
 

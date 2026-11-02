@@ -63,6 +63,7 @@ class Watch:
     pax: int = 1
     checks_per_day: int = 6
     max_miles: int | None = None
+    recipients: tuple[str, ...] = ()  # seat alerts go here; empty means the owner's address
     status: str = "active"  # active | paused | finished
     created_at: float = 0.0
     next_check_at: float = 0.0

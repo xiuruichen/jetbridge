@@ -8,11 +8,15 @@ emails you the price and a booking link as soon as seats appear.
 
 It searches as a guest with no login, and it doesn't book anything or move your miles.
 
+One computer does the searching, and each watch can alert different people, so you can run it
+for friends or family without them installing anything.
+
 ## Contents
 
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Adding a watch](#adding-a-watch)
+- [Sending alerts to other people](#sending-alerts-to-other-people)
 - [Checking on your watches](#checking-on-your-watches)
 - [The emails you'll get](#the-emails-youll-get)
 - [When you get a SEATS OPEN email](#when-you-get-a-seats-open-email)
@@ -63,8 +67,8 @@ Create an app password at <https://myaccount.google.com/apppasswords>, then run:
 uv run jetbridge notify setup
 ```
 
-It asks for the Gmail address to send from, the address to send alerts to, and the app password.
-Then it sends a test email. If nothing arrives, check your spam folder.
+It asks for the Gmail address to send from, your own address for alerts and health warnings, and
+the app password. Then it sends a test email. If nothing arrives, check your spam folder.
 
 ### 3. Add a flight
 
@@ -72,7 +76,9 @@ Then it sends a test email. If nothing arrives, check your spam folder.
 uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21..2027-05-23 --cabin business
 ```
 
-This prints a watch ID, such as `[1]`, which the other commands use.
+It asks who should get the seat alerts. Type one or more addresses separated by commas, or press
+Enter to send them to yourself. It then prints a watch ID, such as `[1]`, which the other commands
+use.
 
 ### 4. Try one check
 
@@ -122,6 +128,7 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 | `--pax` | `1` | Number of passengers to search for |
 | `--checks-per-day` | `6` | How often to check, from 1 to 24 |
 | `--max-miles` | none | Treat seats above this per-person price as not available |
+| `--notify` | asks you | Who gets seat alerts: `a@x.com,b@y.com`, or `me` for only you |
 | `--program` | `american` | Only American is supported today |
 
 ### Getting these right
@@ -160,6 +167,50 @@ uv run jetbridge watch rm 1        # delete the watch and its history
 
 To change a watch's dates or settings, remove it and add it again. Watches finish on their own
 once all their dates have passed.
+
+## Sending alerts to other people
+
+Each watch has its own list of up to 10 people. They don't need to install anything, and they don't
+need a Gmail address.
+
+```powershell
+# Asks who to alert
+uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21 --cabin business
+
+# Or say it up front
+uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21 --notify "ann@example.com,bo@example.org"
+
+# Make sure an address works before relying on it
+uv run jetbridge notify test --to ann@example.com
+
+# See or replace who a watch alerts ("me" means only you)
+uv run jetbridge watch recipients 1
+uv run jetbridge watch recipients 1 ann@example.com,carol@example.com
+uv run jetbridge watch recipients 1 me
+```
+
+Replacing the list takes effect from the next alert. To include yourself alongside other people, add
+your own address to the list.
+
+| Email | Who gets it |
+|---|---|
+| Seat alerts: open, unconfirmed, price drop, more seats, still open, gone | That watch's list, or you if the list is empty |
+| Daily summary and warnings about the watcher | Only you |
+
+A few things to know:
+
+- **Privacy:** each person gets a separate email and can't see who else is on the list. Your Gmail
+  address is the sender, and replies come to you.
+- **Footer:** emails to other people say that someone added them to a flight watch, and to reply if
+  they'd like to be removed. Only add people who want these, and remove anyone who asks.
+- **Different people, different flights:** add a watch per person or group. Watches on the same
+  route, date and party size share one search, so this doesn't add searches.
+- **Party size:** each watch's `--pax` should match that traveler's group.
+- **Bad addresses:** if Gmail refuses an address outright, everyone else still gets their alert and
+  you're emailed what that person missed. If an address bounces later, the bounce notice comes to your
+  Gmail instead, so test new addresses with `notify test --to`.
+- **Spam filters:** ask each person to mark the first email as "not spam". A missed alert is the
+  main risk, because other people don't get the daily summary and won't notice if it stops.
 
 ## Checking on your watches
 
@@ -285,6 +336,7 @@ Run these as `uv run jetbridge ...` from the project folder. Add `--help` to any
 |---|---|
 | `watch add FLIGHT ...` | Start watching a flight |
 | `watch list` | List every watch |
+| `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |
 | `watch pause ID` / `watch resume ID` | Stop or restart checking |
 | `watch rm ID` | Delete a watch and its history |
 | `status` | Current state of every active watch |
@@ -293,7 +345,7 @@ Run these as `uv run jetbridge ...` from the project folder. Add `--help` to any
 | `tick` | Run whatever is due (the scheduled task calls this) |
 | `doctor` | Find out what's wrong |
 | `notify setup` | Save Gmail details and send a test email |
-| `notify test` | Send a test email |
+| `notify test [--to ADDRESS]` | Send a test email to you or someone else |
 | `notify digest on` / `off` | Turn the daily summary on or off |
 | `schedule install` / `remove` | Add or remove the scheduled task |
 
@@ -307,6 +359,9 @@ its folder is on your PATH.
 **The test email fails with a login error.** Use an app password, not your normal Gmail password,
 and make sure 2-Step Verification is on. Google Workspace accounts, including school ones, may have
 app passwords turned off, so try a personal Gmail. Run `notify setup` again to replace the details.
+
+**`watch add` says no recipient was given.** It couldn't ask you, for example because it was run
+from a script. Add `--notify me` or `--notify a@x.com`.
 
 **The test email never arrives.** Check spam, then mark it as "not spam" so alerts land in your inbox.
 

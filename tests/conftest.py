@@ -10,6 +10,7 @@ import pytest
 
 from jetbridge.acquire.governor import Governor
 from jetbridge.models import AnswerKind, Cabin, Flight, Query, SearchAnswer
+from jetbridge.notify.email import BadRecipient
 from jetbridge.runner import Runner
 from jetbridge.store import Store
 
@@ -126,11 +127,16 @@ class FakeSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
         self.failing = False
+        self.refused: set[str] = set()
+        self.to: list[str | None] = []
 
-    def send(self, subject: str, body: str) -> None:
+    def send(self, subject: str, body: str, to: str | None = None) -> None:
         if self.failing:
             raise OSError("smtp down")
+        if to in self.refused:
+            raise BadRecipient("refused")
         self.sent.append((subject, body))
+        self.to.append(to)
 
     @property
     def subjects(self) -> list[str]:

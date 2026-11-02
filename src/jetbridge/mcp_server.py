@@ -20,8 +20,9 @@ server = MCPServer(
     "jetbridge",
     instructions=(
         "Watches award availability for one specific flight. To add a watch you need the "
-        "flight number, its departure and arrival airports, dates, cabin and party size; ask "
-        "if any are missing and never guess a route. Quote only numbers returned by these "
+        "flight number, its departure and arrival airports, dates, cabin, party size and who "
+        "should get the alerts; ask if any are missing and never guess a route or an address. "
+        "Quote only numbers returned by these "
         "tools. 'unknown' means the check couldn't tell, so never describe it as no seats."
     ),
 )
@@ -51,6 +52,7 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "pax": watch.pax,
         "checks_per_day": watch.checks_per_day,
         "max_miles": watch.max_miles,
+        "seat_alerts_to": list(watch.recipients) or ["the owner"],
         "status": watch.status,
         "next_check": format_when(watch.next_check_at),
         "dates": days,
@@ -67,8 +69,10 @@ def add_watch(
     pax: int = 1,
     checks_per_day: int = 6,
     max_miles: int | None = None,
+    notify: str | None = None,
 ) -> dict[str, Any]:
-    """Start watching a flight. dates is like 2027-05-21..2027-05-23 or a comma-separated list."""
+    """Start watching a flight. dates is like 2027-05-21..2027-05-23 or a comma-separated list.
+    notify is who gets seat alerts, comma-separated; leave it out to alert only the owner."""
     watch = service.create_watch(
         service.open_store(),
         flight=flight,
@@ -79,8 +83,19 @@ def add_watch(
         pax=pax,
         checks_per_day=checks_per_day,
         max_miles=max_miles,
+        recipients=notify,
     )
     return _watch_view(watch)
+
+
+@server.tool()
+def set_recipients(watch_id: int, notify: str) -> dict[str, Any]:
+    """Replace who gets a watch's seat alerts. Comma-separated addresses, or 'me' for the owner."""
+    store = service.open_store()
+    if store.get_watch(watch_id) is None:
+        raise ValueError(f"no watch with id {watch_id}")
+    store.set_recipients(watch_id, service.parse_recipients(notify))
+    return _watch_view(store.get_watch(watch_id))
 
 
 @server.tool()

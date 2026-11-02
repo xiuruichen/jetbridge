@@ -319,6 +319,19 @@ class Store:
     def delete(self, key: str) -> None:
         self.conn.execute("DELETE FROM kv WHERE key=?", (key,))
 
+    def take(self, key: str) -> str | None:
+        """Read and delete in one step, so two callers can't both use the same value."""
+        with self._tx() as c:
+            row = c.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()
+            c.execute("DELETE FROM kv WHERE key=?", (key,))
+        return row["value"] if row else None
+
+    def keys_with_prefix(self, prefix: str) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT key FROM kv WHERE substr(key, 1, ?)=?", (len(prefix), prefix)
+        )
+        return [row["key"] for row in rows]
+
     # ---- request log for the governor -----------------------------------------------
     def record_start(self, site: str, at: float) -> None:
         with self._tx() as c:

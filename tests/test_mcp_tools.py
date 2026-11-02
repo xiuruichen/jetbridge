@@ -38,8 +38,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_server.winsched, "is_installed", lambda: tasks.on)
     monkeypatch.setattr(mcp_server.winsched, "install", lambda: setattr(tasks, "on", True))
     monkeypatch.setattr(mcp_server.winsched, "remove", lambda: setattr(tasks, "on", False))
-    for pending in (mcp_server._reviews, mcp_server._removals, mcp_server._checks):
-        pending.clear()
+    mcp_server._checks.clear()
     open_store().set(service.RISK_ACCEPTED, "1")
     return tasks
 
@@ -130,7 +129,7 @@ async def test_a_city_with_one_airport_just_works():
 async def test_a_city_with_several_airports_gets_a_question_not_a_guess():
     message = await refused("review_watch", **{**DETAILS, "destination": "Seoul"})
     assert "ICN, GMP" in message
-    assert mcp_server._reviews == {}
+    assert open_store().keys_with_prefix("chat_review:") == []
 
 
 async def test_an_unknown_place_says_so():
@@ -435,3 +434,189 @@ async def test_diagnose_lists_what_is_wrong(monkeypatch):
     assert rows["Email set up"]["fix"]
     assert rows["Scheduled task installed"]["ok"] is True
     assert rows["Scheduled task installed"]["fix"] is None
+
+
+# ---- rough patches --------------------------------------------------------------------
+async def test_a_review_survives_a_restart_or_a_second_copy_of_the_server():
+    review = await call("review_watch", **DETAILS)
+    # Nothing is held in this process: a fresh store sees it, as another copy would.
+    assert open_store().get(f"chat_review:{review['review_id']}")
+    saved = await call("confirm_watch", review_id=review["review_id"])
+    assert saved["flight"] == "DL197"
+    assert open_store().keys_with_prefix("chat_review:") == []
+
+
+async def test_an_old_review_cannot_be_saved(monkeypatch):
+    review = await call("review_watch", **DETAILS)
+    later = mcp_server.time.time() + mcp_server._REVIEW_LIFETIME_S + 1
+    monkeypatch.setattr(mcp_server.time, "time", lambda: later)
+    assert "nothing was saved" in await refused("confirm_watch", review_id=review["review_id"])
+    assert open_store().list_watches() == []
+
+
+async def test_old_reviews_are_cleared_away(monkeypatch):
+    await call("review_watch", **DETAILS)
+    later = mcp_server.time.time() + mcp_server._REVIEW_LIFETIME_S + 1
+    monkeypatch.setattr(mcp_server.time, "time", lambda: later)
+    await call("review_watch", **DETAILS)
+    assert len(open_store().keys_with_prefix("chat_review:")) == 1
+
+
+async def test_also_alerting_someone_keeps_the_owner(watch):
+    answer = await call("set_recipients", watch_id=watch, notify="ann@x.com", action="add")
+    assert answer["seat_alerts_to"] == ["owner@x.com", "ann@x.com"]
+
+
+async def test_adding_keeps_everyone_already_there(watch):
+    await call("set_recipients", watch_id=watch, notify="ann@x.com,bo@x.com")
+    answer = await call("set_recipients", watch_id=watch, notify="cy@x.com", action="add")
+    assert answer["seat_alerts_to"] == ["ann@x.com", "bo@x.com", "cy@x.com"]
+
+
+async def test_removing_someone_keeps_the_rest(watch):
+    await call("set_recipients", watch_id=watch, notify="ann@x.com,bo@x.com")
+    answer = await call("set_recipients", watch_id=watch, notify="ann@x.com", action="remove")
+    assert answer["seat_alerts_to"] == ["bo@x.com"]
+
+
+async def test_removing_the_last_person_falls_back_to_the_owner(watch):
+    await call("set_recipients", watch_id=watch, notify="ann@x.com")
+    answer = await call("set_recipients", watch_id=watch, notify="ann@x.com", action="remove")
+    assert answer["seat_alerts_to"] == ["owner@x.com"]
+    assert open_store().get_watch(watch).recipients == ()
+
+
+async def test_me_works_when_adding_and_removing(watch):
+    await call("set_recipients", watch_id=watch, notify="ann@x.com")
+    answer = await call("set_recipients", watch_id=watch, notify="me", action="add")
+    assert answer["seat_alerts_to"] == ["ann@x.com", "owner@x.com"]
+    answer = await call("set_recipients", watch_id=watch, notify="ME", action="remove")
+    assert answer["seat_alerts_to"] == ["ann@x.com"]
+
+
+async def test_a_bad_recipient_action_changes_nothing(watch):
+    assert "add, remove or replace" in await refused(
+        "set_recipients", watch_id=watch, notify="a@x.com", action="swap"
+    )
+    assert open_store().get_watch(watch).recipients == ()
+
+
+def available_line(day):
+    result = service.CheckResult(CheckStatus.AVAILABLE, miles=90_000)
+    return SimpleNamespace(day=day, result=result)
+
+
+async def test_open_seats_come_with_a_booking_link(watch, monkeypatch):
+    report = SimpleNamespace(checks=[available_line(FUTURE)], alerts_sent=1, stopped_early=None)
+    monkeypatch.setattr(service, "live_tick", lambda *_, **__: report)
+    row = (await call("check_now", watch_id=watch))["results"][0]
+    assert "delta.com" in row["book_at"]
+    assert "press Continue" in row["booking_note"]
+
+
+async def test_a_lookup_links_only_flights_with_open_seats(monkeypatch):
+    closed = FlightOption(
+        "DL9",
+        datetime(2027, 5, 21, 1, 0),
+        datetime(2027, 5, 22, 5, 0),
+        0,
+        service.CheckResult(CheckStatus.NOT_OFFERED),
+    )
+    monkeypatch.setattr(service, "find_flights", lambda *_: FlightSearch((option("DL197"), closed)))
+    flights = (await call("find_flights", **ROUTE))["flights"]
+    assert "book_at" in flights[0]
+    assert "book_at" not in flights[1]
+
+
+async def test_a_watch_says_who_gets_alerts_by_address(watch):
+    [view] = await call_list("list_watches")
+    assert view["seat_alerts_to"] == ["owner@x.com"]
+    assert view["last_24_hours"] == {"clear_answers": 0, "inconclusive": 0}
+    assert view["dates"][0]["date_has_passed"] is False
+    assert view["dates"][0]["clear_answers_so_far"] == 0
+
+
+async def test_a_flight_never_seen_gets_explained(watch, monkeypatch):
+    real = open_store().date_state(watch, FUTURE)
+    never = mcp_server.drafts.service.open_store
+    state = SimpleNamespace(**{**real.__dict__, "conclusive_count": 6, "ever_listed": False})
+
+    class Store:
+        def __init__(self):
+            self.real = never()
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+        def date_state(self, *_):
+            return state
+
+    monkeypatch.setattr(service, "open_store", Store)
+    [view] = await call_list("list_watches")
+    assert "never appeared" in view["note"]
+
+
+async def call_list(tool, **arguments):
+    answer = await call(tool, **arguments)
+    return answer["result"] if isinstance(answer, dict) else answer
+
+
+async def test_health_gives_a_plain_verdict(watch):
+    open_store().set("last_tick_at", str(mcp_server.time.time()))
+    answer = await call("health")
+    assert answer["healthy"] is True
+    assert answer["problems"] == []
+
+
+async def test_health_notices_checks_have_stopped(watch):
+    open_store().set("last_tick_at", str(mcp_server.time.time() - 7200))
+    answer = await call("health")
+    assert answer["healthy"] is False
+    assert "awake" in answer["problems"][0]
+
+
+async def test_health_explains_a_missing_email_setup_in_chat_terms(monkeypatch):
+    monkeypatch.setattr(mail, "load_config", lambda: None)
+    answer = await call("health")
+    assert any("open_email_setup" in problem for problem in answer["problems"])
+    assert not any("jetbridge notify" in problem for problem in answer["problems"])
+
+
+async def test_a_new_empty_setup_is_not_called_unhealthy():
+    answer = await call("health")
+    assert answer["healthy"] is True
+
+
+async def test_diagnose_never_hands_over_a_command(monkeypatch, isolated):
+    monkeypatch.setattr(mail, "load_config", lambda: None)
+    isolated.on = False
+    answer = await call("diagnose")
+    for row in answer["checks"]:
+        assert "Run:" not in (row["fix"] or "")
+
+
+async def test_get_started_knows_today():
+    answer = await call("get_started")
+    assert str(date.today().year) in answer["today"]
+
+
+async def test_there_are_starting_points_to_pick_from():
+    async with Client(mcp_server.server) as client:
+        prompts = (await client.list_prompts()).prompts
+        assert {prompt.title for prompt in prompts} == {
+            "Get started with jetbridge",
+            "Watch a flight",
+            "How are my flights doing?",
+            "Something seems wrong",
+        }
+        for prompt in prompts:
+            result = await client.get_prompt(prompt.name)
+            assert result.messages[0].content.text
+
+
+async def test_the_window_failing_to_open_says_why(monkeypatch):
+    def fail(*_, **__):
+        raise OSError("not allowed")
+
+    monkeypatch.setattr(mcp_server.subprocess, "Popen", fail)
+    assert "not allowed" in await refused("open_email_setup")

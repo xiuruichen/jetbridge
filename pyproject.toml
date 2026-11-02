@@ -1,18 +1,29 @@
 [project]
 name = "jetbridge"
-version = "0.2.0"
+version = "0.3.0"
 description = "Watches award availability for a specific flight and emails you when seats open"
 readme = "README.md"
 authors = [{ name = "xiuruichen" }]
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+keywords = ["award travel", "award seats", "frequent flyer", "miles", "mcp", "claude"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
 dependencies = [
     "keyring>=25",
-    "mcp>=1.2",
+    "mcp>=2.3",
     "patchright>=1.50",
     "typer>=0.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/xiuruichen/jetbridge"
+Issues = "https://github.com/xiuruichen/jetbridge/issues"
 
 [project.scripts]
 jetbridge = "jetbridge.cli:app"
@@ -32,7 +43,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["live: hits aa.com (deselected by default)"]
+markers = ["live: hits the airline sites (deselected by default)"]
 addopts = "-m 'not live'"
 
 [tool.ruff]

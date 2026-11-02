@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import ctypes
+import importlib.metadata
+import re
 import time
 from datetime import date, datetime
 
 import typer
+import typer.core
 
 from jetbridge import claude_desktop, headlines, service, winsched, wizard
 from jetbridge import doctor as doctor_checks
+from jetbridge import draft as drafts
+from jetbridge import uninstall as removal
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
@@ -17,7 +23,26 @@ from jetbridge.notify import email as mail
 from jetbridge.paths import home, raw_dir
 from jetbridge.store import Store
 
-app = typer.Typer(no_args_is_help=True, add_completion=False, help="Watch award seats on a flight.")
+
+class _StartFirst(typer.core.TyperGroup):
+    """List commands in the order someone needs them, not the order they're written."""
+
+    ORDER = ("start", "status", "doctor", "watch", "check", "history", "notify", "claude")
+
+    def list_commands(self, ctx) -> list[str]:
+        names = super().list_commands(ctx)
+        return [
+            *[name for name in self.ORDER if name in names],
+            *[name for name in names if name not in self.ORDER],
+        ]
+
+
+app = typer.Typer(
+    cls=_StartFirst,
+    no_args_is_help=True,
+    add_completion=False,
+    help="Watch award seats on a flight, and get an email when they open.",
+)
 watch_app = typer.Typer(no_args_is_help=True, help="Add and manage watches.")
 notify_app = typer.Typer(no_args_is_help=True, help="Set up and test email alerts.")
 schedule_app = typer.Typer(no_args_is_help=True, help="Run checks automatically on this PC.")
@@ -26,6 +51,21 @@ app.add_typer(notify_app, name="notify")
 claude_app = typer.Typer(no_args_is_help=True, help="Use jetbridge from the Claude Desktop app.")
 app.add_typer(schedule_app, name="schedule")
 app.add_typer(claude_app, name="claude")
+
+
+def _show_version(value: bool) -> None:
+    if value:
+        typer.echo(f"jetbridge {importlib.metadata.version('jetbridge')}")
+        raise typer.Exit
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False, "--version", callback=_show_version, is_eager=True, help="Show the version and exit."
+    ),
+) -> None:
+    pass
 
 
 def _fail(message: str) -> typer.Exit:
@@ -88,13 +128,48 @@ def watch_add(
     notify: str | None = typer.Option(
         None, help="Who gets seat alerts: a@x.com,b@y.com or 'me'. Prompts if left out"
     ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Save without asking, for use in scripts"),
 ) -> None:
-    """Start watching a flight. The first check runs on the next tick."""
+    """Start watching a flight, after showing what will be saved."""
     store = service.open_store()
     try:
         service.parse_dates(dates)  # catch a bad date before asking anything else
         if notify is None:
             notify = _ask_recipients()
+        valid = service.validate_watch(
+            flight=flight,
+            origin=origin,
+            destination=destination,
+            dates=dates,
+            cabin=cabin,
+            program=program,
+            pax=pax,
+            checks_per_day=checks_per_day,
+            max_miles=max_miles,
+            recipients=notify,
+        )
+        draft = drafts.WatchDraft(
+            origin=valid.origin,
+            destination=valid.destination,
+            dates=dates,
+            flight=valid.flight.code,
+            cabin=valid.cabin,
+            program=program,
+            pax=pax,
+            checks_per_day=checks_per_day,
+            max_miles=max_miles,
+            recipients=notify,
+        )
+        if not yes:
+            owner = mail.load_config()
+            typer.echo("\nHere's what I'll watch:")
+            typer.echo(drafts.review_text(draft, owner.to_address if owner else "you"))
+            try:
+                if not typer.confirm("\nStart watching this flight?", default=False):
+                    typer.echo("OK, nothing was saved.")
+                    return
+            except typer.Abort as exc:
+                raise _fail("nothing was saved. Add --yes to save without asking") from exc
         watch = service.create_watch(
             store,
             flight=flight,
@@ -111,7 +186,11 @@ def watch_add(
     except ValueError as exc:
         raise _fail(str(exc)) from exc
     typer.echo(_describe(watch))
-    typer.echo(f"Run 'jetbridge check {watch.id}' to check it now.")
+    if winsched.is_installed():
+        typer.echo("The first check runs within about 15 minutes.")
+    else:
+        typer.echo("Automatic checks are off. Turn them on with: jetbridge schedule install")
+    typer.echo(f"To check it now, run: jetbridge check {watch.id}")
 
 
 @watch_app.command("recipients")
@@ -138,13 +217,14 @@ def watch_list() -> None:
     """List all watches."""
     watches = service.open_store().list_watches()
     if not watches:
-        typer.echo("No watches yet. Add one with: jetbridge watch add")
+        typer.echo("No watches yet. Add one with: jetbridge start")
     for watch in watches:
         typer.echo(_describe(watch))
 
 
 @watch_app.command("pause")
 def watch_pause(watch_id: int) -> None:
+    """Stop checking a watch and keep its history."""
     store = service.open_store()
     _require(store, watch_id)
     store.set_watch_status(watch_id, "paused")
@@ -153,6 +233,7 @@ def watch_pause(watch_id: int) -> None:
 
 @watch_app.command("resume")
 def watch_resume(watch_id: int) -> None:
+    """Start checking a paused watch again."""
     store = service.open_store()
     _require(store, watch_id)
     store.set_watch_status(watch_id, "active")
@@ -184,7 +265,7 @@ def _print_report(report) -> None:
     typer.echo(f"{len(report.checks)} check(s), {report.alerts_sent} email(s) sent.")
 
 
-@app.command()
+@app.command(hidden=True)
 def tick() -> None:
     """Run whatever is due. The scheduled task calls this every 15 minutes."""
     store = service.open_store()
@@ -201,7 +282,7 @@ def tick() -> None:
 
 @app.command()
 def check(watch_id: int) -> None:
-    """Check one watch now, whatever its schedule. Still goes through the rate governor."""
+    """Check one watch now, within the usual limits on searching."""
     store = service.open_store()
     watch = _require(store, watch_id)
     if watch.status != "active":
@@ -287,14 +368,23 @@ def doctor() -> None:
 
 
 # ---- notify ---------------------------------------------------------------------------
+def _ask_address(label: str, default: str | None = None) -> str:
+    while True:
+        text = typer.prompt(label, default=default).strip()
+        if re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", text):
+            return text
+        typer.echo("  That doesn't look like an email address. It should look like you@gmail.com.")
+
+
 @notify_app.command("setup")
 def notify_setup() -> None:
     """Save your Gmail address and app password. The password goes in Credential Manager."""
     typer.echo("Create an app password at https://myaccount.google.com/apppasswords")
     typer.echo("(this needs 2-Step Verification on the Google account).")
-    sender = typer.prompt("Send from (Gmail address)").strip()
-    to = typer.prompt("Send alerts to", default=sender).strip()
-    password = typer.prompt("Gmail app password (hidden)", hide_input=True).strip()
+    sender = _ask_address("Send from (Gmail address)")
+    to = _ask_address("Send alerts to", default=sender)
+    while not (password := typer.prompt("Gmail app password (hidden)", hide_input=True).strip()):
+        typer.echo("  That was empty. Paste the 16-letter app password from Google.")
     mail.save_config(mail.EmailConfig(sender, to), password)
     typer.echo("Saved. Sending a test email...")
     notify_test(to=None)
@@ -303,6 +393,7 @@ def notify_setup() -> None:
 @notify_app.command("setup-window", hidden=True)
 def notify_setup_window() -> None:
     """The window Claude opens, so a password is never typed into a chat."""
+    ctypes.windll.kernel32.SetConsoleTitleW("jetbridge email setup")
     typer.echo("jetbridge email setup. What you type here stays on this PC.\n")
     try:
         notify_setup()
@@ -507,6 +598,22 @@ def claude_disconnect() -> None:
         if changed
         else "Claude Desktop wasn't connected to jetbridge."
     )
+
+
+@app.command("uninstall")
+def uninstall_command(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask first"),
+) -> None:
+    """Remove jetbridge's checks, watches, settings and saved password from this PC."""
+    typer.echo(
+        "This stops all checks and deletes your watches, their history, your email settings and "
+        f"your saved password, including everything in {home()}. It can't be undone."
+    )
+    if not yes and not typer.confirm("Remove jetbridge?", default=False):
+        typer.echo("OK, nothing was removed.")
+        return
+    for line in removal.remove_everything():
+        typer.echo(line)
 
 
 @claude_app.command("status")

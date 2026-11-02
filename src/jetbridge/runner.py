@@ -241,7 +241,8 @@ class Runner:
                         f"{hours:.0f} hours",
                         f"{watch.label} has had no conclusive check since "
                         f"{format_when(last_good)}.\n\nUntil this clears, silence does NOT "
-                        "mean there are no seats. Run 'jetbridge doctor' to see why.",
+                        "mean there are no seats. Run 'jetbridge doctor', or ask Claude, to see "
+                        "why.",
                         dedupe_key=f"blind:{watch.id}:{int(last_good)}",
                     ),
                     now,

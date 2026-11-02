@@ -6,6 +6,8 @@ Checks and alerts never depend on this. All results come from the deterministic 
 from __future__ import annotations
 
 import functools
+import json
+import re
 import secrets
 import subprocess
 import sys
@@ -13,6 +15,7 @@ import threading
 import time
 from collections.abc import Callable, Hashable
 from concurrent import futures
+from dataclasses import asdict
 from datetime import date
 from typing import Any
 
@@ -25,8 +28,9 @@ from jetbridge import draft as drafts
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES, parse_program
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
-from jetbridge.models import Cabin, Flight, Query, Watch
+from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
+from jetbridge.runner import NEVER_SEEN_AFTER
 
 server = MCPServer(
     "jetbridge",
@@ -35,9 +39,12 @@ server = MCPServer(
         "Everything it can do is available through these tools, so the person never needs a "
         "command. Talk plainly: don't mention tool names, review ids, check ids, watch numbers "
         "or commands, and work out which watch they mean from list_watches. If two "
-        "could match, ask which.\n\n"
+        "could match, ask which. Dates like 'next Friday' are fine: work out the date from "
+        "today in get_started, and the review shows its weekday.\n\n"
         "First time, or if they ask for help getting started: call get_started and follow its "
-        "next_step. Show its notice word for word and call accept_notice only after they agree.\n\n"
+        "next_step. Show its notice word for word and call accept_notice only after they agree. "
+        "The first time Claude Desktop asks permission for a tool, mention once that they can "
+        "choose Always allow, but that Allow once is safest for saving or removing a watch.\n\n"
         "Adding a watch needs the flight, its departure and arrival airports, dates, cabin, miles "
         "program, party size and who gets the alerts. Ask for anything missing and never guess. "
         "City names are fine; if a city has several airports, ask which. If they don't know the "
@@ -46,7 +53,8 @@ server = MCPServer(
         "a change, call review_watch again.\n\n"
         "Changing a watch's flight, dates, cabin, program, party size, price limit or checks per "
         "day: review and confirm the new version, then offer to remove the old one. Only "
-        "recipients can be changed in place.\n\n"
+        "recipients can be changed in place. To add or remove someone from alerts, use "
+        "set_recipients with action add or remove, so nobody else is dropped.\n\n"
         "Removing a watch takes two steps too: review_watch_removal, show what it says, and "
         "confirm_watch_removal only after a yes. Before turning off automatic checks, say that no "
         "watch will be checked until they're turned back on, and wait for a yes. Read addresses "
@@ -54,13 +62,15 @@ server = MCPServer(
         "A live check or flight lookup can take a few minutes: if an answer says finished false, "
         "tell them it's still going and call check_result with its check_id until it finishes. A "
         "check can email everyone on that watch if seats have opened, so say so if they're "
-        "checking a watch that alerts other people.\n\n"
+        "checking a watch that alerts other people. When seats are open, give the book_at link "
+        "and booking_note, and say that seats can go quickly.\n\n"
         "The Gmail app password must never go in this chat. To set up email, use open_email_setup, "
         "which opens a private window on this PC. If someone pastes a password here, tell them to "
         "revoke it in their Google account and make a new one.\n\n"
-        "Quote only numbers returned by these tools. 'unknown' means the check couldn't tell, so "
-        "never describe it as no seats. A flight missing from a lookup may still exist. jetbridge "
-        "can't book anything or move miles."
+        "Quote only numbers returned by these tools, and say only what they show: the latest state "
+        "of a date doesn't tell you about earlier checks, so use watch_history for that. 'unknown' "
+        "means the check couldn't tell, so never describe it as no seats. A flight missing from a "
+        "lookup may still exist. jetbridge can't book anything or move miles."
     ),
 )
 
@@ -82,20 +92,54 @@ def _tool[**P, R](*, read_only: bool = False) -> Callable[[Callable[P, R]], Call
     return register
 
 
+_BOOKING_NOTES = {
+    "american": "The link goes straight to the results on aa.com.",
+    "delta": "The link opens a date grid on delta.com with this date selected: press Continue.",
+    "united": "united.com asks them to sign in before it shows prices in miles.",
+}
+
+
+def _booking(query: Query) -> dict[str, str]:
+    return {
+        "book_at": SITES[query.program].search_url(query),
+        "booking_note": _BOOKING_NOTES[query.program],
+    }
+
+
+def _watch_query(watch: Watch, day: date) -> Query:
+    return Query(watch.origin, watch.destination, day, watch.pax, watch.program)
+
+
 def _watch_view(watch: Watch) -> dict[str, Any]:
     store = service.open_store()
+    today = date.today()
+    day_ago = time.time() - 86400
     days = []
+    never_seen = True
     for day in watch.dates:
         state = store.date_state(watch.id, day)
-        days.append(
-            {
-                "date": day.isoformat(),
-                "status": state.status.value if state.status else "no clear answer yet",
-                "miles": state.miles,
-                "last_clear_answer": format_when(state.last_conclusive_at)
-                if state.last_conclusive_at
-                else None,
-            }
+        if day >= today and (state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER):
+            never_seen = False
+        view: dict[str, Any] = {
+            "date": day.isoformat(),
+            "status": state.status.value if state.status else "no clear answer yet",
+            "miles": state.miles,
+            "last_clear_answer": format_when(state.last_conclusive_at)
+            if state.last_conclusive_at
+            else None,
+            "clear_answers_so_far": state.conclusive_count,
+            "date_has_passed": day < today,
+        }
+        if state.status is CheckStatus.AVAILABLE and day >= today:
+            view.update(_booking(_watch_query(watch, day)))
+        days.append(view)
+    extra: dict[str, Any] = {}
+    if never_seen and any(day >= today for day in watch.dates):
+        domain = SITES[watch.program].domain
+        extra["note"] = (
+            f"{watch.flight.code} has never appeared in {domain}'s results for this route. The "
+            f"flight number or route may be wrong, {domain} may not sell this flight with these "
+            "miles, or it may just hide flights with no award space."
         )
     return {
         "id": watch.id,
@@ -106,10 +150,19 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "pax": watch.pax,
         "checks_per_day": watch.checks_per_day,
         "max_miles": watch.max_miles,
-        "seat_alerts_to": list(watch.recipients) or ["the owner"],
+        "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
-        "next_check": format_when(watch.next_check_at),
+        "next_check": format_when(watch.next_check_at) if watch.status == "active" else None,
+        "last_24_hours": {
+            "clear_answers": sum(
+                store.count_recent(watch.id, status, day_ago)
+                for status in CheckStatus
+                if status.conclusive
+            ),
+            "inconclusive": store.count_recent(watch.id, CheckStatus.UNKNOWN, day_ago),
+        },
         "dates": days,
+        **extra,
     }
 
 
@@ -174,6 +227,7 @@ def get_started() -> dict[str, Any]:
     else:
         next_step = "Everything is set up. Ask what they'd like to do."
     answer: dict[str, Any] = {
+        "today": date.today().strftime("%A, %B %d, %Y"),
         "notice_accepted": accepted,
         "email_set_up": email,
         "alerts_go_to": _owner_address(),
@@ -199,10 +253,13 @@ def open_email_setup() -> dict[str, str]:
 
     The password is typed there, hidden, and goes straight to Windows Credential Manager. Never
     ask for it in the chat. The window sends a test email when it's done."""
-    subprocess.Popen(
-        [sys.executable, "-m", "jetbridge", "notify", "setup-window"],
-        creationflags=subprocess.CREATE_NEW_CONSOLE,
-    )
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jetbridge", "notify", "setup-window"],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+    except OSError as exc:
+        raise ToolError(f"the window couldn't open: {exc}") from exc
     return {
         "message": "A window opened on this PC, possibly behind this one. It asks for the Gmail "
         "address to send from, the address alerts go to, and the app password, then sends a test "
@@ -230,9 +287,34 @@ def send_test_email(to: str | None = None) -> dict[str, str]:
 
 
 # ---- adding a watch -------------------------------------------------------------------
-# Reviews waiting for a yes. Kept in memory, so one can't outlast this Claude session.
-_reviews: dict[str, drafts.WatchDraft] = {}
-_removals: dict[str, int] = {}
+# Reviews waiting for a yes. Claude Desktop can run two copies of this server and restart them, so
+# these are saved where every copy can see them, and go stale after a day.
+_REVIEW = "chat_review:"
+_REMOVAL = "chat_removal:"
+_REVIEW_LIFETIME_S = 86400
+
+
+def _remember(prefix: str, payload: dict[str, Any]) -> str:
+    store = service.open_store()
+    now = time.time()
+    for key in store.keys_with_prefix(_REVIEW) + store.keys_with_prefix(_REMOVAL):
+        saved = json.loads(store.get(key) or "{}")
+        if now - saved.get("saved_at", 0) > _REVIEW_LIFETIME_S:
+            store.delete(key)
+    token = secrets.token_hex(8)
+    store.set(prefix + token, json.dumps({"saved_at": now, **payload}))
+    return token
+
+
+def _recall(prefix: str, token: str) -> dict[str, Any] | None:
+    """Each review works once, and not after it has gone stale."""
+    text = service.open_store().take(prefix + token)
+    if text is None:
+        return None
+    saved = json.loads(text)
+    if time.time() - saved["saved_at"] > _REVIEW_LIFETIME_S:
+        return None
+    return saved
 
 
 @_tool()
@@ -267,8 +349,8 @@ def review_watch(
         recipients=notify,
     )
     drafts.validate(draft)
-    review_id = secrets.token_hex(8)
-    _reviews[review_id] = draft
+    fields = {**asdict(draft), "cabin": draft.cabin.value}
+    review_id = _remember(_REVIEW, {"draft": fields})
     return {
         "saved": False,
         "review_id": review_id,
@@ -282,9 +364,11 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
     review_watch and said yes to it. Each review can be saved once. Automatic checks are turned
     on if they aren't already."""
     _require_notice()
-    draft = _reviews.pop(review_id, None)
-    if draft is None:
+    saved = _recall(_REVIEW, review_id)
+    if saved is None:
         raise ToolError("no review with that id, so nothing was saved. Call review_watch first")
+    fields = saved["draft"]
+    draft = drafts.WatchDraft(**{**fields, "cabin": Cabin(fields["cabin"])})
     try:
         watch = drafts.save(service.open_store(), draft)
     except ValueError as exc:
@@ -305,7 +389,7 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
 # Claude Desktop gives up on a tool call at about 60 seconds, and a live check can take longer
 # because Chrome has to start and load the airline's site. So each one runs on its own thread and
 # each call waits for less than that.
-CHECK_WAIT_S = 45.0
+CHECK_WAIT_S = 50.0
 _checks: dict[str, tuple[Hashable, futures.Future[dict[str, Any]]]] = {}
 
 
@@ -345,21 +429,24 @@ def _start_search(key: Hashable, work: Callable[[], dict[str, Any]]) -> dict[str
     return _search_answer(check_id)
 
 
-def _check_results(watch_id: int) -> dict[str, Any]:
-    report = service.live_tick(service.open_store(), only_watch=watch_id)
+def _check_results(watch: Watch) -> dict[str, Any]:
+    report = service.live_tick(service.open_store(), only_watch=watch.id)
     # An opening is checked twice before its alert goes out. The later answer is current.
     latest = {line.day: line for line in report.checks}
+    results = []
+    for line in latest.values():
+        row = {
+            "date": line.day.isoformat(),
+            "status": line.result.status.value,
+            "miles": line.result.miles,
+            "seats": line.result.seats_text,
+            "detail": line.result.detail,
+        }
+        if line.result.status is CheckStatus.AVAILABLE:
+            row.update(_booking(_watch_query(watch, line.day)))
+        results.append(row)
     return {
-        "results": [
-            {
-                "date": line.day.isoformat(),
-                "status": line.result.status.value,
-                "miles": line.result.miles,
-                "seats": line.result.seats_text,
-                "detail": line.result.detail,
-            }
-            for line in latest.values()
-        ],
+        "results": results,
         "emails_sent": report.alerts_sent,
         "stopped_early": report.stopped_early,
     }
@@ -376,12 +463,12 @@ def check_now(watch_id: int) -> dict[str, Any]:
     watch = _require_watch(watch_id)
     if watch.status != "active":
         raise ToolError(f"that watch is {watch.status}. Resume it first")
-    return _start_search(("check", watch_id), lambda: _check_results(watch_id))
+    return _start_search(("check", watch_id), lambda: _check_results(watch))
 
 
 @_tool(read_only=True)
 def check_result(check_id: str) -> dict[str, Any]:
-    """Get the answer to a check_now or find_flights that was still running. Waits up to 45 seconds,
+    """Get the answer to a check_now or find_flights that was still running. Waits up to 50 seconds,
     and says finished is false if it needs another call."""
     if check_id not in _checks:
         raise ToolError("nothing is running with that id. Start it again")
@@ -408,6 +495,7 @@ def _flight_results(query: Query, cabin: Cabin) -> dict[str, Any]:
             "arrives": option.arrives.strftime("%I:%M %p %b %d"),
             "stops": option.stops,
             "seats": wizard.plain_seats(option, cabin),
+            **(_booking(query) if option.result.status is CheckStatus.AVAILABLE else {}),
         }
         for option in search.options
     ]
@@ -458,11 +546,32 @@ def watch_history(watch_id: int, limit: int = 30) -> list[dict[str, Any]]:
     ]
 
 
+def _with_owner_named(text: str, owner: str | None) -> str:
+    if not owner:
+        return text
+    return re.sub(r"(?<![^\s,;])me(?![^\s,;])", owner, text, flags=re.IGNORECASE)
+
+
 @_tool()
-def set_recipients(watch_id: int, notify: str) -> dict[str, Any]:
-    """Replace who gets a watch's seat alerts. Comma-separated addresses, or 'me' for the owner."""
-    _require_watch(watch_id)
-    service.open_store().set_recipients(watch_id, service.parse_recipients(notify))
+def set_recipients(watch_id: int, notify: str, action: str = "replace") -> dict[str, Any]:
+    """Change who gets a watch's seat alerts. notify is comma-separated addresses, where 'me' means
+    the owner. action is add, remove or replace. Use add for "also alert Ann", so nobody is dropped.
+    If nobody would be left, the owner gets the alerts."""
+    watch = _require_watch(watch_id)
+    owner = _owner_address()
+    named = list(service.parse_recipients(_with_owner_named(notify, owner)))
+    current = list(watch.recipients) or ([owner] if owner else [])
+    if action == "add":
+        wanted = current + [address for address in named if address not in current]
+    elif action == "remove":
+        wanted = [address for address in current if address not in named]
+    elif action == "replace":
+        wanted = named
+    else:
+        raise ToolError("action must be add, remove or replace")
+    # A list of just the owner is stored as empty, which is how a watch says "the owner".
+    recipients = () if wanted == [owner] else service.parse_recipients(",".join(wanted))
+    service.open_store().set_recipients(watch_id, recipients)
     return _watch_view(_require_watch(watch_id))
 
 
@@ -488,8 +597,7 @@ def resume_watch(watch_id: int) -> dict[str, Any]:
 def review_watch_removal(watch_id: int) -> dict[str, Any]:
     """Say what removing a watch would delete. This removes nothing. Show it and ask for a yes."""
     watch = _require_watch(watch_id)
-    removal_id = secrets.token_hex(8)
-    _removals[removal_id] = watch_id
+    removal_id = _remember(_REMOVAL, {"watch_id": watch_id})
     days = ", ".join(day.strftime("%b %d, %Y") for day in watch.dates)
     return {
         "removed": False,
@@ -506,11 +614,11 @@ def review_watch_removal(watch_id: int) -> dict[str, Any]:
 def confirm_watch_removal(removal_id: str) -> dict[str, Any]:
     """Delete a watch and its history. Call this only after the person said yes to the review from
     review_watch_removal. Each review can be used once."""
-    watch_id = _removals.pop(removal_id, None)
-    if watch_id is None:
+    saved = _recall(_REMOVAL, removal_id)
+    if saved is None:
         raise ToolError("no removal with that id, so nothing changed. Call review_watch_removal")
-    watch = _require_watch(watch_id)
-    service.open_store().delete_watch(watch_id)
+    watch = _require_watch(saved["watch_id"])
+    service.open_store().delete_watch(watch.id)
     return {"removed": True, "flight": watch.flight.code}
 
 
@@ -587,6 +695,9 @@ def set_automatic_checks(on: bool) -> dict[str, Any]:
 
 
 # ---- health ---------------------------------------------------------------------------
+OVERDUE_S = 3600  # the scheduled task runs every 15 minutes
+
+
 @_tool(read_only=True)
 def health() -> dict[str, Any]:
     """Whether the watcher is running: last tick, rate use, any rest period, emails queued."""
@@ -594,8 +705,28 @@ def health() -> dict[str, Any]:
     governor = Governor(store, time.time)
     now = time.time()
     last = store.get("last_tick_at")
+    checks_on = winsched.is_installed()
+    problems = [
+        f"{check.label}: {check.chat_fix or check.fix}"
+        for check in doctor.checks(store)
+        if not check.ok and check.serious
+    ]
+    if checks_on and last and now - float(last) > OVERDUE_S:
+        problems.append(
+            f"Checks last ran {format_when(float(last))}. They only run while this PC is on, awake "
+            "and logged in."
+        )
+    for site in SITES.values():
+        if governor.cooldown_until(site.id) > now:
+            problems.append(
+                f"{site.domain} is resting after a block until "
+                f"{format_when(governor.cooldown_until(site.id))}, so it isn't being checked. "
+                "This is normal and clears by itself."
+            )
     return {
-        "automatic_checks_on": winsched.is_installed(),
+        "healthy": not problems,
+        "problems": problems,
+        "automatic_checks_on": checks_on,
         "last_tick": format_when(float(last)) if last else None,
         "sites": {
             site.domain: {
@@ -614,14 +745,37 @@ def health() -> dict[str, Any]:
 
 @_tool(read_only=True)
 def diagnose() -> dict[str, Any]:
-    """Find out what's wrong when something isn't working. Fix what the other tools can, rather
-    than passing on any commands in the fix text."""
+    """Find out what's wrong when something isn't working, with how to fix each thing."""
     store = service.open_store()
     results = doctor.checks(store)
     return {
-        "checks": [{"check": c.label, "ok": c.ok, "fix": None if c.ok else c.fix} for c in results],
+        "checks": [
+            {"check": c.label, "ok": c.ok, "fix": None if c.ok else (c.chat_fix or c.fix)}
+            for c in results
+        ],
         "last_clear_answer": doctor.last_clear_answer(store),
     }
+
+
+# ---- starting points, shown in Claude's + menu ------------------------------------------
+@server.prompt(title="Get started with jetbridge")
+def get_started_prompt() -> str:
+    return "Help me get started with jetbridge."
+
+
+@server.prompt(title="Watch a flight")
+def watch_a_flight_prompt() -> str:
+    return "I'd like to watch a flight for award seats. Ask me what you need to know."
+
+
+@server.prompt(title="How are my flights doing?")
+def my_flights_prompt() -> str:
+    return "How are the flights I'm watching doing, and is everything working?"
+
+
+@server.prompt(title="Something seems wrong")
+def fix_a_problem_prompt() -> str:
+    return "Something doesn't seem right with jetbridge. Can you find out what's wrong?"
 
 
 def main() -> None:

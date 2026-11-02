@@ -33,7 +33,6 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(mail.keyring, "get_password", lambda *_: "secret")
     monkeypatch.setattr(mcp_server.winsched, "is_installed", lambda: True)
     open_store().set(service.RISK_ACCEPTED, "1")
-    mcp_server._reviews.clear()
     mcp_server._checks.clear()
 
 
@@ -135,7 +134,7 @@ async def test_bad_details_get_no_review_and_say_why(change, reason):
     async with Client(mcp_server.server) as client:
         message = await refused(client, "review_watch", **{**DETAILS, **change})
     assert reason in message
-    assert mcp_server._reviews == {}
+    assert open_store().keys_with_prefix("chat_review:") == []
     assert watches() == []
 
 
@@ -144,7 +143,7 @@ async def test_nothing_is_quietly_defaulted(missing):
     details = {key: value for key, value in DETAILS.items() if key != missing}
     async with Client(mcp_server.server) as client:
         await refused(client, "review_watch", **details)
-    assert mcp_server._reviews == {}
+    assert open_store().keys_with_prefix("chat_review:") == []
 
 
 class FakeReport:

@@ -19,6 +19,8 @@ class Check:
     label: str
     ok: bool
     fix: str = ""
+    chat_fix: str = ""  # the same fix in Claude's terms, where it differs
+    serious: bool = True  # False for what's expected on a new or empty setup
 
 
 def _chrome_installed() -> bool:
@@ -57,21 +59,38 @@ def checks(store: Store) -> list[Check]:
     ]
     headline_problem = headlines.problem()
     return [
-        Check("Google Chrome installed", _chrome_installed(), "Install Google Chrome"),
-        Check("Email set up", bool(config and password), "Run: jetbridge notify setup"),
+        Check(
+            "Google Chrome installed",
+            _chrome_installed(),
+            "Install Google Chrome",
+            "Ask them to install Google Chrome from google.com/chrome.",
+        ),
+        Check(
+            "Email set up",
+            bool(config and password),
+            "Run: jetbridge notify setup",
+            "Offer open_email_setup.",
+        ),
         Check("Emails sending", not failures, failures[-1] if failures else ""),
         Check("Alert headlines readable", headline_problem is None, headline_problem or ""),
         Check(
-            "Scheduled task installed", winsched.is_installed(), "Run: jetbridge schedule install"
+            "Scheduled task installed",
+            winsched.is_installed(),
+            "Run: jetbridge schedule install",
+            "Offer to turn on automatic checks.",
         ),
         Check(
             "At least one active watch",
             bool(store.list_watches("active")),
-            "Run: jetbridge watch add",
+            "Run: jetbridge start",
+            "Ask which flight they want to watch.",
+            serious=False,
         ),
         Check(
             "A clear answer from an airline so far",
             _last_clear_answer_at(store) is not None,
             "Run: jetbridge check <id>",
+            "Offer to check a watch now. A new watch's first check runs within about 15 minutes.",
+            serious=False,
         ),
     ]

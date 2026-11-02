@@ -14,13 +14,24 @@ It searches as a guest with no login, and it doesn't book anything or move your 
 One computer does the searching, and each watch can alert different people, so you can run it
 for friends or family without them installing anything.
 
-Set it up with one line in PowerShell. Then manage your watches with simple commands or, if you use
-the Claude Desktop app, [by chatting with Claude](#using-it-through-claude).
+Set it up with one line in PowerShell. Then, if you use the Claude Desktop app, you can run it all
+[by chatting with Claude](#using-it-through-claude):
+
+> **You:** Watch CX845 from New York to Hong Kong on May 21-23 2027, business, with American miles.
+>
+> **Claude:** New York has three airports. Which does this flight use: JFK, EWR or LGA?
+>
+> **You:** JFK, and just alert me.
+>
+> **Claude:** *(shows exactly what it will watch)* Shall I save it?
+
+You can also do everything with [simple commands](#command-reference).
 
 ## Contents
 
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
+- [Using it through Claude](#using-it-through-claude)
 - [Installing by hand](#installing-by-hand)
 - [Adding a watch](#adding-a-watch)
 - [Sending alerts to other people](#sending-alerts-to-other-people)
@@ -31,7 +42,6 @@ the Claude Desktop app, [by chatting with Claude](#using-it-through-claude).
 - [How checks work](#how-checks-work)
 - [Limitations](#limitations)
 - [Blocks and the airlines' terms](#blocks-and-the-airlines-terms)
-- [Using it through Claude](#using-it-through-claude)
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
 - [Where your data lives](#where-your-data-lives)
@@ -74,8 +84,85 @@ Running a script from the internet means trusting it, so you can
 To add more flights later, run `jetbridge start`. To update jetbridge, quit Claude Desktop if it's
 open and run the same line again.
 
-The commands in this guide say `uv run jetbridge`, which works from the project folder. After the
-one-step install, you can shorten that to `jetbridge` from any folder.
+After [installing by hand](#installing-by-hand), run commands from the project folder and start them
+with `uv run`, like `uv run jetbridge start`.
+
+## Using it through Claude
+
+If you use the Claude Desktop app, you can manage your watches by chatting instead of typing
+commands. Claude is optional, and checks and emails keep running whether or not the app is open.
+
+### Connect Claude Desktop
+
+The one-step install offers to do this if Claude Desktop is already installed. If you install it
+later, or installed jetbridge by hand:
+
+1. Open Claude Desktop once and sign in.
+2. Run this in PowerShell. After installing by hand, use `jetbridge` from the project folder.
+
+   ```powershell
+   jetbridge claude connect
+   ```
+
+3. Quit Claude Desktop fully, including from the system tray, and reopen it.
+4. In a new chat, say: "Help me get started with jetbridge."
+
+You can also start from a menu: **+ > Connectors > Add from jetbridge** has starting points such as
+**Watch a flight**. **+ > Connectors > Tool access** is also where Claude Desktop keeps its tool
+settings.
+
+Claude Desktop often asks your permission before using a jetbridge tool, even just to read your
+watches. Choose **Allow once** or **Always allow**. It's safest to keep choosing **Allow once** for
+the tools that save or remove a watch, so you can look at the request first.
+
+### What you can ask
+
+Just say what you want, in your own words. You don't need any commands, flight codes or watch
+numbers. Some examples:
+
+- **Getting set up:** "Help me get started with jetbridge." Claude takes you through the notice and
+  email, and can send a test email.
+- **Adding a flight:** "Watch AA100 from New York to London in business on June 14-16 2027 using
+  American miles, for 1 passenger." Claude asks about anything you left out.
+- **Not sure of the flight:** "What nonstop business flights go from Seattle to Seoul on May 21 on
+  Delta miles?"
+- **Checking in:** "Which flights am I watching?", "What's happened with my AA100 watch this week?"
+  or "Check it now."
+- **Making changes:** "Pause my AA100 watch", "Start it again", "Delete it", "Also alert
+  ann@example.com" or "Stop alerting Ann." To change dates or a cabin, just ask: Claude adds the new version and offers to
+  remove the old one, whose history goes with it.
+- **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND" or
+  "Turn off automatic checks."
+- **When something seems wrong:** "Is my watcher healthy?" or "Why aren't I getting alerts?"
+
+### What to expect
+
+- **Nothing is saved or deleted until you say yes.** Claude asks for anything missing and shows you
+  the same review as `jetbridge start`. Read it, especially who gets the alerts, then say yes or ask
+  for a change.
+- **Your Gmail password never goes in the chat.** Claude opens a small private window on your PC, and
+  the password goes straight to Windows Credential Manager. Never paste it into a chat.
+- **Automatic checks turn on by themselves** when you save your first flight.
+- **Live checks take a while.** A check can take a few minutes, because Chrome has to start and load
+  the airline's site. Claude will say when it's still going, and may ask permission again to collect
+  the answer. When seats are open, it gives you the booking link.
+- **A check can send real emails.** If it finds seats have opened, everyone on that watch gets an
+  alert, the same as a scheduled check.
+- **It only works on the PC running jetbridge.** You can't use it from claude.ai or the phone apps.
+- **What Claude sees.** The details it handles in your chat, including your watches and alert
+  addresses, go to Claude like the rest of the conversation.
+
+If you move the project folder, run `jetbridge claude connect` again. To disconnect, run `jetbridge
+claude disconnect`. This only removes Claude's access: your watches and alerts carry on.
+
+`connect` changes only jetbridge's entry in Claude Desktop's config file. Your other servers and
+settings are kept, the previous version is saved next to it as
+`claude_desktop_config.json.jetbridge-backup`, and a file it can't understand is left alone.
+
+### Claude Code
+
+Open [Claude Code](https://claude.com/claude-code) in the project folder and approve the `jetbridge`
+MCP server when asked. It needs `uv` on your PATH. You can ask the same things there.
 
 ## Installing by hand
 
@@ -209,19 +296,19 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 
 ```powershell
 # Two passengers, only if 120,000 miles or less each
-uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14,2027-06-16 --pax 2 --max-miles 120000
+jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14,2027-06-16 --pax 2 --max-miles 120000
 
 # First class, checked eight times a day
-uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --cabin first --checks-per-day 8
+jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --cabin first --checks-per-day 8
 ```
 
 ### Managing watches
 
 ```powershell
-uv run jetbridge watch list        # every watch
-uv run jetbridge watch pause 1     # stop checking, keep the history
-uv run jetbridge watch resume 1    # start again, with a check on the next run
-uv run jetbridge watch rm 1        # delete the watch and its history
+jetbridge watch list        # every watch
+jetbridge watch pause 1     # stop checking, keep the history
+jetbridge watch resume 1    # start again, with a check on the next run
+jetbridge watch rm 1        # delete the watch and its history
 ```
 
 To change a watch's dates or settings, remove it and add it again. Watches finish on their own
@@ -234,18 +321,18 @@ need a Gmail address.
 
 ```powershell
 # Asks who to alert
-uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --cabin business
+jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --cabin business
 
 # Or say it up front
-uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --notify "ann@example.com,bo@example.org"
+jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --notify "ann@example.com,bo@example.org"
 
 # Make sure an address works before relying on it
-uv run jetbridge notify test --to ann@example.com
+jetbridge notify test --to ann@example.com
 
 # See or replace who a watch alerts ("me" means only you)
-uv run jetbridge watch recipients 1
-uv run jetbridge watch recipients 1 ann@example.com,carol@example.com
-uv run jetbridge watch recipients 1 me
+jetbridge watch recipients 1
+jetbridge watch recipients 1 ann@example.com,carol@example.com
+jetbridge watch recipients 1 me
 ```
 
 Replacing the list takes effect from the next alert. To include yourself alongside other people, add
@@ -274,9 +361,9 @@ A few things to know:
 ## Checking on your watches
 
 ```powershell
-uv run jetbridge status       # the latest state of every date, and the next check
-uv run jetbridge history 1    # past results for watch 1, newest first
-uv run jetbridge doctor       # is everything working?
+jetbridge status       # the latest state of every date, and the next check
+jetbridge history 1    # past results for watch 1, newest first
+jetbridge doctor       # is everything working?
 ```
 
 Each result is one of these:
@@ -309,7 +396,7 @@ If seats appear but are gone by the re-check, it's logged in `history` and no em
 
 **If the daily email stops arriving, the watcher isn't running.** The PC can't send anything
 while it's off, so that missing email is your warning. To turn the summary off, run
-`uv run jetbridge notify digest off`, but you'd lose that signal.
+`jetbridge notify digest off`, but you'd lose that signal.
 
 If sending fails, for example when you're offline, the email stays queued and is retried on later
 runs. Seat alerts wait until they can be sent, so check the `Observed` time. Daily summaries more
@@ -320,9 +407,9 @@ than a day old are dropped.
 You can reword the headline at the start of each seat alert's subject:
 
 ```powershell
-uv run jetbridge notify headline                                      # show all of them
-uv run jetbridge notify headline seats_open "DEAL FOUND, BOOK NOW"    # change one
-uv run jetbridge notify headline seats_open --reset                   # back to the built-in text
+jetbridge notify headline                                      # show all of them
+jetbridge notify headline seats_open "DEAL FOUND, BOOK NOW"    # change one
+jetbridge notify headline seats_open --reset                   # back to the built-in text
 ```
 
 The alerts are `seats_open`, `seats_open_unconfirmed`, `price_drop`, `more_seats`, `reminder` and
@@ -411,82 +498,9 @@ If a site shows a "confirm you're human" page or blocks a request, jetbridge:
 It never tries to solve the human check. `status` shows any rest in progress. If blocks keep
 happening, lower `--checks-per-day`.
 
-## Using it through Claude
-
-If you use the Claude Desktop app, you can manage your watches by chatting instead of typing
-commands. Claude is optional, and checks and emails keep running whether or not the app is open.
-
-### Connect Claude Desktop
-
-The one-step install offers to do this if Claude Desktop is already installed. If you install it
-later, or installed jetbridge by hand:
-
-1. Open Claude Desktop once and sign in.
-2. Run this in PowerShell. After installing by hand, use `uv run jetbridge` from the project folder.
-
-   ```powershell
-   jetbridge claude connect
-   ```
-
-3. Quit Claude Desktop fully, including from the system tray, and reopen it.
-4. In a new chat, ask: "Is my jetbridge watcher healthy?"
-
-Claude Desktop often asks your permission before using a jetbridge tool, even just to read your
-watches. Choose **Allow once** or **Always allow**. It's safest to keep choosing **Allow once** for
-the tools that save or remove a watch, so you can look at the request first.
-
-### What you can ask
-
-Just say what you want, in your own words. You don't need any commands, flight codes or watch
-numbers. Some examples:
-
-- **Getting set up:** "Help me get started with jetbridge." Claude takes you through the notice and
-  email, and can send a test email.
-- **Adding a flight:** "Watch AA100 from New York to London in business on June 14-16 2027 using
-  American miles, for 1 passenger." Claude asks about anything you left out.
-- **Not sure of the flight:** "What nonstop business flights go from Seattle to Seoul on May 21 on
-  Delta miles?"
-- **Checking in:** "Which flights am I watching?", "What's happened with my AA100 watch this week?"
-  or "Check it now."
-- **Making changes:** "Pause my AA100 watch", "Start it again", "Delete it" or "Also alert
-  ann@example.com." To change dates or a cabin, just ask: Claude adds the new version and offers to
-  remove the old one, whose history goes with it.
-- **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND" or
-  "Turn off automatic checks."
-- **When something seems wrong:** "Is my watcher healthy?" or "Why aren't I getting alerts?"
-
-### What to expect
-
-- **Nothing is saved or deleted until you say yes.** Claude asks for anything missing and shows you
-  the same review as `jetbridge start`. Read it, especially who gets the alerts, then say yes or ask
-  for a change.
-- **Your Gmail password never goes in the chat.** Claude opens a small private window on your PC, and
-  the password goes straight to Windows Credential Manager. Never paste it into a chat.
-- **Automatic checks turn on by themselves** when you save your first flight.
-- **Live checks take a while.** A check can take a few minutes, because Chrome has to start and load
-  the airline's site. Claude will say when it's still going, and may ask permission again to collect
-  the answer.
-- **A check can send real emails.** If it finds seats have opened, everyone on that watch gets an
-  alert, the same as a scheduled check.
-- **It only works on the PC running jetbridge.** You can't use it from claude.ai or the phone apps.
-- **What Claude sees.** The details it handles in your chat, including your watches and alert
-  addresses, go to Claude like the rest of the conversation.
-
-If you move the project folder, run `jetbridge claude connect` again. To disconnect, run `jetbridge
-claude disconnect`. This only removes Claude's access: your watches and alerts carry on.
-
-`connect` changes only jetbridge's entry in Claude Desktop's config file. Your other servers and
-settings are kept, the previous version is saved next to it as
-`claude_desktop_config.json.jetbridge-backup`, and a file it can't understand is left alone.
-
-### Claude Code
-
-Open [Claude Code](https://claude.com/claude-code) in the project folder and approve the `jetbridge`
-MCP server when asked. It needs `uv` on your PATH. You can ask the same things there.
-
 ## Command reference
 
-Run these as `jetbridge ...` after the one-step install, or `uv run jetbridge ...` from the project
+Run these as `jetbridge ...` after the one-step install, or `jetbridge ...` from the project
 folder. Add `--help` to any command for details.
 
 | Command | What it does |
@@ -501,8 +515,9 @@ folder. Add `--help` to any command for details.
 | `status` | Current state of every active watch |
 | `history ID [--limit N]` | Past results for a watch |
 | `check ID` | Check one active watch now, still within the rate limit |
-| `tick` | Run whatever is due (the scheduled task calls this) |
 | `doctor` | Find out what's wrong |
+| `uninstall` | Remove jetbridge's checks, watches, settings and saved password |
+| `--version` | Show the version |
 | `notify setup` | Save Gmail details and send a test email |
 | `notify test [--to ADDRESS]` | Send a test email to you or someone else |
 | `notify digest on` / `off` | Turn the daily summary on or off |
@@ -511,13 +526,13 @@ folder. Add `--help` to any command for details.
 
 ## Troubleshooting
 
-Start with `uv run jetbridge doctor`, which covers most problems.
+Start with `jetbridge doctor`, which covers most problems.
 
 **`uv` isn't recognized.** Close and reopen PowerShell. If it still fails, install uv and make sure
 its folder is on your PATH.
 
 **`jetbridge` isn't recognized.** Close and reopen PowerShell. After installing by hand, use
-`uv run jetbridge` from the project folder.
+`jetbridge` from the project folder.
 
 **Claude Desktop doesn't show the jetbridge tools.** Run `jetbridge claude status`. If it says
 connected, quit Claude Desktop fully, including from the system tray, and reopen it. Run `jetbridge
@@ -540,7 +555,7 @@ from a script. Add `--notify me` or `--notify a@x.com`.
 checks resume after the rest. Running `check` during a rest won't get around it.
 
 **Everything is `unknown` with a site error code.** The site returned an error that jetbridge can't
-interpret, so it reports "couldn't tell". Check `uv run jetbridge history ID`. The raw response is
+interpret, so it reports "couldn't tell". Check `jetbridge history ID`. The raw response is
 saved for diagnosis.
 
 **A flight is always `not_listed`.** Check the flight number, route and date against a flight
@@ -580,17 +595,14 @@ Set the `JETBRIDGE_HOME` environment variable to use a different folder.
 ## Uninstalling
 
 ```powershell
-uv run jetbridge schedule remove
-uv run jetbridge claude disconnect
+jetbridge uninstall
 ```
 
-Then, to remove the rest:
+After you confirm, this stops the checks and disconnects Claude Desktop. It also deletes your
+watches, settings, saved Gmail password and the `jetbridge` command. Then:
 
-1. Delete `%LOCALAPPDATA%\jetbridge`.
-2. Remove `%LOCALAPPDATA%\jetbridge\bin` from your user PATH, if the one-step install added it.
-3. Remove the `jetbridge-gmail` entry from Windows Credential Manager, and revoke the app password
-   in your Google account.
-4. Delete the project folder.
+1. Revoke the app password in [your Google account](https://myaccount.google.com/apppasswords).
+2. Delete the project folder, usually `jetbridge` in your home folder.
 
 ## Development
 
@@ -615,6 +627,7 @@ uv run ruff format .
 | `src/jetbridge/notify/email.py` | Gmail sending and queue flushing |
 | `src/jetbridge/winsched.py` | The Windows scheduled task |
 | `src/jetbridge/cli.py`, `mcp_server.py`, `service.py` | Commands, Claude tools and shared wiring |
+| `src/jetbridge/claude_desktop.py`, `doctor.py`, `uninstall.py` | Connecting Claude, health checks, removal |
 
 Set `JETBRIDGE_KEEP_RAW=1` to save successful responses too, which is useful for recording test
 fixtures. Rules that must not be broken, such as "only a recognized answer can mean no seats", are

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
@@ -131,7 +132,7 @@ def _price(result: CheckResult) -> str:
     return f"{result.miles:,} miles{tax} per person"
 
 
-_HEADLINE = {
+DEFAULT_HEADLINES = {
     AlertKind.SEATS_OPEN: "SEATS OPEN",
     AlertKind.SEATS_OPEN_UNCONFIRMED: "SEATS MAY BE OPEN (unconfirmed)",
     AlertKind.PRICE_DROP: "PRICE DROP",
@@ -149,9 +150,11 @@ def render_availability(
     prev: DateState,
     now: float,
     booking_url: str,
+    headlines: Mapping[AlertKind, str] | None = None,
 ) -> tuple[str, str]:
     day_text = day.strftime("%b %d, %Y")
-    head = f"{_HEADLINE[kind]}: {watch.flight.code} {watch.cabin.value} on {day_text}"
+    headline = (headlines or {}).get(kind, DEFAULT_HEADLINES[kind])
+    head = f"{headline}: {watch.flight.code} {watch.cabin.value} on {day_text}"
     if kind is AlertKind.SEATS_GONE:
         lines = [
             f"{watch.label} on {day_text} no longer shows qualifying seats.",

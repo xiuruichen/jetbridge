@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -64,10 +64,12 @@ class Runner:
         clock: Callable[[], float],
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         rng: random.Random | None = None,
+        headlines: Mapping[AlertKind, str] | None = None,
     ):
         self.store, self.fetcher, self.sender, self.governor = store, fetcher, sender, governor
         self.clock, self.sleep = clock, sleep
         self.rng = rng or random.Random()
+        self.headlines = headlines
 
     def _today(self) -> date:
         return datetime.fromtimestamp(self.clock()).date()
@@ -193,7 +195,9 @@ class Runner:
         url = american.search_url(query_for(watch, day))
         alerts = []
         for kind in decision.alerts:
-            subject, body = render_availability(kind, watch, day, shown or result, prev, now, url)
+            subject, body = render_availability(
+                kind, watch, day, shown or result, prev, now, url, self.headlines
+            )
             # One email per person, so recipients never see each other's addresses.
             for recipient in watch.recipients or (None,):
                 alerts.append(NewAlert(kind.value, subject, body, recipient=recipient))

@@ -71,7 +71,7 @@ def add_watch(
     max_miles: int | None = None,
     notify: str | None = None,
 ) -> dict[str, Any]:
-    """Start watching a flight. dates is like 2027-05-21..2027-05-23 or a comma-separated list.
+    """Start watching a flight. dates is like 2027-06-14..2027-06-16 or a comma-separated list.
     notify is who gets seat alerts, comma-separated; leave it out to alert only the owner."""
     watch = service.create_watch(
         service.open_store(),

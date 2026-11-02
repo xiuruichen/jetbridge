@@ -8,15 +8,15 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 - `uv run pytest` runs offline on recorded fixtures.
 - `uv run jetbridge check ID` makes live requests. Keep live testing low-volume.
 - State lives in `%LOCALAPPDATA%\jetbridge\` (database, Chrome profile, saved responses,
-  venv), never in the project folder, which is synced by OneDrive. `UV_PROJECT_ENVIRONMENT`
-  points uv at that venv.
+  custom headlines), never in the project folder, which may be in a synced folder. If it is,
+  point `UV_PROJECT_ENVIRONMENT` at a venv outside it.
 
 ## Layout
 `models.py` types · `matcher.py` response to result (pure) · `alerts.py` alert rules and text
 (pure) · `scheduler.py` due, jitter, grouping (pure) · `store.py` SQLite · `runner.py` one tick ·
 `acquire/` `american.py` (fetch and pure parse), `detect.py`, `governor.py`, `broker.py`
 (Chrome), `fetcher.py` · `notify/email.py` Gmail and outbox · `winsched.py` scheduled task ·
-`service.py` shared wiring · `cli.py`, `mcp_server.py`.
+`headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py`.
 
 ## Invariants (do not break)
 - Only a positively recognized answer can mean "no seats". Blocks, errors, site error codes,
@@ -33,4 +33,6 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 - An opening is re-checked live before its alert goes out.
 - Seat alerts go only to the watch's recipients (the owner if none), one email per person so
   addresses are never shared. Health warnings and digests go only to the owner.
+- Custom headlines change wording only, and a bad headlines file falls back to the built-in text.
+- Personal details (addresses, watches, passwords) stay in the state folder, never in this repo.
 - The Gmail app password stays in Windows Credential Manager, never in files or logs.

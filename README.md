@@ -2,7 +2,7 @@
 
 jetbridge watches award seats on one specific flight and emails you when they open up.
 
-You tell it the flight, cabin and dates, for example *CX805 in business on May 21-23, 2027,
+You tell it the flight, cabin and dates, for example *AA100 in business on June 14-16, 2027,
 bookable with American miles*. It searches aa.com several times a day on your own PC, and
 emails you the price and a booking link as soon as seats appear.
 
@@ -19,6 +19,7 @@ for friends or family without them installing anything.
 - [Sending alerts to other people](#sending-alerts-to-other-people)
 - [Checking on your watches](#checking-on-your-watches)
 - [The emails you'll get](#the-emails-youll-get)
+- [Customizing alert headlines](#customizing-alert-headlines)
 - [When you get a SEATS OPEN email](#when-you-get-a-seats-open-email)
 - [How checks work](#how-checks-work)
 - [Limitations](#limitations)
@@ -73,7 +74,7 @@ the app password. Then it sends a test email. If nothing arrives, check your spa
 ### 3. Add a flight
 
 ```powershell
-uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21..2027-05-23 --cabin business
+uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14..2027-06-16 --cabin business
 ```
 
 It asks who should get the seat alerts. Type one or more addresses separated by commas, or press
@@ -90,9 +91,9 @@ This takes a minute or two, because searches are spaced out on purpose. You shou
 for each date:
 
 ```text
-[1] CX805 YYZ-HKG business May 21: not_offered (no business seats)
-[1] CX805 YYZ-HKG business May 22: not_offered (no business seats)
-[1] CX805 YYZ-HKG business May 23: not_offered (no business seats)
+[1] AA100 JFK-LHR business Jun 14: not_offered (no business seats)
+[1] AA100 JFK-LHR business Jun 15: not_offered (no business seats)
+[1] AA100 JFK-LHR business Jun 16: not_offered (no business seats)
 3 check(s), 0 email(s) sent.
 ```
 
@@ -121,9 +122,9 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 
 | Option | Default | What it does |
 |---|---|---|
-| `FLIGHT` | required | Flight number, such as `CX805` |
+| `FLIGHT` | required | Flight number, such as `AA100` |
 | `--from`, `--to` | required | The airports this flight actually flies between |
-| `--dates` | required | Up to 14 dates: `2027-05-21..2027-05-23`, `2027-05-21,2027-05-25`, or a mix |
+| `--dates` | required | Up to 14 dates: `2027-06-14..2027-06-16`, `2027-06-14,2027-06-18`, or a mix |
 | `--cabin` | `business` | `economy`, `premium`, `business` or `first` |
 | `--pax` | `1` | Number of passengers to search for |
 | `--checks-per-day` | `6` | How often to check, from 1 to 24 |
@@ -150,10 +151,10 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 
 ```powershell
 # Two passengers, only if 120,000 miles or less each
-uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21,2027-05-23 --pax 2 --max-miles 120000
+uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14,2027-06-16 --pax 2 --max-miles 120000
 
 # First class, checked eight times a day
-uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21 --cabin first --checks-per-day 8
+uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --cabin first --checks-per-day 8
 ```
 
 ### Managing watches
@@ -175,10 +176,10 @@ need a Gmail address.
 
 ```powershell
 # Asks who to alert
-uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21 --cabin business
+uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --cabin business
 
 # Or say it up front
-uv run jetbridge watch add CX805 --from YYZ --to HKG --dates 2027-05-21 --notify "ann@example.com,bo@example.org"
+uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14 --notify "ann@example.com,bo@example.org"
 
 # Make sure an address works before relying on it
 uv run jetbridge notify test --to ann@example.com
@@ -256,6 +257,24 @@ If sending fails, for example when you're offline, the email stays queued and is
 runs. Seat alerts wait until they can be sent, so check the `Observed` time. Daily summaries more
 than a day old are dropped.
 
+## Customizing alert headlines
+
+You can reword the headline at the start of each seat alert's subject:
+
+```powershell
+uv run jetbridge notify headline                                      # show all of them
+uv run jetbridge notify headline seats_open "DEAL FOUND, BOOK NOW"    # change one
+uv run jetbridge notify headline seats_open --reset                   # back to the built-in text
+```
+
+The alerts are `seats_open`, `seats_open_unconfirmed`, `price_drop`, `more_seats`, `reminder` and
+`seats_gone`. The flight, cabin, date and price still follow the headline. With the headline above,
+a subject reads `DEAL FOUND, BOOK NOW: AA100 business on Jun 14, 2027 - 110,000 mi`.
+
+This changes the wording only, not when alerts are sent. Headlines are saved in `alerts.json` in your
+state folder, so they stay on your PC and survive `notify setup`. If that file ever can't be read,
+alerts still go out with the built-in wording and `doctor` tells you.
+
 ## When you get a SEATS OPEN email
 
 1. **Open the link in the email.** It goes to aa.com's results for that route, date and party
@@ -321,7 +340,7 @@ happening, lower `--checks-per-day`.
 Open [Claude Code](https://claude.com/claude-code) in this folder and approve the `jetbridge` MCP
 server when asked. Then you can ask things like:
 
-- "Watch CX805 from Toronto to Hong Kong in business on May 21-23."
+- "Watch AA100 from New York to London in business on June 14-16."
 - "What's happened with my watches this week?"
 - "Is the watcher healthy?"
 
@@ -347,6 +366,7 @@ Run these as `uv run jetbridge ...` from the project folder. Add `--help` to any
 | `notify setup` | Save Gmail details and send a test email |
 | `notify test [--to ADDRESS]` | Send a test email to you or someone else |
 | `notify digest on` / `off` | Turn the daily summary on or off |
+| `notify headline [KIND] [TEXT]` | Show or change seat alert headlines |
 | `schedule install` / `remove` | Add or remove the scheduled task |
 
 ## Troubleshooting
@@ -397,7 +417,7 @@ Everything is on your PC. Nothing goes anywhere except searches to aa.com and em
 
 | What | Where |
 |---|---|
-| Database, config and log | `%LOCALAPPDATA%\jetbridge\` |
+| Database, config, custom headlines and log | `%LOCALAPPDATA%\jetbridge\` |
 | jetbridge's Chrome profile | `%LOCALAPPDATA%\jetbridge\profiles\` |
 | Failed responses, for repairs (newest 50) | `%LOCALAPPDATA%\jetbridge\raw\` |
 | Gmail app password | Windows Credential Manager, under `jetbridge-gmail` |

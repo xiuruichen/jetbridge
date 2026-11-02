@@ -43,7 +43,7 @@ class Flight:
     def parse(cls, text: str) -> Flight:
         match = _FLIGHT.match(text)
         if not match:
-            raise ValueError(f"not a flight number: {text!r} (expected something like CX805)")
+            raise ValueError(f"not a flight number: {text!r} (expected something like AA100)")
         return cls(match.group(1).upper(), normalize_number(match.group(2)))
 
     @property

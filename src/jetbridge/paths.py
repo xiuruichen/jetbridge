@@ -1,7 +1,7 @@
 """Where mutable state lives.
 
-Always outside the project folder: the project sits in OneDrive, and SQLite databases and
-Chrome profiles are not safe (or small) in a synced folder.
+Always outside the project folder: it may be in a synced folder such as OneDrive, and SQLite
+databases and Chrome profiles are not safe (or small) there.
 """
 
 from __future__ import annotations
@@ -41,6 +41,10 @@ def log_path() -> Path:
 
 def config_path() -> Path:
     return home() / "config.json"
+
+
+def alerts_path() -> Path:
+    return home() / "alerts.json"
 
 
 def raw_dir() -> Path:

@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
+from jetbridge import headlines
 from jetbridge.acquire.governor import Governor
 from jetbridge.models import Cabin, Flight, Watch
 from jetbridge.paths import db_path, lock_path
@@ -51,7 +52,7 @@ def open_store() -> Store:
 
 
 def parse_dates(text: str) -> tuple[date, ...]:
-    """Accepts ``2027-05-21..2027-05-23`` and comma-separated dates or ranges."""
+    """Accepts ``2027-06-14..2027-06-16`` and comma-separated dates or ranges."""
     days: set[date] = set()
     for part in text.split(","):
         part = part.strip()
@@ -149,5 +150,12 @@ def live_tick(store: Store, only_watch: int | None = None):
 
     with tick_lock():
         governor = Governor(store, time.time)
-        runner = Runner(store, LiveFetcher(governor), GmailSender(), governor, clock=time.time)
+        runner = Runner(
+            store,
+            LiveFetcher(governor),
+            GmailSender(),
+            governor,
+            clock=time.time,
+            headlines=headlines.load(),
+        )
         return asyncio.run(runner.tick(only_watch=only_watch))

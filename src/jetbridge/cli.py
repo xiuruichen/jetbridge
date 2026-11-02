@@ -9,10 +9,10 @@ from pathlib import Path
 
 import typer
 
-from jetbridge import service, winsched
+from jetbridge import headlines, service, winsched
 from jetbridge.acquire import american
 from jetbridge.acquire.governor import Governor
-from jetbridge.alerts import format_when
+from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import CheckStatus, Watch
 from jetbridge.notify import email as mail
 from jetbridge.paths import home, raw_dir
@@ -75,10 +75,10 @@ def _ask_recipients() -> str:
 # ---- watch ----------------------------------------------------------------------------
 @watch_app.command("add")
 def watch_add(
-    flight: str = typer.Argument(..., help="Flight number, e.g. CX805"),
+    flight: str = typer.Argument(..., help="Flight number, e.g. AA100"),
     origin: str = typer.Option(..., "--from", help="Departure airport of this flight"),
     destination: str = typer.Option(..., "--to", help="Arrival airport of this flight"),
-    dates: str = typer.Option(..., help="2027-05-21..2027-05-23 or 2027-05-21,2027-05-23"),
+    dates: str = typer.Option(..., help="2027-06-14..2027-06-16 or 2027-06-14,2027-06-16"),
     cabin: str = typer.Option("business", help="economy, premium, business or first"),
     program: str = typer.Option("american", help="Program to search"),
     pax: int = typer.Option(1, help="Party size; searched at this real size"),
@@ -288,10 +288,12 @@ def doctor() -> None:
             "SELECT last_error FROM outbox WHERE sent_at IS NULL AND last_error IS NOT NULL"
         )
     ]
+    headline_problem = headlines.problem()
     checks = [
         ("Google Chrome installed", bool(chrome), "Install Google Chrome"),
         ("Email set up", bool(config and password), "Run: jetbridge notify setup"),
         ("Emails sending", not failures, failures[-1] if failures else ""),
+        ("Alert headlines readable", headline_problem is None, headline_problem or ""),
         ("Scheduled task installed", winsched.is_installed(), "Run: jetbridge schedule install"),
         (
             "At least one active watch",
@@ -349,6 +351,35 @@ def notify_digest(state: str = typer.Argument(..., help="on or off")) -> None:
         raise _fail("use 'on' or 'off'")
     service.open_store().set("digest_enabled", "1" if state == "on" else "0")
     typer.echo(f"Daily digest {state}.")
+
+
+@notify_app.command("headline")
+def notify_headline(
+    kind: str | None = typer.Argument(None, help="Which alert, e.g. seats_open"),
+    text: str | None = typer.Argument(None, help="The new headline"),
+    reset: bool = typer.Option(False, "--reset", help="Go back to the built-in headline"),
+) -> None:
+    """Show or change the headline at the start of each seat alert's subject."""
+    custom = headlines.load()
+    if kind is None:
+        for alert in AlertKind:
+            typer.echo(f"{alert.value}: {custom.get(alert, DEFAULT_HEADLINES[alert])}")
+        return
+    problem = headlines.problem()
+    if problem:
+        raise _fail(f"fix or delete this file first: {problem}")
+    if reset == (text is not None):
+        raise _fail("give the new headline or --reset, but not both")
+    try:
+        alert = AlertKind(kind)
+        if text is None:
+            custom.pop(alert, None)
+        else:
+            custom[alert] = headlines.clean(text)
+    except ValueError as exc:
+        raise _fail(f"{exc}. Run 'jetbridge notify headline' to see the alerts") from exc
+    headlines.save(custom)
+    typer.echo(f"{alert.value}: {custom.get(alert, DEFAULT_HEADLINES[alert])}")
 
 
 # ---- schedule -------------------------------------------------------------------------

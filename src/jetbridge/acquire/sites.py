@@ -82,7 +82,7 @@ def get_site(program: str) -> Site:
 
 def parse_program(text: str) -> str:
     """Which program someone meant, by name or common nickname."""
-    name = " ".join(text.lower().split())
+    name = " ".join(text.lower().split()).removesuffix(" miles")
     name = _ALIASES.get(name, name)
     if name not in SITES:
         raise ValueError(f"please choose {', '.join(PROGRAMS[:-1])} or {PROGRAMS[-1]}")

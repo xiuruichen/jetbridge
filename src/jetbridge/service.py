@@ -59,6 +59,22 @@ def tick_lock() -> Iterator[None]:
         handle.close()
 
 
+RISK_ACCEPTED = "risk_accepted"
+RISK_NOTICE = """Before you start, please read this:
+
+- jetbridge searches airline websites (aa.com, delta.com, united.com) automatically, which likely
+  goes against their terms of use. You accept that risk by running it. It never logs in, so your
+  frequent flyer accounts aren't involved, and it searches at low volume, but a site can still
+  block its searches.
+- It only checks while this PC is on, awake and logged in. To catch seats overnight, set Windows
+  sleep to Never while plugged in.
+- Checks are hours apart, so seats that open and close between them are missed. Don't rely on it
+  as your only way of finding seats.
+- It never books anything or moves your miles. You do that yourself.
+- Only add email addresses of people who want these alerts.
+"""
+
+
 def open_store() -> Store:
     return Store(db_path())
 

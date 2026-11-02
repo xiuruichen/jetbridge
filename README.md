@@ -431,27 +431,38 @@ later, or installed jetbridge by hand:
 3. Quit Claude Desktop fully, including from the system tray, and reopen it.
 4. In a new chat, ask: "Is my jetbridge watcher healthy?"
 
-Claude Desktop asks your permission before using a jetbridge tool. Choose **Allow once** or **Always
-allow**. It's safest to keep choosing **Allow once** for the tool that saves a watch, so you can look
-at the request first.
+Claude Desktop often asks your permission before using a jetbridge tool, even just to read your
+watches. Choose **Allow once** or **Always allow**. It's safest to keep choosing **Allow once** for
+the tools that save or remove a watch, so you can look at the request first.
 
 ### What you can ask
 
-- "Watch AA100 from JFK to LHR in business on June 14-16 2027 using American miles, for 1 passenger."
-- "Which flights am I watching?"
-- "What's happened with my AA100 watch this week?"
-- "Check my AA100 watch now."
-- "Change who gets alerts for my AA100 watch to ann@example.com."
-- "Is my jetbridge watcher healthy?"
+Just say what you want, in your own words. You don't need any commands, flight codes or watch
+numbers. Some examples:
 
-Pausing or deleting a watch isn't available in chat yet, so use the
-[commands](#command-reference) for those.
+- **Getting set up:** "Help me get started with jetbridge." Claude takes you through the notice and
+  email, and can send a test email.
+- **Adding a flight:** "Watch AA100 from New York to London in business on June 14-16 2027 using
+  American miles, for 1 passenger." Claude asks about anything you left out.
+- **Not sure of the flight:** "What nonstop business flights go from Seattle to Seoul on May 21 on
+  Delta miles?"
+- **Checking in:** "Which flights am I watching?", "What's happened with my AA100 watch this week?"
+  or "Check it now."
+- **Making changes:** "Pause my AA100 watch", "Start it again", "Delete it" or "Also alert
+  ann@example.com." To change dates or a cabin, just ask: Claude adds the new version and offers to
+  remove the old one, whose history goes with it.
+- **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND" or
+  "Turn off automatic checks."
+- **When something seems wrong:** "Is my watcher healthy?" or "Why aren't I getting alerts?"
 
 ### What to expect
 
-- **Nothing is saved until you say yes.** Claude asks for anything missing and shows you the same
-  review as `jetbridge start`. Read it, especially who gets the alerts, then say yes or ask for a
-  change.
+- **Nothing is saved or deleted until you say yes.** Claude asks for anything missing and shows you
+  the same review as `jetbridge start`. Read it, especially who gets the alerts, then say yes or ask
+  for a change.
+- **Your Gmail password never goes in the chat.** Claude opens a small private window on your PC, and
+  the password goes straight to Windows Credential Manager. Never paste it into a chat.
+- **Automatic checks turn on by themselves** when you save your first flight.
 - **Live checks take a while.** A check can take a few minutes, because Chrome has to start and load
   the airline's site. Claude will say when it's still going, and may ask permission again to collect
   the answer.

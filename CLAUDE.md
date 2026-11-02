@@ -19,7 +19,7 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 (Chrome), `fetcher.py` · `notify/email.py` Gmail and outbox · `winsched.py` scheduled task ·
 `draft.py` a watch being entered, friendly input · `wizard.py` `jetbridge start` questions ·
 `headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py` ·
-`claude_desktop.py` connects Claude Desktop.
+`claude_desktop.py` connects Claude Desktop · `doctor.py` health checks.
 
 ## Invariants (do not break)
 - Only a positively recognized answer can mean "no seats". Blocks, errors, site error codes,
@@ -51,6 +51,10 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
   retried, and a flight missing from its list doesn't mean the flight doesn't exist.
 - Connecting Claude Desktop changes only the `jetbridge` entry in its config. A file that can't be
   understood is left alone, and a copy is kept before any change.
+- Everything the commands can do is available through the MCP tools, except that the Gmail app
+  password is never typed into a chat: `open_email_setup` opens a private window for it.
+- In chat, as in `jetbridge start`, nothing is searched or saved until the notice is accepted, and
+  removing a watch shows what will be deleted and waits for a yes.
 - MCP tool calls return within about 45 seconds, because Claude Desktop gives up at about 60. Longer
   work finishes on its own thread and is collected with another call.
 - Personal details (addresses, watches, passwords) stay in the state folder, never in this repo.

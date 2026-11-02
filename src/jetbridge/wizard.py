@@ -67,7 +67,7 @@ def _ask_dates(today: date) -> str:
     return _ask("Which dates? (like May 21-23 2027)", parse)
 
 
-def _plain_seats(option: FlightOption, cabin: Cabin) -> str:
+def plain_seats(option: FlightOption, cabin: Cabin) -> str:
     result = option.result
     if result.status is CheckStatus.AVAILABLE:
         price = f": {result.miles:,} miles" if result.miles else ""
@@ -84,7 +84,7 @@ def _show_options(options: list[FlightOption], cabin: Cabin) -> None:
             f"  {number}. {option.code}, departs {option.departs.strftime('%I:%M %p')}, "
             f"arrives {option.arrives.strftime('%I:%M %p %b %d')}{stops}"
         )
-        typer.echo(f"     {_plain_seats(option, cabin)}")
+        typer.echo(f"     {plain_seats(option, cabin)}")
 
 
 def _search(query: Query, cabin: Cabin) -> FlightSearch | None:

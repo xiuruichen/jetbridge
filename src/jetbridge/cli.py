@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
 import time
 from datetime import date, datetime
-from pathlib import Path
 
 import typer
 
 from jetbridge import claude_desktop, headlines, service, winsched, wizard
+from jetbridge import doctor as doctor_checks
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
@@ -274,49 +273,13 @@ def history(watch_id: int, limit: int = 30) -> None:
 def doctor() -> None:
     """Check that everything needed to watch and alert is working."""
     store = service.open_store()
-    chrome = shutil.which("chrome") or next(
-        (
-            p
-            for p in (
-                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            )
-            if Path(p).exists()
-        ),
-        None,
-    )
-    config = mail.load_config()
-    password = (
-        mail.keyring.get_password(mail.KEYRING_SERVICE, config.from_address) if config else None
-    )
-    good = store.conn.execute(
-        "SELECT MAX(observed_at) AS t FROM observations WHERE status!=?",
-        (CheckStatus.UNKNOWN.value,),
-    ).fetchone()["t"]
-    failures = [
-        row["last_error"]
-        for row in store.conn.execute(
-            "SELECT last_error FROM outbox WHERE sent_at IS NULL AND last_error IS NOT NULL"
-        )
-    ]
-    headline_problem = headlines.problem()
-    checks = [
-        ("Google Chrome installed", bool(chrome), "Install Google Chrome"),
-        ("Email set up", bool(config and password), "Run: jetbridge notify setup"),
-        ("Emails sending", not failures, failures[-1] if failures else ""),
-        ("Alert headlines readable", headline_problem is None, headline_problem or ""),
-        ("Scheduled task installed", winsched.is_installed(), "Run: jetbridge schedule install"),
-        (
-            "At least one active watch",
-            bool(store.list_watches("active")),
-            "Run: jetbridge watch add",
-        ),
-        ("A clear answer from an airline so far", good is not None, "Run: jetbridge check <id>"),
-    ]
-    for label, ok, fix in checks:
-        typer.echo(f"[{' OK ' if ok else 'FAIL'}] {label}" + ("" if ok else f" -> {fix}"))
+    for check_result in doctor_checks.checks(store):
+        mark = " OK " if check_result.ok else "FAIL"
+        fix = "" if check_result.ok else f" -> {check_result.fix}"
+        typer.echo(f"[{mark}] {check_result.label}{fix}")
+    good = doctor_checks.last_clear_answer(store)
     if good is not None:
-        typer.echo(f"Last clear answer: {format_when(good)}")
+        typer.echo(f"Last clear answer: {good}")
     _print_health(store)
     typer.echo(f"Claude Desktop (optional): {claude_desktop.status().value}")
     typer.echo(f"State folder: {home()}")
@@ -335,6 +298,20 @@ def notify_setup() -> None:
     mail.save_config(mail.EmailConfig(sender, to), password)
     typer.echo("Saved. Sending a test email...")
     notify_test(to=None)
+
+
+@notify_app.command("setup-window", hidden=True)
+def notify_setup_window() -> None:
+    """The window Claude opens, so a password is never typed into a chat."""
+    typer.echo("jetbridge email setup. What you type here stays on this PC.\n")
+    try:
+        notify_setup()
+        typer.echo("\nAll done. You can go back to Claude and tell it you've finished.")
+    except typer.Exit:
+        typer.echo("\nThat didn't work. You can close this and ask Claude to open it again.")
+    except typer.Abort:
+        typer.echo("\nStopped. Nothing else was changed.")
+    typer.prompt("Press Enter to close this window", default="", show_default=False)
 
 
 @notify_app.command("test")
@@ -396,31 +373,17 @@ def notify_headline(
 
 # ---- start ----------------------------------------------------------------------------
 _EMAIL_FAILED = "email_test_failed"
-_RISK_ACCEPTED = "risk_accepted"
-_RISK_NOTICE = """Before you start, please read this:
-
-- jetbridge searches airline websites (aa.com, delta.com, united.com) automatically, which likely
-  goes against their terms of use. You accept that risk by running it. It never logs in, so your
-  frequent flyer accounts aren't involved, and it searches at low volume, but a site can still
-  block its searches.
-- It only checks while this PC is on, awake and logged in. To catch seats overnight, set Windows
-  sleep to Never while plugged in.
-- Checks are hours apart, so seats that open and close between them are missed. Don't rely on it
-  as your only way of finding seats.
-- It never books anything or moves your miles. You do that yourself.
-- Only add email addresses of people who want these alerts.
-"""
 
 
 def _accept_risks(store: Store) -> bool:
     """Shown once. Nothing is set up or searched until it's accepted."""
-    if store.get(_RISK_ACCEPTED, "0") == "1":
+    if store.get(service.RISK_ACCEPTED, "0") == "1":
         return True
-    typer.echo(_RISK_NOTICE)
+    typer.echo(service.RISK_NOTICE)
     if not typer.confirm("Do you accept this and want to continue?", default=False):
         typer.echo("OK, nothing was set up.")
         return False
-    store.set(_RISK_ACCEPTED, "1")
+    store.set(service.RISK_ACCEPTED, "1")
     typer.echo("")
     return True
 

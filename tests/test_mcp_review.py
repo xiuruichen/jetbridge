@@ -29,7 +29,10 @@ DETAILS = {
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("JETBRIDGE_HOME", str(tmp_path))
     config = mail.EmailConfig("o@x.com", "owner@x.com")
-    monkeypatch.setattr(mcp_server, "load_config", lambda: config)
+    monkeypatch.setattr(mail, "load_config", lambda: config)
+    monkeypatch.setattr(mail.keyring, "get_password", lambda *_: "secret")
+    monkeypatch.setattr(mcp_server.winsched, "is_installed", lambda: True)
+    open_store().set(service.RISK_ACCEPTED, "1")
     mcp_server._reviews.clear()
     mcp_server._checks.clear()
 
@@ -118,12 +121,12 @@ async def test_a_changed_request_saves_only_the_review_it_confirms():
     ("change", "reason"),
     [
         ({"flight": "not a flight"}, "not a flight number"),
-        ({"origin": "New York"}, "not an airport code"),
+        ({"origin": "New York"}, "JFK, EWR, LGA"),
         ({"destination": "SEA"}, "are the same"),
         ({"dates": "5/6/2027"}, "write the month as a word"),
         ({"dates": "2020-01-01"}, "have passed"),
         ({"cabin": "luxury"}, "economy, premium, business or first"),
-        ({"program": "lufthansa"}, "unsupported program"),
+        ({"program": "lufthansa"}, "please choose"),
         ({"pax": 0}, "pax must be 1-9"),
         ({"notify": "not-an-address"}, "not-an-address"),
     ],
@@ -146,6 +149,8 @@ async def test_nothing_is_quietly_defaulted(missing):
 
 class FakeReport:
     checks = ()
+    alerts_sent = 0
+    stopped_early = None
 
 
 @pytest.fixture
@@ -165,7 +170,7 @@ async def test_a_quick_check_answers_straight_away(saved_watch, monkeypatch):
     monkeypatch.setattr(mcp_server.service, "live_tick", lambda *_, **__: FakeReport())
     async with Client(mcp_server.server) as client:
         answer = await call(client, "check_now", watch_id=saved_watch)
-    assert answer == {"finished": True, "results": []}
+    assert answer["finished"] is True and answer["results"] == []
     assert mcp_server._checks == {}
 
 
@@ -176,7 +181,9 @@ async def test_a_date_checked_twice_reports_only_the_latest_answer(saved_watch, 
         )
         return SimpleNamespace(day=FUTURE, result=result)
 
-    report = SimpleNamespace(checks=[line("available"), line("not_offered")])
+    report = SimpleNamespace(
+        checks=[line("available"), line("not_offered")], alerts_sent=1, stopped_early=None
+    )
     monkeypatch.setattr(mcp_server.service, "live_tick", lambda *_, **__: report)
     async with Client(mcp_server.server) as client:
         answer = await call(client, "check_now", watch_id=saved_watch)
@@ -205,7 +212,7 @@ async def test_a_slow_check_comes_back_in_time_and_can_be_collected(saved_watch,
         release.set()
         monkeypatch.setattr(mcp_server, "CHECK_WAIT_S", 5)
         done = await call(client, "check_result", check_id=first["check_id"])
-    assert done == {"finished": True, "results": []}
+    assert done["finished"] is True and done["results"] == []
     assert calls == [1]
 
 
@@ -223,4 +230,4 @@ async def test_a_check_failure_says_why(saved_watch, monkeypatch):
 async def test_checks_need_a_real_watch_and_a_real_check_id():
     async with Client(mcp_server.server) as client:
         assert "no watch" in await refused(client, "check_now", watch_id=999)
-        assert "no running check" in await refused(client, "check_result", check_id="made-up")
+        assert "nothing is running" in await refused(client, "check_result", check_id="made-up")

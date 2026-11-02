@@ -184,11 +184,17 @@ def learn_brands(pages: list[dict[str, Any]]) -> dict[str, Cabin]:
 
 
 def search_url(q: Query) -> str:
-    """The prefilled delta.com results link used in alerts."""
+    """The prefilled delta.com link used in alerts.
+
+    It opens Delta's date grid with this date selected. Delta runs every award link as a
+    flexible-date search, and without ``cabinFareClass`` that search fails with ROF4002 and
+    the link lands on an error. Continuing from the grid shows every cabin's fares.
+    """
     return (
         "https://www.delta.com/flight-search/search?action=findFlights&tripType=ONE_WAY"
         f"&originCity={q.origin}&destinationCity={q.destination}"
         f"&departureDate={q.date.strftime('%m/%d/%Y')}&paxCount={q.pax}&awardTravel=true"
+        "&cabinFareClass=BE"
     )
 
 

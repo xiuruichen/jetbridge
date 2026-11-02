@@ -321,8 +321,9 @@ alerts still go out with the built-in wording and `doctor` tells you.
 
 ## When you get a SEATS OPEN email
 
-1. **Open the link in the email.** It goes to the airline's results for that route, date and party
-   size, without logging you in.
+1. **Open the link in the email.** It fills in that route, date and party size. American goes
+   straight to the results. Delta opens a date grid with your date selected, so press Continue.
+   United asks you to sign in before it shows prices in miles.
 2. **Find your flight** and check the price, cabin and taxes. Award seats can disappear in minutes.
 3. **Book it yourself.** If you need to transfer points first, confirm the seats are still there,
    because transfers generally can't be undone.

@@ -617,6 +617,12 @@ def test_booking_links_use_the_real_party_size(program, domain):
     assert domain in url and ("px=3" in url or "paxCount=3" in url or "pax=3" in url)
 
 
+def test_delta_link_avoids_the_flexible_date_error():
+    # Live 2026-11-01: without cabinFareClass, Delta's link landed on error ROF4002.
+    url = delta.search_url(Query("SEA", "ICN", DAY, 1, "delta"))
+    assert "awardTravel=true" in url and "cabinFareClass=BE" in url
+
+
 def test_searches_ask_for_the_real_party_size():
     assert len(united.search_request(Query("ORD", "HND", DAY, 3))["PaxInfoList"]) == 3
     criteria = delta.search_variables(Query("DTW", "ICN", DAY, 3))["offerSearchCriteria"]

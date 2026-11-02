@@ -14,6 +14,9 @@ It searches as a guest with no login, and it doesn't book anything or move your 
 One computer does the searching, and each watch can alert different people, so you can run it
 for friends or family without them installing anything.
 
+Set it up with one line in PowerShell. Then manage your watches with simple commands or, if you use
+the Claude Desktop app, [by chatting with Claude](#using-it-through-claude).
+
 ## Contents
 
 - [Requirements](#requirements)
@@ -43,6 +46,7 @@ for friends or family without them installing anything.
 - **[uv](https://docs.astral.sh/uv/)**, which installs Python 3.12 and the other dependencies
 - **[Git](https://git-scm.com/)**, to download jetbridge
 - **A Gmail account with 2-Step Verification**, to send the alerts. They can go to any address
+- **[Claude Desktop](https://claude.com/download)** (optional), to manage your watches by chatting
 
 The one-step install below sets up Git, uv and Chrome for you if they're missing.
 
@@ -54,18 +58,24 @@ Open PowerShell and paste this one line:
 irm https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.ps1 | iex
 ```
 
-It asks before installing anything that's missing, downloads jetbridge to your home folder, and
-adds a `jetbridge` command you can run from any PowerShell window. If you have
-[Claude Desktop](#using-it-through-claude), it offers to connect it. Then it starts `jetbridge
-start`, which asks a few questions and turns on automatic checks. That's all you need. You'll want a
-[Gmail app password](https://myaccount.google.com/apppasswords) ready.
+Have a [Gmail app password](https://myaccount.google.com/apppasswords) ready. The install then:
+
+1. Asks before installing anything that's missing.
+2. Downloads jetbridge to your home folder and adds a `jetbridge` command you can run from any new
+   PowerShell window.
+3. Offers to connect [Claude Desktop](#using-it-through-claude), if you have it.
+4. Starts `jetbridge start`, which asks a few questions and turns on automatic checks.
+
+That's all you need.
 
 Running a script from the internet means trusting it, so you can
 [read it first](https://github.com/xiuruichen/jetbridge/blob/main/install.ps1).
 
-To add more flights later, run `jetbridge start`. To update jetbridge, run the same line again. The
-commands below say `uv run jetbridge` because that also works from the project folder after
-installing by hand. After the one-step install, plain `jetbridge` does the same thing.
+To add more flights later, run `jetbridge start`. To update jetbridge, quit Claude Desktop if it's
+open and run the same line again.
+
+The commands in this guide say `uv run jetbridge`, which works from the project folder. After the
+one-step install, you can shorten that to `jetbridge` from any folder.
 
 ## Installing by hand
 
@@ -403,43 +413,70 @@ happening, lower `--checks-per-day`.
 
 ## Using it through Claude
 
-You can manage your watches by chatting with Claude, in either of two apps on the PC that runs
-jetbridge. It doesn't work from claude.ai or the phone apps, because jetbridge runs on your own PC.
+If you use the Claude Desktop app, you can manage your watches by chatting instead of typing
+commands. Claude is optional, and checks and emails keep running whether or not the app is open.
 
-**Claude Desktop:** the one-step install offers to connect it. If you installed Claude Desktop
-later, run this, then quit Claude Desktop fully, including from the system tray, and reopen it:
+### Connect Claude Desktop
 
-```powershell
-jetbridge claude connect
-```
+The one-step install offers to do this if Claude Desktop is already installed. If you install it
+later, or installed jetbridge by hand:
 
-This adds jetbridge to Claude Desktop's config file. Your other servers and settings are kept, and
-the previous version is saved next to it as `claude_desktop_config.json.jetbridge-backup`. If the
-file can't be understood, it's left alone. `jetbridge claude status` shows whether it's connected.
-If you move the project folder, run `connect` again.
+1. Open Claude Desktop once and sign in.
+2. Run this in PowerShell. After installing by hand, use `uv run jetbridge` from the project folder.
 
-**Claude Code:** open [Claude Code](https://claude.com/claude-code) in the project folder and approve
-the `jetbridge` MCP server when asked. It needs `uv` on your PATH.
+   ```powershell
+   jetbridge claude connect
+   ```
 
-The first time Claude uses a jetbridge tool, Claude Desktop asks you to allow it. Choosing **Always
-allow** on `confirm_watch` skips that prompt, not the review, but it's safest to allow saving each
-time.
+3. Quit Claude Desktop fully, including from the system tray, and reopen it.
+4. In a new chat, ask: "Is my jetbridge watcher healthy?"
 
-Then you can ask things like:
+Claude Desktop asks your permission before using a jetbridge tool. Choose **Allow once** or **Always
+allow**. It's safest to keep choosing **Allow once** for the tool that saves a watch, so you can look
+at the request first.
 
-- "Watch AA100 from JFK to LHR in business on June 14-16 2027 using American miles."
-- "What's happened with my watches this week?"
-- "Is the watcher healthy?"
+### What you can ask
 
-To add a watch, Claude asks for anything missing and shows you the same review `jetbridge start`
-does. It's saved only after you say yes. It uses the same engine as the commands above, so results
-and alerts are the same. A live check started from a chat can take a few minutes, because Chrome has
-to start and load the airline's site, and Claude will say when it's still going. Claude is optional:
-checks and emails never depend on it.
+- "Watch AA100 from JFK to LHR in business on June 14-16 2027 using American miles, for 1 passenger."
+- "Which flights am I watching?"
+- "What's happened with my AA100 watch this week?"
+- "Check my AA100 watch now."
+- "Change who gets alerts for my AA100 watch to ann@example.com."
+- "Is my jetbridge watcher healthy?"
+
+Pausing or deleting a watch isn't available in chat yet, so use the
+[commands](#command-reference) for those.
+
+### What to expect
+
+- **Nothing is saved until you say yes.** Claude asks for anything missing and shows you the same
+  review as `jetbridge start`. Read it, especially who gets the alerts, then say yes or ask for a
+  change.
+- **Live checks take a while.** A check can take a few minutes, because Chrome has to start and load
+  the airline's site. Claude will say when it's still going, and may ask permission again to collect
+  the answer.
+- **A check can send real emails.** If it finds seats have opened, everyone on that watch gets an
+  alert, the same as a scheduled check.
+- **It only works on the PC running jetbridge.** You can't use it from claude.ai or the phone apps.
+- **What Claude sees.** The details it handles in your chat, including your watches and alert
+  addresses, go to Claude like the rest of the conversation.
+
+If you move the project folder, run `jetbridge claude connect` again. To disconnect, run `jetbridge
+claude disconnect`. This only removes Claude's access: your watches and alerts carry on.
+
+`connect` changes only jetbridge's entry in Claude Desktop's config file. Your other servers and
+settings are kept, the previous version is saved next to it as
+`claude_desktop_config.json.jetbridge-backup`, and a file it can't understand is left alone.
+
+### Claude Code
+
+Open [Claude Code](https://claude.com/claude-code) in the project folder and approve the `jetbridge`
+MCP server when asked. It needs `uv` on your PATH. You can ask the same things there.
 
 ## Command reference
 
-Run these as `uv run jetbridge ...` from the project folder. Add `--help` to any command for details.
+Run these as `jetbridge ...` after the one-step install, or `uv run jetbridge ...` from the project
+folder. Add `--help` to any command for details.
 
 | Command | What it does |
 |---|---|
@@ -473,9 +510,11 @@ its folder is on your PATH.
 
 **Claude Desktop doesn't show the jetbridge tools.** Run `jetbridge claude status`. If it says
 connected, quit Claude Desktop fully, including from the system tray, and reopen it. Run `jetbridge
-claude connect` if it says anything else. Its logs are in `%LOCALAPPDATA%\Claude\logs`, in
-`mcp-server-jetbridge.log`. Updating jetbridge can fail while Claude Desktop is open,
-so quit it first.
+claude connect` if it says anything else. If they still don't appear, the app's logs are in `%LOCALAPPDATA%\Claude\logs`, in
+`mcp-server-jetbridge.log`.
+
+**Updating fails with "being used by another process".** Claude Desktop keeps a jetbridge program
+open. Quit it fully, including from the system tray, and run the update again.
 
 **The test email fails with a login error.** Use an app password, not your normal Gmail password,
 and make sure 2-Step Verification is on. Google Workspace accounts, including school ones, may have
@@ -514,7 +553,9 @@ $env:JETBRIDGE_SHOW_BROWSER = "1"
 
 ## Where your data lives
 
-Everything is on your PC. Nothing goes anywhere except searches to the airline sites and emails through Gmail.
+Everything is on your PC. Nothing goes anywhere except searches to the airline sites and emails
+through Gmail, plus whatever Claude handles in your chat if you [use it through
+Claude](#using-it-through-claude).
 
 | What | Where |
 |---|---|

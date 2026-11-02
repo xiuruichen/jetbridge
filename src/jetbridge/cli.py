@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import shutil
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import typer
 
-from jetbridge import headlines, service, winsched
+from jetbridge import headlines, service, winsched, wizard
 from jetbridge.acquire import american
 from jetbridge.acquire.governor import Governor
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
@@ -380,6 +380,63 @@ def notify_headline(
         raise _fail(f"{exc}. Run 'jetbridge notify headline' to see the alerts") from exc
     headlines.save(custom)
     typer.echo(f"{alert.value}: {custom.get(alert, DEFAULT_HEADLINES[alert])}")
+
+
+# ---- start ----------------------------------------------------------------------------
+_EMAIL_FAILED = "email_test_failed"
+
+
+def _email_ready(store: Store) -> bool:
+    config = mail.load_config()
+    if config is None or store.get(_EMAIL_FAILED, "0") == "1":
+        return False
+    return bool(mail.keyring.get_password(mail.KEYRING_SERVICE, config.from_address))
+
+
+def _start_email(store: Store) -> None:
+    """Set up email if needed. If the test fails, the next `start` asks for the details again."""
+    if _email_ready(store):
+        return
+    typer.echo("First, let's set up the Gmail account that sends your alerts.\n")
+    store.set(_EMAIL_FAILED, "1")
+    try:
+        notify_setup()
+    except typer.Exit:
+        typer.echo(
+            "\nThe test email didn't send, so no flight was added. Fix the problem above, "
+            "then run 'jetbridge start' again."
+        )
+        raise
+    store.set(_EMAIL_FAILED, "0")
+    typer.echo("Check that inbox now, and the spam folder if it isn't there.\n")
+
+
+@app.command()
+def start() -> None:
+    """Set up jetbridge and add flights by answering a few questions. Start here."""
+    store = service.open_store()
+    first_run = not winsched.is_installed()
+    try:
+        _start_email(store)
+        config = mail.load_config()
+        owner = config.to_address if config else "you"
+        added = wizard.add_watches(store, owner, date.today())
+    except typer.Abort:
+        typer.echo("\nStopped. Anything you confirmed is saved, and nothing else.")
+        raise typer.Exit(code=1) from None
+
+    if added and first_run:
+        typer.echo("\nTurning on automatic checks...")
+        try:
+            winsched.install()
+        except RuntimeError as exc:
+            raise _fail(f"{exc}. Try 'jetbridge schedule install'") from exc
+        typer.echo(f"Installed task '{winsched.TASK_NAME}'. It runs while you're logged on.\n")
+        doctor()
+        typer.echo(
+            "\n'A clear answer from aa.com' can say FAIL until the first check finishes, which "
+            "is normal.\nKeep this PC on, awake and logged in, or checks will pause."
+        )
 
 
 # ---- schedule -------------------------------------------------------------------------

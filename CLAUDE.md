@@ -16,6 +16,7 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 (pure) · `scheduler.py` due, jitter, grouping (pure) · `store.py` SQLite · `runner.py` one tick ·
 `acquire/` `american.py` (fetch and pure parse), `detect.py`, `governor.py`, `broker.py`
 (Chrome), `fetcher.py` · `notify/email.py` Gmail and outbox · `winsched.py` scheduled task ·
+`draft.py` a watch being entered, friendly input · `wizard.py` `jetbridge start` questions ·
 `headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py`.
 
 ## Invariants (do not break)
@@ -34,5 +35,8 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 - Seat alerts go only to the watch's recipients (the owner if none), one email per person so
   addresses are never shared. Health warnings and digests go only to the owner.
 - Custom headlines change wording only, and a bad headlines file falls back to the built-in text.
+- Every way of adding a watch shows the draft review and saves only after a yes. Never guess a
+  flight number or an address. The flight picker's search goes through `Governor.acquire` and isn't
+  retried, and a flight missing from its list doesn't mean the flight doesn't exist.
 - Personal details (addresses, watches, passwords) stay in the state folder, never in this repo.
 - The Gmail app password stays in Windows Credential Manager, never in files or logs.

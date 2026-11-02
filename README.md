@@ -61,7 +61,21 @@ Then install:
 uv sync
 ```
 
-### 2. Set up email
+### 2. Answer a few questions
+
+This is the easiest way to set everything up:
+
+```powershell
+uv run jetbridge start
+```
+
+It sets up email, asks where and when you're flying, can look up the flights on your route, shows
+you what it's about to save, and turns on automatic checks. You'll need a
+[Gmail app password](https://myaccount.google.com/apppasswords). You can run it again to add more
+flights, and it's the only step you need. The rest of this section does the same thing one command
+at a time.
+
+### 3. Set up email by hand
 
 Create an app password at <https://myaccount.google.com/apppasswords>, then run:
 
@@ -72,7 +86,7 @@ uv run jetbridge notify setup
 It asks for the Gmail address to send from, your own address for alerts and health warnings, and
 the app password. Then it sends a test email. If nothing arrives, check your spam folder.
 
-### 3. Add a flight
+### 4. Add a flight
 
 ```powershell
 uv run jetbridge watch add AA100 --from JFK --to LHR --dates 2027-06-14..2027-06-16 --cabin business
@@ -82,7 +96,7 @@ It asks who should get the seat alerts. Type one or more addresses separated by 
 Enter to send them to yourself. It then prints a watch ID, such as `[1]`, which the other commands
 use.
 
-### 4. Try one check
+### 5. Try one check
 
 ```powershell
 uv run jetbridge check 1
@@ -98,13 +112,13 @@ for each date:
 3 check(s), 0 email(s) sent.
 ```
 
-### 5. Turn on automatic checks
+### 6. Turn on automatic checks
 
 ```powershell
 uv run jetbridge schedule install
 ```
 
-### 6. Confirm everything works
+### 7. Confirm everything works
 
 ```powershell
 uv run jetbridge doctor
@@ -354,6 +368,7 @@ Run these as `uv run jetbridge ...` from the project folder. Add `--help` to any
 
 | Command | What it does |
 |---|---|
+| `start` | Set up jetbridge and add flights by answering questions |
 | `watch add FLIGHT ...` | Start watching a flight |
 | `watch list` | List every watch |
 | `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |

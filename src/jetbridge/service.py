@@ -7,11 +7,22 @@ import re
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from jetbridge import headlines
 from jetbridge.acquire.governor import Governor
-from jetbridge.models import Cabin, Flight, Watch
+from jetbridge.matcher import evaluate
+from jetbridge.models import (
+    AnswerKind,
+    Cabin,
+    CheckResult,
+    Flight,
+    ParsedSlice,
+    Query,
+    SearchAnswer,
+    Watch,
+)
 from jetbridge.paths import db_path, lock_path
 from jetbridge.store import Store
 
@@ -20,6 +31,7 @@ _EMAIL = re.compile(r"[^@ ,;]+@[^@ ,;.]+(\.[^@ ,;.]+)+")
 MAX_DATES = 14
 MAX_RECIPIENTS = 10
 PROGRAMS = ("american",)
+FIND_FLIGHTS_BUDGET_S = 180
 
 
 class TickBusy(Exception):
@@ -140,6 +152,101 @@ def create_watch(
         max_miles=max_miles,
         recipients=addresses,
     )
+
+
+@dataclass(frozen=True)
+class FlightOption:
+    """One flight aa.com listed for a route and date, as a watch would see it."""
+
+    code: str
+    departs: datetime
+    arrives: datetime
+    stops: int
+    result: CheckResult
+
+
+@dataclass(frozen=True)
+class FlightSearch:
+    """A route search. ``problem`` means no answer was given, not that there's no flight."""
+
+    options: tuple[FlightOption, ...] = ()
+    problem: str | None = None
+    incomplete: bool = False
+
+
+def _is_single_flight(item: ParsedSlice, query: Query) -> bool:
+    """One flight number the whole way, which is the only thing a watch can match."""
+    legs = item.legs
+    return (
+        bool(legs)
+        and all(leg.code == legs[0].code for leg in legs)
+        and legs[0].origin == query.origin
+        and legs[-1].destination == query.destination
+        and legs[0].departs_at.date() == query.date
+    )
+
+
+_NO_ANSWER = {
+    AnswerKind.BLOCKED: "aa.com asked jetbridge to slow down, so it won't try again for a while.",
+    AnswerKind.DEFERRED: "jetbridge is holding off on searches right now to stay under its limit.",
+    AnswerKind.DRIFT: "aa.com's page wasn't what jetbridge expected, so it can't list flights.",
+    AnswerKind.ERROR: "the search didn't finish, so jetbridge can't list flights right now.",
+}
+
+
+def flights_from_answer(answer: SearchAnswer, query: Query, cabin: Cabin) -> FlightSearch:
+    """Read the flights out of an answer. Each is judged by the same rules a watch uses."""
+    if answer.kind is not AnswerKind.ANSWER or answer.parsed is None:
+        return FlightSearch(problem=_NO_ANSWER.get(answer.kind, "aa.com gave no clear answer."))
+    parsed = answer.parsed
+    if parsed.site_error:
+        return FlightSearch(problem=f"aa.com returned an error ({parsed.site_error}).")
+
+    options: dict[str, FlightOption] = {}
+    for item in parsed.slices:
+        if not _is_single_flight(item, query):
+            continue
+        first, last = item.legs[0], item.legs[-1]
+        watch = Watch(
+            id=0,
+            flight=Flight(first.carrier, first.number),
+            origin=query.origin,
+            destination=query.destination,
+            dates=(query.date,),
+            cabin=cabin,
+            pax=query.pax,
+        )
+        options.setdefault(
+            first.code,
+            FlightOption(
+                first.code,
+                first.departs_at,
+                last.arrives_at,
+                len(item.legs) - 1,
+                evaluate(watch, query.date, answer),
+            ),
+        )
+    ordered = sorted(options.values(), key=lambda option: option.departs)
+    return FlightSearch(tuple(ordered), incomplete=bool(parsed.unreadable))
+
+
+async def search_flights(fetcher, query: Query, cabin: Cabin, deadline: float) -> FlightSearch:
+    """One search and no retries. A block has already opened a rest in the governor."""
+    try:
+        answer = await fetcher.search(query, deadline)
+    finally:
+        await fetcher.close()
+    return flights_from_answer(answer, query, cabin)
+
+
+def find_flights(store: Store, query: Query, cabin: Cabin) -> FlightSearch:
+    """List the flights on a route, using one real search under the usual lock and limits."""
+    from jetbridge.acquire.fetcher import LiveFetcher
+
+    with tick_lock():
+        governor = Governor(store, time.time)
+        deadline = time.time() + FIND_FLIGHTS_BUDGET_S
+        return asyncio.run(search_flights(LiveFetcher(governor), query, cabin, deadline))
 
 
 def live_tick(store: Store, only_watch: int | None = None):

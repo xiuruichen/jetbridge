@@ -9,7 +9,7 @@ from pathlib import Path
 
 import typer
 
-from jetbridge import headlines, service, winsched, wizard
+from jetbridge import claude_desktop, headlines, service, winsched, wizard
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
@@ -24,7 +24,9 @@ notify_app = typer.Typer(no_args_is_help=True, help="Set up and test email alert
 schedule_app = typer.Typer(no_args_is_help=True, help="Run checks automatically on this PC.")
 app.add_typer(watch_app, name="watch")
 app.add_typer(notify_app, name="notify")
+claude_app = typer.Typer(no_args_is_help=True, help="Use jetbridge from the Claude Desktop app.")
 app.add_typer(schedule_app, name="schedule")
+app.add_typer(claude_app, name="claude")
 
 
 def _fail(message: str) -> typer.Exit:
@@ -316,6 +318,7 @@ def doctor() -> None:
     if good is not None:
         typer.echo(f"Last clear answer: {format_when(good)}")
     _print_health(store)
+    typer.echo(f"Claude Desktop (optional): {claude_desktop.status().value}")
     typer.echo(f"State folder: {home()}")
     typer.echo(f"Saved failed responses: {len(list(raw_dir().glob('*.html')))}")
 
@@ -475,6 +478,78 @@ def start() -> None:
             "\n'A clear answer from an airline' can say FAIL until the first check finishes, which "
             "is normal."
         )
+
+
+# ---- claude ---------------------------------------------------------------------------
+_DOWNLOAD_CLAUDE = "https://claude.com/download"
+
+
+def _ask_to_connect() -> bool:
+    """The installer's question. Says why when there's nothing to ask, and never fails."""
+    state = claude_desktop.status()
+    if state is claude_desktop.State.NOT_INSTALLED:
+        typer.echo(
+            "Claude Desktop isn't installed, which is fine. If you install it later, run "
+            "'jetbridge claude connect' to manage your watches by chatting."
+        )
+        return False
+    if state is claude_desktop.State.CONNECTED:
+        typer.echo("Claude Desktop is already connected to jetbridge.")
+        return False
+    try:
+        return typer.confirm(
+            "Claude Desktop is installed. Connect jetbridge to it, so you can manage your watches "
+            "by chatting?",
+            default=True,
+        )
+    except typer.Abort:
+        return False
+
+
+@claude_app.command("connect")
+def claude_connect(
+    ask: bool = typer.Option(False, "--ask", help="Ask first, and don't fail if it can't be done."),
+) -> None:
+    """Add jetbridge to Claude Desktop's config. Your other servers and settings are kept."""
+    if ask and not _ask_to_connect():
+        return
+    try:
+        changed = claude_desktop.connect()
+    except claude_desktop.ConfigProblem as exc:
+        message = f"{exc}."
+        if claude_desktop.status() is claude_desktop.State.NOT_INSTALLED:
+            message += f" Get it from {_DOWNLOAD_CLAUDE}, open it once, then run this again."
+        if ask:
+            typer.echo(f"Couldn't connect Claude Desktop: {message}")
+            return
+        raise _fail(message) from exc
+    if not changed:
+        typer.echo("Claude Desktop is already connected to jetbridge.")
+        return
+    typer.echo(
+        "Connected. Quit Claude Desktop fully, including from the system tray, and reopen it. Then "
+        'try asking: "Is my jetbridge watcher healthy?"'
+    )
+
+
+@claude_app.command("disconnect")
+def claude_disconnect() -> None:
+    """Remove jetbridge from Claude Desktop's config. Your watches and alerts are unaffected."""
+    try:
+        changed = claude_desktop.disconnect()
+    except claude_desktop.ConfigProblem as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo(
+        "Removed. Restart Claude Desktop for it to take effect."
+        if changed
+        else "Claude Desktop wasn't connected to jetbridge."
+    )
+
+
+@claude_app.command("status")
+def claude_status() -> None:
+    """Show whether Claude Desktop is connected to jetbridge."""
+    typer.echo(f"Claude Desktop: {claude_desktop.status().value}")
 
 
 # ---- schedule -------------------------------------------------------------------------

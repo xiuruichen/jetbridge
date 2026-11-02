@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -78,3 +79,77 @@ def test_a_yes_installs_only_the_three_tools():
         "Google.Chrome",
     ]
     assert "STILL OPEN" in output
+
+
+# Loads the script's functions without running the install.
+LOAD_FUNCTIONS = (
+    "$ast = [System.Management.Automation.Language.Parser]::ParseFile("
+    f"'{SCRIPT}', [ref]$null, [ref]$null); "
+    "$ast.FindAll({ $args[0] -is "
+    "[System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | "
+    "ForEach-Object { Invoke-Expression $_.Extent.Text }; "
+)
+
+
+def run_functions(command: str) -> str:
+    result = run_powershell(LOAD_FUNCTIONS + command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stdout.strip()
+
+
+@pytest.mark.parametrize(
+    ("current", "expected"),
+    [
+        ("", "C:\\bin"),
+        ("C:\\a", "C:\\a;C:\\bin"),
+        ("C:\\a;", "C:\\a;C:\\bin"),
+        ("C:\\a;c:\\BIN\\", "C:\\a;c:\\BIN\\"),
+        ("%USERPROFILE%\\x", "%USERPROFILE%\\x;C:\\bin"),
+    ],
+)
+def test_path_gets_the_folder_once(current, expected):
+    output = run_functions(f"Add-FolderToPathText '{current}' 'C:\\bin'")
+    assert output == expected
+
+
+def test_user_path_keeps_variables_unexpanded_and_adds_once():
+    # A scratch registry key stands in for the real PATH.
+    name = f"Software\\jetbridge-test-{uuid.uuid4().hex}"
+    output = run_functions(
+        f"$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('{name}'); "
+        "$key.SetValue('Path', '%USERPROFILE%\\x', "
+        "[Microsoft.Win32.RegistryValueKind]::ExpandString); $key.Close(); "
+        f"Add-FolderToUserPath 'C:\\jb' '{name}'; Add-FolderToUserPath 'C:\\jb' '{name}'; "
+        f"$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('{name}'); "
+        "$key.GetValue('Path', '', "
+        "[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); "
+        "$key.GetValueKind('Path'); $key.Close(); "
+        f"[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey('{name}')"
+    )
+    assert output.splitlines() == ["%USERPROFILE%\\x;C:\\jb", "ExpandString"]
+
+
+def test_launcher_passes_arguments_to_the_program(tmp_path):
+    program = tmp_path / "with space" / "show.cmd"
+    program.parent.mkdir()
+    program.write_text("@echo ARGS %*\r\n", encoding="ascii")
+    folder = tmp_path / "bin"
+    run_functions(f"Write-Launcher '{program}' '{folder}'")
+    result = subprocess.run(
+        ["cmd", "/c", str(folder / "jetbridge.cmd"), "watch", "list"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "ARGS watch list"
+
+
+def test_environment_folder_follows_the_synced_folder_setting():
+    assert (
+        run_functions("$env:UV_PROJECT_ENVIRONMENT = $null; Get-EnvironmentFolder 'C:\\jb'")
+        == "C:\\jb\\.venv"
+    )
+    assert (
+        run_functions("$env:UV_PROJECT_ENVIRONMENT = 'D:\\venv'; Get-EnvironmentFolder 'C:\\jb'")
+        == "D:\\venv"
+    )

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 from mcp import Client
 
-from jetbridge import mcp_server
+from jetbridge import mcp_server, service
 from jetbridge.notify import email as mail
 from jetbridge.service import open_store
 
@@ -29,6 +31,7 @@ def isolated(tmp_path, monkeypatch):
     config = mail.EmailConfig("o@x.com", "owner@x.com")
     monkeypatch.setattr(mcp_server, "load_config", lambda: config)
     mcp_server._reviews.clear()
+    mcp_server._checks.clear()
 
 
 def watches():
@@ -139,3 +142,85 @@ async def test_nothing_is_quietly_defaulted(missing):
     async with Client(mcp_server.server) as client:
         await refused(client, "review_watch", **details)
     assert mcp_server._reviews == {}
+
+
+class FakeReport:
+    checks = ()
+
+
+@pytest.fixture
+def saved_watch():
+    return service.create_watch(
+        open_store(),
+        flight="DL197",
+        origin="SEA",
+        destination="ICN",
+        dates=FUTURE.isoformat(),
+        cabin="economy",
+        program="delta",
+    ).id
+
+
+async def test_a_quick_check_answers_straight_away(saved_watch, monkeypatch):
+    monkeypatch.setattr(mcp_server.service, "live_tick", lambda *_, **__: FakeReport())
+    async with Client(mcp_server.server) as client:
+        answer = await call(client, "check_now", watch_id=saved_watch)
+    assert answer == {"finished": True, "results": []}
+    assert mcp_server._checks == {}
+
+
+async def test_a_date_checked_twice_reports_only_the_latest_answer(saved_watch, monkeypatch):
+    def line(status):
+        result = SimpleNamespace(
+            status=SimpleNamespace(value=status), miles=97_000, seats_text="1", detail=None
+        )
+        return SimpleNamespace(day=FUTURE, result=result)
+
+    report = SimpleNamespace(checks=[line("available"), line("not_offered")])
+    monkeypatch.setattr(mcp_server.service, "live_tick", lambda *_, **__: report)
+    async with Client(mcp_server.server) as client:
+        answer = await call(client, "check_now", watch_id=saved_watch)
+    assert [row["status"] for row in answer["results"]] == ["not_offered"]
+
+
+async def test_a_slow_check_comes_back_in_time_and_can_be_collected(saved_watch, monkeypatch):
+    release = threading.Event()
+    calls = []
+
+    def slow(*_, **__):
+        calls.append(1)
+        release.wait(10)
+        return FakeReport()
+
+    monkeypatch.setattr(mcp_server.service, "live_tick", slow)
+    monkeypatch.setattr(mcp_server, "CHECK_WAIT_S", 0.05)
+    async with Client(mcp_server.server) as client:
+        first = await call(client, "check_now", watch_id=saved_watch)
+        assert first["finished"] is False
+        # Asking again must not start a second search on the airline's site.
+        again = await call(client, "check_now", watch_id=saved_watch)
+        assert again["check_id"] == first["check_id"]
+        waiting = await call(client, "check_result", check_id=first["check_id"])
+        assert waiting["finished"] is False
+        release.set()
+        monkeypatch.setattr(mcp_server, "CHECK_WAIT_S", 5)
+        done = await call(client, "check_result", check_id=first["check_id"])
+    assert done == {"finished": True, "results": []}
+    assert calls == [1]
+
+
+async def test_a_check_failure_says_why(saved_watch, monkeypatch):
+    def busy(*_, **__):
+        raise service.TickBusy("another jetbridge check is already running")
+
+    monkeypatch.setattr(mcp_server.service, "live_tick", busy)
+    async with Client(mcp_server.server) as client:
+        message = await refused(client, "check_now", watch_id=saved_watch)
+    assert "already running" in message
+    assert mcp_server._checks == {}
+
+
+async def test_checks_need_a_real_watch_and_a_real_check_id():
+    async with Client(mcp_server.server) as client:
+        assert "no watch" in await refused(client, "check_now", watch_id=999)
+        assert "no running check" in await refused(client, "check_result", check_id="made-up")

@@ -6,7 +6,9 @@ Checks and alerts never depend on this. All results come from the deterministic 
 from __future__ import annotations
 
 import secrets
+import threading
 import time
+from concurrent import futures
 from datetime import date
 from typing import Any
 
@@ -29,7 +31,9 @@ server = MCPServer(
         "size and who should get the alerts; ask if any are missing and never guess a flight, a "
         "route or an address. Adding a watch takes two steps: call review_watch, show the person "
         "the review word for word, and call confirm_watch only after they say yes to it. If they "
-        "want a change, call review_watch again. Quote only numbers returned by these "
+        "want a change, call review_watch again. A live check can take a few minutes: if "
+        "check_now answers finished false, tell the person it's still going and call "
+        "check_result with its check_id until it finishes. Quote only numbers returned by these "
         "tools. 'unknown' means the check couldn't tell, so never describe it as no seats."
     ),
 )
@@ -161,20 +165,76 @@ def watch_history(watch_id: int, limit: int = 30) -> list[dict[str, Any]]:
     ]
 
 
-@server.tool()
-def check_now(watch_id: int) -> list[dict[str, Any]]:
-    """Check a watch live now. Still subject to the rate limit and any rest after a block."""
-    report = service.live_tick(service.open_store(), only_watch=watch_id)
-    return [
-        {
-            "date": line.day.isoformat(),
-            "status": line.result.status.value,
-            "miles": line.result.miles,
-            "seats": line.result.seats_text,
-            "detail": line.result.detail,
+# Claude Desktop gives up on a tool call at about 60 seconds, and a live check can take longer
+# because Chrome has to start and load the airline's site. So a check runs on its own thread and
+# each call waits for less than that.
+CHECK_WAIT_S = 45.0
+_checks: dict[str, tuple[int, futures.Future[list[dict[str, Any]]]]] = {}
+
+
+def _run_check(watch_id: int, future: futures.Future[list[dict[str, Any]]]) -> None:
+    try:
+        report = service.live_tick(service.open_store(), only_watch=watch_id)
+        # An opening is checked twice before its alert goes out. The later answer is current.
+        latest = {line.day: line for line in report.checks}
+        future.set_result(
+            [
+                {
+                    "date": line.day.isoformat(),
+                    "status": line.result.status.value,
+                    "miles": line.result.miles,
+                    "seats": line.result.seats_text,
+                    "detail": line.result.detail,
+                }
+                for line in latest.values()
+            ]
+        )
+    except Exception as exc:
+        future.set_exception(exc)
+
+
+def _check_answer(check_id: str) -> dict[str, Any]:
+    _watch_id, future = _checks[check_id]
+    if not futures.wait([future], timeout=CHECK_WAIT_S).done:
+        return {
+            "finished": False,
+            "check_id": check_id,
+            "message": "Still checking. Call check_result with this check_id for the answer.",
         }
-        for line in report.checks
-    ]
+    del _checks[check_id]
+    error = future.exception()
+    if isinstance(error, service.TickBusy):
+        raise ToolError(f"{error}. Try again in a few minutes")
+    if error is not None:
+        raise ToolError(f"the check didn't finish: {error}")
+    return {"finished": True, "results": future.result()}
+
+
+@server.tool()
+def check_now(watch_id: int) -> dict[str, Any]:
+    """Check a watch live now. Still subject to the rate limit and any rest after a block.
+
+    If the answer says finished is false, the check is still running: call check_result with its
+    check_id. A check already running for this watch is picked up rather than started again."""
+    if service.open_store().get_watch(watch_id) is None:
+        raise ToolError(f"no watch with id {watch_id}")
+    for check_id, (running, future) in _checks.items():
+        if running == watch_id and not future.done():
+            return _check_answer(check_id)
+    check_id = secrets.token_hex(8)
+    future: futures.Future[list[dict[str, Any]]] = futures.Future()
+    _checks[check_id] = (watch_id, future)
+    threading.Thread(target=_run_check, args=(watch_id, future), daemon=True).start()
+    return _check_answer(check_id)
+
+
+@server.tool()
+def check_result(check_id: str) -> dict[str, Any]:
+    """Get the answer to a check_now that was still running. Waits up to 45 seconds, and says
+    finished is false if it needs another call."""
+    if check_id not in _checks:
+        raise ToolError("no running check with that id. Call check_now to start one")
+    return _check_answer(check_id)
 
 
 @server.tool()

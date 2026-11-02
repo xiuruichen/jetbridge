@@ -4,6 +4,8 @@ version = "0.2.0"
 description = "Watches award availability for a specific flight and emails you when seats open"
 readme = "README.md"
 authors = [{ name = "xiuruichen" }]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "keyring>=25",

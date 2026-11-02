@@ -30,6 +30,7 @@ for friends or family without them installing anything.
 - [Where your data lives](#where-your-data-lives)
 - [Uninstalling](#uninstalling)
 - [Development](#development)
+- [License](#license)
 
 ## Requirements
 
@@ -463,3 +464,7 @@ uv run ruff format .
 Set `JETBRIDGE_KEEP_RAW=1` to save successful responses too, which is useful for recording test
 fixtures. Rules that must not be broken, such as "only a recognized answer can mean no seats", are
 listed in [`CLAUDE.md`](CLAUDE.md).
+
+## License
+
+[MIT](LICENSE)

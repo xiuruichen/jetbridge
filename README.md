@@ -15,6 +15,7 @@ for friends or family without them installing anything.
 
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
+- [Installing by hand](#installing-by-hand)
 - [Adding a watch](#adding-a-watch)
 - [Sending alerts to other people](#sending-alerts-to-other-people)
 - [Checking on your watches](#checking-on-your-watches)
@@ -37,9 +38,29 @@ for friends or family without them installing anything.
 - **Windows**, because automatic checks use Windows Task Scheduler
 - **Google Chrome**, installed normally
 - **[uv](https://docs.astral.sh/uv/)**, which installs Python 3.12 and the other dependencies
+- **[Git](https://git-scm.com/)**, to download jetbridge
 - **A Gmail account with 2-Step Verification**, to send the alerts. They can go to any address
 
+The one-step install below sets up Git, uv and Chrome for you if they're missing.
+
 ## Quick start
+
+Open PowerShell and paste this one line:
+
+```powershell
+irm https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.ps1 | iex
+```
+
+It asks before installing anything that's missing, downloads jetbridge to your home folder, and
+starts `jetbridge start`, which asks a few questions and turns on automatic checks. That's all you
+need. You'll want a [Gmail app password](https://myaccount.google.com/apppasswords) ready.
+
+Running a script from the internet means trusting it, so you can
+[read it first](https://github.com/xiuruichen/jetbridge/blob/main/install.ps1).
+
+To add more flights later, run `uv run jetbridge start` from the `jetbridge` folder.
+
+## Installing by hand
 
 ### 1. Install
 
@@ -69,7 +90,7 @@ This is the easiest way to set everything up:
 uv run jetbridge start
 ```
 
-It sets up email, asks where and when you're flying, can look up the flights on your route, shows
+It shows a short notice about the risks and limits, sets up email, asks where and when you're flying, can look up the flights on your route, shows
 you what it's about to save, and turns on automatic checks. You'll need a
 [Gmail app password](https://myaccount.google.com/apppasswords). You can run it again to add more
 flights, and it's the only step you need. The rest of this section does the same thing one command

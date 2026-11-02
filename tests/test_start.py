@@ -44,6 +44,7 @@ def ready(tmp_path, monkeypatch):
     monkeypatch.setattr(mail.keyring, "get_password", lambda *a: "secret")
     monkeypatch.setattr(winsched, "is_installed", lambda: True)
     monkeypatch.setattr(cli, "date", type("D", (), {"today": staticmethod(lambda: TODAY)}))
+    open_store().set("risk_accepted", "1")
 
 
 def picker(monkeypatch, search):
@@ -325,6 +326,40 @@ def test_add_another_keeps_going(monkeypatch):
     result = cli_runner.invoke(app, ["start"], input=answers)
     assert result.exit_code == 0, result.output
     assert [w.flight.code for w in watches()] == ["CX845", "BA178"]
+
+
+# ---- risk notice ----------------------------------------------------------------------
+def test_declining_the_notice_sets_up_and_searches_nothing(monkeypatch):
+    calls = picker(monkeypatch, AssertionError("should not search"))
+    setup = []
+    monkeypatch.setattr(cli, "notify_setup", lambda: setup.append("setup"))
+    open_store().set("risk_accepted", "0")
+    for answer in ("n", ""):
+        result = cli_runner.invoke(app, ["start"], input=lines(answer))
+        assert result.exit_code == 0, result.output
+        assert "terms of use" in result.output and "logged in" in result.output
+        assert "nothing was set up" in result.output
+    assert calls == [] and setup == [] and watches() == []
+    assert open_store().get("risk_accepted", "0") == "0"
+
+
+def test_the_notice_is_shown_once(monkeypatch):
+    picker(monkeypatch, FlightSearch((OPTION,)))
+    open_store().set("risk_accepted", "0")
+    first = cli_runner.invoke(app, ["start"], input=lines("y", *ROUTE, "CX845", "", "", "n", "n"))
+    assert first.exit_code == 0, first.output
+    assert "terms of use" in first.output
+
+    second = cli_runner.invoke(app, ["start"], input=lines(*ROUTE, "CX845", "", "", "n", "n"))
+    assert second.exit_code == 0, second.output
+    assert "terms of use" not in second.output
+
+
+def test_closing_at_the_notice_accepts_nothing():
+    open_store().set("risk_accepted", "0")
+    result = cli_runner.invoke(app, ["start"], input="")
+    assert result.exit_code == 1
+    assert open_store().get("risk_accepted", "0") == "0"
 
 
 # ---- first run ------------------------------------------------------------------------

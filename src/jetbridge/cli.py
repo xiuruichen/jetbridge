@@ -384,6 +384,32 @@ def notify_headline(
 
 # ---- start ----------------------------------------------------------------------------
 _EMAIL_FAILED = "email_test_failed"
+_RISK_ACCEPTED = "risk_accepted"
+_RISK_NOTICE = """Before you start, please read this:
+
+- jetbridge searches aa.com automatically, which likely goes against aa.com's terms of use. You
+  accept that risk by running it. It never logs in, so your AAdvantage account isn't involved,
+  and it searches at low volume, but aa.com can still block its searches.
+- It only checks while this PC is on, awake and logged in. To catch seats overnight, set Windows
+  sleep to Never while plugged in.
+- Checks are hours apart, so seats that open and close between them are missed. Don't rely on it
+  as your only way of finding seats.
+- It never books anything or moves your miles. You do that yourself.
+- Only add email addresses of people who want these alerts.
+"""
+
+
+def _accept_risks(store: Store) -> bool:
+    """Shown once. Nothing is set up or searched until it's accepted."""
+    if store.get(_RISK_ACCEPTED, "0") == "1":
+        return True
+    typer.echo(_RISK_NOTICE)
+    if not typer.confirm("Do you accept this and want to continue?", default=False):
+        typer.echo("OK, nothing was set up.")
+        return False
+    store.set(_RISK_ACCEPTED, "1")
+    typer.echo("")
+    return True
 
 
 def _email_ready(store: Store) -> bool:
@@ -417,6 +443,8 @@ def start() -> None:
     store = service.open_store()
     first_run = not winsched.is_installed()
     try:
+        if not _accept_risks(store):
+            return
         _start_email(store)
         config = mail.load_config()
         owner = config.to_address if config else "you"
@@ -435,7 +463,7 @@ def start() -> None:
         doctor()
         typer.echo(
             "\n'A clear answer from aa.com' can say FAIL until the first check finishes, which "
-            "is normal.\nKeep this PC on, awake and logged in, or checks will pause."
+            "is normal."
         )
 
 

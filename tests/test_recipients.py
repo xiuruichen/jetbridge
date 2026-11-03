@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 from conftest import DAY, FakeSender, add_cx, answer_from, cx_slice, make_runner, response
 
-from jetbridge.models import AnswerKind, SearchAnswer
+from jetbridge.models import AnswerKind, Cabin, Flight, SearchAnswer
 from jetbridge.notify.email import EmailConfig, build_message, flush_outbox
 from jetbridge.service import create_watch, parse_recipients
 from jetbridge.store import NewAlert, Store
@@ -100,12 +100,62 @@ async def test_health_warnings_go_only_to_owner(store, clock):
     assert set(sender.to) == {None}
 
 
-async def test_digest_goes_only_to_owner_and_names_recipients(store, clock):
+def _digests(sender):
+    return {
+        to: body
+        for to, (subject, body) in zip(sender.to, sender.sent, strict=True)
+        if subject.startswith("jetbridge daily")
+    }
+
+
+async def test_digest_goes_to_everyone_without_showing_other_addresses(store, clock):
     store.set("digest_enabled", "1")
+    add_cx(store, clock, recipients=(ANN, BO))
+    runner, _, sender, _ = make_runner(store, clock, [answer_from(CLOSED)])
+    await runner.tick()
+    bodies = _digests(sender)
+    assert set(bodies) == {None, ANN, BO}
+    assert ANN in bodies[None] and BO in bodies[None]
+    for person in (ANN, BO):
+        assert ANN not in bodies[person] and BO not in bodies[person]
+        assert "CX805" in bodies[person] and "the person who added you" in bodies[person]
+    sent_so_far = len(sender.to)
+    await runner.tick()
+    assert len(sender.to) == sent_so_far  # once a day each
+
+
+async def test_digest_keeps_health_notes_for_the_owner(store, clock):
+    store.set("digest_enabled", "1")
+    store.set("longest_gap_s", str(7 * 3600))
     add_cx(store, clock, recipients=(ANN,))
     runner, _, sender, _ = make_runner(store, clock, [answer_from(CLOSED)])
     await runner.tick()
-    assert sender.to == [None] and f"Seat alerts go to: {ANN}" in sender.sent[0][1]
+    bodies = _digests(sender)
+    assert "off or asleep" in bodies[None] and "off or asleep" not in bodies[ANN]
+    assert "(watch " in bodies[None] and "(watch " not in bodies[ANN]
+
+
+def test_someones_digest_covers_only_their_watches(store, clock):
+    store.set("digest_enabled", "1")
+    add_cx(store, clock, recipients=(ANN,))
+    store.add_watch(
+        Flight("CX", "889"), "JFK", "HKG", (DAY,), Cabin.BUSINESS, now=clock(), recipients=(BO,)
+    )
+    runner, _, _, _ = make_runner(store, clock, [])
+    runner._digest()
+    bodies = {item.recipient: item.body for item in store.pending_alerts()}
+    assert "CX805" in bodies[ANN] and "CX889" not in bodies[ANN]
+    assert "CX889" in bodies[BO] and "CX805" not in bodies[BO]
+    assert "CX805" in bodies[None] and "CX889" in bodies[None]
+
+
+async def test_owner_on_the_list_gets_one_digest(store, clock, monkeypatch):
+    monkeypatch.setattr("jetbridge.runner.owner_address", lambda: "Me@example.com")
+    store.set("digest_enabled", "1")
+    add_cx(store, clock, recipients=("me@example.com", ANN))
+    runner, _, sender, _ = make_runner(store, clock, [answer_from(CLOSED)])
+    await runner.tick()
+    assert set(_digests(sender)) == {None, ANN}
 
 
 def test_refused_address_does_not_block_others_and_owner_is_told(store, clock):

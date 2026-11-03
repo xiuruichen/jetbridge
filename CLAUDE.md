@@ -49,7 +49,8 @@ versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
   and alerts in one transaction, and email goes only through the outbox.
 - An opening is re-checked live before its alert goes out.
 - Seat alerts go only to the watch's recipients (the owner if none), one email per person so
-  addresses are never shared. Health warnings and digests go only to the owner.
+  addresses are never shared. Everyone on a watch gets a daily summary of only their own watches,
+  with no other addresses. Health warnings, and the digest's health lines, go only to the owner.
 - Custom headlines change wording only, and a bad headlines file falls back to the built-in text.
 - Every way of adding a watch shows the draft review and saves only after a yes. Never guess a
   flight number or an address. The flight picker's search goes through `Governor.acquire` and isn't

@@ -60,6 +60,14 @@ def load_config() -> EmailConfig | None:
     return EmailConfig(data["from_address"], data["to_address"])
 
 
+def owner_address() -> str | None:
+    try:
+        config = load_config()
+    except ValueError:
+        return None
+    return config.to_address if config else None
+
+
 def save_config(config: EmailConfig, app_password: str) -> None:
     keyring.set_password(KEYRING_SERVICE, config.from_address, app_password.replace(" ", ""))
     config_path().write_text(

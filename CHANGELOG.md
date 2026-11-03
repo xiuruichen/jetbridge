@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Send the daily summary to everyone on a watch, not only the owner. Each person's copy covers only
+  their own watches and doesn't show anyone else's address.
+
 ## 0.5.1
 
 - A clearer front page, with the full reference moved to [the guide](docs/guide.md).

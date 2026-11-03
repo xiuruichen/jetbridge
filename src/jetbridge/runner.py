@@ -26,7 +26,7 @@ from jetbridge.insights import Coverage, Seen, alert_note, coverage
 from jetbridge.matcher import also_seen, evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
 from jetbridge.notify import push
-from jetbridge.notify.email import Sender, flush_outbox
+from jetbridge.notify.email import Sender, flush_outbox, owner_address
 from jetbridge.scheduler import (
     MANUAL,
     NEIGHBOUR_DAYS,
@@ -472,10 +472,23 @@ class Runner:
         self.store.enqueue(
             NewAlert("digest", subject, body, dedupe_key=f"digest:{key}"), self.clock()
         )
+        owner = (owner_address() or "").casefold()
+        people = {a for w in watches for a in w.recipients if a.casefold() != owner}
+        for address in sorted(people):
+            theirs = [w for w in watches if address in w.recipients]
+            subject, body = self.build_digest(theirs, for_owner=False)
+            self.store.enqueue(
+                NewAlert(
+                    "digest", subject, body, dedupe_key=f"digest:{key}:{address}", recipient=address
+                ),
+                self.clock(),
+            )
         self.store.set("last_digest", key)
         self.store.delete("longest_gap_s")
 
-    def build_digest(self, watches: list[Watch]) -> tuple[str, str]:
+    def build_digest(self, watches: list[Watch], for_owner: bool = True) -> tuple[str, str]:
+        """The owner's copy also has who's on each list and how the watcher is doing. Someone
+        else's copy covers only their own watches and never names the other people on them."""
         now = self.clock()
         today = self._today()
         day_ago = now - 86400
@@ -489,8 +502,10 @@ class Runner:
             )
             unknown = self.store.count_recent(watch.id, CheckStatus.UNKNOWN, day_ago)
             domain = get_site(watch.program).domain
-            lines.append(f"{watch.label} via {get_site(watch.program).label} (watch {watch.id})")
-            lines.append(f"  Seat alerts go to: {', '.join(watch.recipients) or 'you'}")
+            title = f"{watch.label} via {get_site(watch.program).label}"
+            lines.append(f"{title} (watch {watch.id})" if for_owner else title)
+            if for_owner:
+                lines.append(f"  Seat alerts go to: {', '.join(watch.recipients) or 'you'}")
             lines.append(f"  Last 24 hours: {good} clear answers, {unknown} inconclusive")
             watched = watch_coverage(self.store, watch, now)
             if watched is not None:
@@ -510,7 +525,8 @@ class Runner:
                 price = f", {state.miles:,} miles" if state.miles else ""
                 over = above_limit_miles(self.store, watch, day)
                 if over and watch.max_miles:
-                    price = f", seats at {over:,} miles, above your {watch.max_miles:,} limit"
+                    whose = "your" if for_owner else "the"
+                    price = f", seats at {over:,} miles, above {whose} {watch.max_miles:,} limit"
                 lines.append(f"  {day:%b %d}: {text}{price}")
                 others = self.store.get_also_seen(watch.id, day)
                 if others and state.status is not CheckStatus.AVAILABLE:
@@ -526,9 +542,18 @@ class Runner:
                     )
                 if state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER:
                     all_never_seen = False
-            if all_never_seen:
+            if all_never_seen and for_owner:
                 lines.append(never_seen_note(watch, domain, "  Note: "))
             lines.append("")
+
+        status = f"{open_count} date(s) OPEN" if open_count else "no seats yet"
+        subject = f"jetbridge daily: {status}, still watching"
+        if not for_owner:
+            lines.append(
+                "If this daily email stops arriving, the watcher may have stopped, so check with "
+                "the person who added you."
+            )
+            return subject, "\n".join(lines)
 
         gap = float(self.store.get("longest_gap_s", "0") or 0)
         if gap:
@@ -547,5 +572,4 @@ class Runner:
                 "'jetbridge update', or ask Claude to update it."
             )
         lines.append("If this daily email stops arriving, the watcher isn't running.")
-        status = f"{open_count} date(s) OPEN" if open_count else "no seats yet"
-        return f"jetbridge daily: {status}, still watching", "\n".join(lines)
+        return subject, "\n".join(lines)

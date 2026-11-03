@@ -346,7 +346,8 @@ your own address to the list.
 | Email | Who gets it |
 |---|---|
 | Seat alerts: open, unconfirmed, price drop, more seats, still open, gone | That watch's list, or you if the list is empty |
-| Daily summary and warnings about the watcher | Only you |
+| Daily summary | You get every watch. Others get only the watches they're on, without the other addresses or notes about the computer |
+| Warnings about the watcher | Only you |
 
 A few things to know:
 
@@ -364,7 +365,7 @@ A few things to know:
   you're emailed what that person missed. If an address bounces later, the bounce notice comes to your
   Gmail instead, so test new addresses with `notify test --to`.
 - **Spam filters:** ask each person to mark the first email as "not spam". A missed alert is the
-  main risk, because other people don't get the daily summary and won't notice if it stops.
+  main risk. If their daily summary stops arriving, it asks them to check with you.
 
 ## Checking on your watches
 

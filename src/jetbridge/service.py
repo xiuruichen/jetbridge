@@ -306,7 +306,7 @@ def welcome_body(watch: Watch) -> str:
     site = get_site(watch.program)
     return (
         "The person sending this email added you to their jetbridge flight watch, so you'll get "
-        "an email if award seats open on:\n\n"
+        "an email if award seats open, plus a short summary each morning, for:\n\n"
         f"  {watch.name} {watch.origin} to {watch.destination}, {watch.cabin.value}\n"
         f"  {days}\n"
         f"  Using {site.label} miles\n\n"
@@ -356,13 +356,9 @@ def welcome_new_recipients(
 
 
 def _owner_address() -> str | None:
-    from jetbridge.notify.email import load_config
+    from jetbridge.notify.email import owner_address
 
-    try:
-        config = load_config()
-    except ValueError:
-        return None
-    return config.to_address if config else None
+    return owner_address()
 
 
 def set_recipients(

@@ -76,6 +76,7 @@ async def test_every_command_has_a_way_in_from_chat():
     assert names == {
         "get_started",
         "set_keep_awake",
+        "show_board",
         "open_phone_setup",
         "turn_off_phone_alerts",
         "install_update",
@@ -118,6 +119,7 @@ async def test_only_the_tools_that_change_nothing_say_so():
         "alert_settings",
         "health",
         "watch_insights",
+        "show_board",
         "diagnose",
     }
 
@@ -670,3 +672,38 @@ async def test_the_list_shows_near_misses_and_other_flights(watch):
     assert row["seats_above_price_limit_at_miles"] == 130_000
     assert row["also_seen"]["flights"] == [{"flight": "DL99", "miles": 95_000}]
     assert "isn't watching" in row["also_seen"]["note"]
+
+
+# ---- the in-chat board ----------------------------------------------------------------
+async def test_the_board_tool_points_at_its_page():
+    from jetbridge import board
+
+    async with Client(mcp_server.server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        page = await client.read_resource(board.URI)
+    assert tools["show_board"].meta["ui"]["resourceUri"] == board.URI
+    assert page.contents[0].mime_type == board.MIME_TYPE
+
+
+def test_the_board_loads_nothing_from_outside_and_writes_only_text():
+    from jetbridge import board
+
+    assert "http://" not in board.PAGE and "https://" not in board.PAGE
+    assert "<script src" not in board.PAGE and "innerHTML" not in board.PAGE
+    assert "eval(" not in board.PAGE
+
+
+async def test_the_board_has_the_facts_as_plain_data_too(watch):
+    answer = await call("show_board")
+    [view] = answer["watches"]
+    assert view["id"] == watch and view["dates"][0]["openings"] == []
+
+
+async def test_the_board_leaves_out_finished_watches(watch):
+    open_store().set_watch_status(watch, "finished")
+    assert (await call("show_board"))["watches"] == []
+
+
+async def test_a_slower_pace_is_explained_as_normal(watch):
+    answer = await call("watch_insights", watch_id=watch)
+    assert "not a problem to look into" in answer["pace_note"]

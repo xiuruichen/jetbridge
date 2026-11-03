@@ -20,7 +20,8 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 `draft.py` a watch being entered, friendly input · `wizard.py` `jetbridge start` questions ·
 `headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py` ·
 `claude_desktop.py` connects Claude Desktop · `doctor.py` health checks · `uninstall.py` removal ·
-`insights.py` what a watch's record shows (pure) · `power.py` sleep settings.
+`insights.py` what a watch's record shows (pure) · `power.py` sleep settings · `updater.py` new
+versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
 
 ## Invariants (do not break)
 - Only a positively recognized answer can mean "no seats". Blocks, errors, site error codes,
@@ -75,6 +76,8 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
   never goes in a chat. Phone and email delivery can't hold each other up.
 - An update only fast-forwards and refuses a folder with local changes. Claude Desktop runs the
   server through python, so it doesn't lock a program the update has to replace.
+- The in-chat board only shows things. It has no outside scripts, puts everything on the page as
+  plain text, and anywhere that can't draw it still gets the same facts as data.
 - Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
   uninstall.
 - Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.

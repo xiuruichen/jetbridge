@@ -23,7 +23,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from jetbridge import doctor, headlines, power, service, updater, winsched, wizard
+from jetbridge import board, doctor, headlines, power, service, updater, winsched, wizard
 from jetbridge import draft as drafts
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES, parse_program
@@ -62,7 +62,8 @@ server = MCPServer(
         "remove someone from alerts, use set_recipients with action add or remove, so nobody else "
         "is dropped.\n\n"
         "When someone asks how a flight has been doing, use watch_insights, and say only what it "
-        "shows: never predict when seats will open. If list_watches shows also_seen, mention those "
+        "shows: never predict when seats will open. To see everything at a glance, use show_board, "
+        "which Claude Desktop draws in the chat. If list_watches shows also_seen, mention those "
         "flights as something jetbridge happened to see rather than a watch or an alert, and offer "
         "to watch one.\n\n"
         "Removing a watch takes two steps too: review_watch_removal, show what it says, and "
@@ -90,7 +91,9 @@ server = MCPServer(
 )
 
 
-def _tool[**P, R](*, read_only: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def _tool[**P, R](
+    *, read_only: bool = False, meta: dict[str, Any] | None = None
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a tool whose refusals reach Claude, which a plain exception's message wouldn't."""
 
     def register(function: Callable[P, R]) -> Callable[P, R]:
@@ -101,11 +104,17 @@ def _tool[**P, R](*, read_only: bool = False) -> Callable[[Callable[P, R]], Call
             except (ValueError, service.TickBusy, mail.NotConfigured) as exc:
                 raise ToolError(str(exc)) from exc
 
-        server.tool(annotations=ToolAnnotations(readOnlyHint=read_only))(guarded)
+        server.tool(annotations=ToolAnnotations(readOnlyHint=read_only), meta=meta)(guarded)
         return function
 
     return register
 
+
+_PACE_NOTE = (
+    "checks_per_day is the watch's setting, and this is its normal pace: dates more than 60 days "
+    "out get half of it, dates in the last two weeks or just after the program can first show them "
+    "get double. It's a choice about where searches do the most good, not a problem to look into."
+)
 
 _BOOKING_NOTES = {
     "american": "The link goes straight to the results on aa.com.",
@@ -189,8 +198,10 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "route": f"{watch.origin}-{watch.destination}",
         "cabin": watch.cabin.value,
         "program": watch.program,
+        "miles_program": SITES[watch.program].label,
         "pax": watch.pax,
         "checks_per_day": watch.checks_per_day,
+        "pace_note": _PACE_NOTE,
         "max_miles": watch.max_miles,
         "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
@@ -674,6 +685,40 @@ def set_recipients(watch_id: int, notify: str, action: str = "replace") -> dict[
     return {**_watch_view(updated), "will_get_a_short_note": welcomed}
 
 
+@server.resource(board.URI, name="jetbridge board", mime_type=board.MIME_TYPE)
+def board_page() -> str:
+    return board.PAGE
+
+
+@_tool(read_only=True, meta={"ui": {"resourceUri": board.URI}})
+def show_board() -> dict[str, Any]:
+    """Show every watch at a glance: its dates, what's open, proof of watching and past openings.
+    Claude Desktop draws this in the chat. Elsewhere, this is the same information as data."""
+    store = service.open_store()
+    now = time.time()
+    watches = []
+    for watch in store.list_watches():
+        if watch.status == "finished":
+            continue
+        view = _watch_view(watch)
+        for row, day in zip(view["dates"], watch.dates, strict=True):
+            found = openings(seen_history(store, watch.id, day))
+            row["openings"] = [
+                {
+                    "first_seen": format_when(past.first_seen),
+                    "how_long": past.lasted(now),
+                    "lowest_miles": past.lowest_miles,
+                }
+                for past in found
+            ]
+        watches.append(view)
+    return {
+        "watches": watches,
+        "note": "The person can already see these on the board above your reply, so don't list "
+        "them again. In a sentence or two, add only what they'd want to act on.",
+    }
+
+
 @_tool(read_only=True)
 def watch_insights(watch_id: int) -> dict[str, Any]:
     """What jetbridge has seen for a watch so far: each opening, how long it lasted, its price, and
@@ -703,8 +748,11 @@ def watch_insights(watch_id: int) -> dict[str, Any]:
             }
         )
     answers = sum(day["clear_answers"] for day in days)
+    watched = watch_coverage(store, watch, now) if watch.status == "active" else None
     return {
         "flight": watch.label,
+        "proof_of_watching": watched.text if watched else None,
+        "pace_note": _PACE_NOTE,
         "dates": days,
         "enough_to_go_on": answers >= TOO_FEW_ANSWERS,
         "note": "Only what jetbridge saw at its checks, which are hours apart. Short openings "

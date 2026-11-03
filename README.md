@@ -138,7 +138,7 @@ numbers. Some examples:
   American miles, for 1 passenger." Claude asks about anything you left out.
 - **Not sure of the flight:** "What nonstop business flights go from Seattle to Seoul on May 21 on
   Delta miles?"
-- **Checking in:** "Which flights am I watching?", "How has my AA100 watch been doing? Has it ever
+- **Checking in:** "Show me my flights" draws a board in the chat. "Which flights am I watching?", "How has my AA100 watch been doing? Has it ever
   opened?" or "Check it now."
 - **Making changes:** "Pause my AA100 watch", "Start it again", "Delete it", "Also alert
   ann@example.com" or "Stop alerting Ann." "Add June 20 to that watch" and "Lower the limit to 90k" keep its history. To change a
@@ -719,7 +719,7 @@ uv run ruff format .
 | `src/jetbridge/acquire/broker.py`, `fetcher.py` | Chrome session and classified answers |
 | `src/jetbridge/notify/email.py` | Gmail sending and queue flushing |
 | `src/jetbridge/winsched.py` | The Windows scheduled task |
-| `src/jetbridge/cli.py`, `mcp_server.py`, `service.py` | Commands, Claude tools and shared wiring |
+| `src/jetbridge/cli.py`, `mcp_server.py`, `board.py`, `service.py` | Commands, Claude tools, the in-chat board and shared wiring |
 | `src/jetbridge/claude_desktop.py`, `doctor.py`, `power.py`, `uninstall.py` | Connecting Claude, health checks, sleep settings, removal |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to get involved, and [SECURITY.md](SECURITY.md) for how

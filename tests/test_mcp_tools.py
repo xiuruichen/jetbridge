@@ -37,9 +37,9 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(mail, "load_config", lambda: mail.EmailConfig("o@x.com", "owner@x.com"))
     monkeypatch.setattr(mail.keyring, "get_password", lambda *_: "secret")
     tasks = SimpleNamespace(on=True)
-    monkeypatch.setattr(mcp_server.winsched, "is_installed", lambda: tasks.on)
-    monkeypatch.setattr(mcp_server.winsched, "install", lambda: setattr(tasks, "on", True))
-    monkeypatch.setattr(mcp_server.winsched, "remove", lambda: setattr(tasks, "on", False))
+    monkeypatch.setattr(mcp_server.autorun, "is_installed", lambda: tasks.on)
+    monkeypatch.setattr(mcp_server.autorun, "install", lambda: setattr(tasks, "on", True))
+    monkeypatch.setattr(mcp_server.autorun, "remove", lambda: setattr(tasks, "on", False))
     mcp_server._checks.clear()
     open_store().set(service.RISK_ACCEPTED, "1")
     return tasks
@@ -219,15 +219,13 @@ async def test_a_watch_saved_without_email_says_alerts_will_wait(monkeypatch):
 async def test_email_setup_opens_a_window_and_never_takes_a_password(monkeypatch):
     opened = []
     monkeypatch.setattr(
-        mcp_server.subprocess, "Popen", lambda args, **kwargs: opened.append((args, kwargs))
+        mcp_server.platforms, "open_private_window", lambda *args: opened.append(args)
     )
     async with Client(mcp_server.server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         await client.call_tool("open_email_setup", {})
     assert tools["open_email_setup"].input_schema.get("properties", {}) == {}
-    args, kwargs = opened[0]
-    assert args[1:] == ["-m", "jetbridge", "notify", "setup-window"]
-    assert kwargs["creationflags"] == mcp_server.subprocess.CREATE_NEW_CONSOLE
+    assert opened == [("notify", "setup-window")]
     for tool in tools.values():
         assert not any("password" in name for name in tool.input_schema.get("properties", {}))
 
@@ -435,7 +433,7 @@ async def test_automatic_checks_failure_says_why(monkeypatch):
     def fail():
         raise RuntimeError("access denied")
 
-    monkeypatch.setattr(mcp_server.winsched, "install", fail)
+    monkeypatch.setattr(mcp_server.autorun, "install", fail)
     assert "access denied" in await refused("set_automatic_checks", on=True)
 
 
@@ -631,7 +629,7 @@ async def test_the_window_failing_to_open_says_why(monkeypatch):
     def fail(*_, **__):
         raise OSError("not allowed")
 
-    monkeypatch.setattr(mcp_server.subprocess, "Popen", fail)
+    monkeypatch.setattr(mcp_server.platforms, "open_private_window", fail)
     assert "not allowed" in await refused("open_email_setup")
 
 

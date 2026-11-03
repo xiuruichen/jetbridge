@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -41,22 +42,38 @@ class TickBusy(Exception):
 @contextmanager
 def tick_lock() -> Iterator[None]:
     """An OS file lock, released automatically even if the process crashes."""
-    import msvcrt
-
     handle = open(lock_path(), "a+b")  # noqa: SIM115 (held for the whole block)
     try:
         handle.seek(0)
         try:
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            _lock(handle.fileno())
         except OSError as exc:
             raise TickBusy("another jetbridge check is already running") from exc
         try:
             yield
         finally:
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            _unlock(handle.fileno())
     finally:
         handle.close()
+
+
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock(descriptor: int) -> None:
+        msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+
+    def _unlock(descriptor: int) -> None:
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock(descriptor: int) -> None:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock(descriptor: int) -> None:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
 
 
 RISK_ACCEPTED = "risk_accepted"
@@ -66,8 +83,8 @@ RISK_NOTICE = """Before you start, please read this:
   goes against their terms of use. You accept that risk by running it. It never logs in, so your
   frequent flyer accounts aren't involved, and it searches at low volume, but a site can still
   block its searches.
-- It only checks while this PC is on, awake and logged in. To catch seats overnight, keep it awake
-  while plugged in. jetbridge can set that for you if you ask.
+- It only checks while this computer is on, awake and logged in. To catch seats overnight, keep it
+  awake while plugged in. jetbridge can set that for you if you ask.
 - Checks are hours apart, so seats that open and close between them are missed. Don't rely on it
   as your only way of finding seats.
 - It never books anything or moves your miles. You do that yourself.

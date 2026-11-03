@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
 import uuid
-import winreg
 
 import pytest
 from typer.testing import CliRunner
 
-from jetbridge import claude_desktop, uninstall, winsched
+from jetbridge import autorun, claude_desktop, uninstall
 from jetbridge.cli import app
 from jetbridge.notify import email as mail
+
+pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 
 
 @pytest.fixture
@@ -30,8 +32,8 @@ def machine(tmp_path, monkeypatch):
         json.dumps({"mcpServers": {"jetbridge": {"command": "x"}, "other": {"command": "y"}}})
     )
     steps = []
-    monkeypatch.setattr(winsched, "is_installed", lambda: True)
-    monkeypatch.setattr(winsched, "remove", lambda: steps.append("task"))
+    monkeypatch.setattr(autorun, "is_installed", lambda: True)
+    monkeypatch.setattr(autorun, "remove", lambda: steps.append("task"))
     monkeypatch.setattr(
         uninstall.keyring, "delete_password", lambda *args: steps.append(("password", args))
     )
@@ -72,7 +74,7 @@ def test_one_failure_does_not_stop_the_rest(machine, monkeypatch):
     def fail():
         raise RuntimeError("access denied")
 
-    monkeypatch.setattr(winsched, "remove", fail)
+    monkeypatch.setattr(autorun, "remove", fail)
     result = CliRunner().invoke(app, ["uninstall", "--yes"])
     assert "access denied" in result.output
     assert not state.exists()
@@ -81,25 +83,27 @@ def test_one_failure_does_not_stop_the_rest(machine, monkeypatch):
 @pytest.fixture
 def scratch_key():
     name = f"Software\\jetbridge-test-{uuid.uuid4().hex}"
-    winreg.CreateKey(winreg.HKEY_CURRENT_USER, name)
+    __import__("winreg").CreateKey(__import__("winreg").HKEY_CURRENT_USER, name)
     yield name
-    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, name)
+    __import__("winreg").DeleteKey(__import__("winreg").HKEY_CURRENT_USER, name)
 
 
 def read_path(name):
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name) as key:
-        return winreg.QueryValueEx(key, "Path")
+    with __import__("winreg").OpenKey(__import__("winreg").HKEY_CURRENT_USER, name) as key:
+        return __import__("winreg").QueryValueEx(key, "Path")
 
 
 def write_path(name, value):
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name, 0, winreg.KEY_SET_VALUE) as key:
-        winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, value)
+    with __import__("winreg").OpenKey(
+        __import__("winreg").HKEY_CURRENT_USER, name, 0, __import__("winreg").KEY_SET_VALUE
+    ) as key:
+        __import__("winreg").SetValueEx(key, "Path", 0, __import__("winreg").REG_EXPAND_SZ, value)
 
 
 def test_path_loses_only_that_folder_and_keeps_variables(scratch_key):
     write_path(scratch_key, r"%USERPROFILE%\x;C:\JB\Bin\;C:\y")
     assert uninstall.remove_from_user_path(r"C:\jb\bin", scratch_key) is True
-    assert read_path(scratch_key) == (r"%USERPROFILE%\x;C:\y", winreg.REG_EXPAND_SZ)
+    assert read_path(scratch_key) == (r"%USERPROFILE%\x;C:\y", __import__("winreg").REG_EXPAND_SZ)
     assert uninstall.remove_from_user_path(r"C:\jb\bin", scratch_key) is False
 
 

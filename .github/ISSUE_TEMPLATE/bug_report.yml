@@ -22,6 +22,7 @@ body:
         - Claude Code
         - Commands in PowerShell
         - The installer
+        - On a Mac
         - An alert email
     validations:
       required: true

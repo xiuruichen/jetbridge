@@ -11,6 +11,7 @@ keywords = ["award travel", "award seats", "frequent flyer", "miles", "mcp", "cl
 classifiers = [
     "Environment :: Console",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3.12",
     "Topic :: Utilities",
 ]

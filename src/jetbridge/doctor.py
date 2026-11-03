@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from jetbridge import headlines, power, winsched
+from jetbridge import autorun, headlines, platforms, power
 from jetbridge.alerts import format_when
 from jetbridge.models import CheckStatus
 from jetbridge.notify import email as mail
@@ -25,6 +25,9 @@ class Check:
 
 
 def _chrome_installed() -> bool:
+    if platforms.IS_MAC:
+        app = Path("Applications") / "Google Chrome.app"
+        return (Path("/") / app).exists() or (Path.home() / app).exists()
     places = [
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -86,15 +89,15 @@ def checks(store: Store) -> list[Check]:
         Check("Alert headlines readable", headline_problem is None, headline_problem or ""),
         Check(
             "Scheduled task installed",
-            winsched.is_installed(),
+            autorun.is_installed(),
             "Run: jetbridge schedule install",
             "Offer to turn on automatic checks.",
         ),
         Check(
-            "This PC stays awake while plugged in",
+            "This computer stays awake while plugged in",
             timers is None or timers.stays_awake,
             "Checks stop while it sleeps. To keep it awake, run: jetbridge keep-awake on",
-            "Checks stop while this PC sleeps. Offer to keep it awake while plugged in.",
+            "Checks stop while this computer sleeps. Offer to keep it awake while plugged in.",
             serious=False,
         ),
         Check(

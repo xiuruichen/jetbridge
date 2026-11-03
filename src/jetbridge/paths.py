@@ -9,11 +9,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from jetbridge import platforms
+
 
 def home() -> Path:
     override = os.environ.get("JETBRIDGE_HOME")
     if override:
         base = Path(override)
+    elif platforms.IS_MAC:
+        base = Path.home() / "Library" / "Application Support" / "jetbridge"
     else:
         local = os.environ.get("LOCALAPPDATA")
         base = Path(local) / "jetbridge" if local else Path.home() / ".jetbridge"

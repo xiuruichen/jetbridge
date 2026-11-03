@@ -8,7 +8,7 @@ import pytest
 from conftest import ScriptedFetcher, answer_from, cx_slice, response
 from typer.testing import CliRunner
 
-from jetbridge import cli, draft, service, winsched
+from jetbridge import autorun, cli, draft, service
 from jetbridge.cli import app
 from jetbridge.models import AnswerKind, Cabin, CheckResult, CheckStatus, Query, SearchAnswer
 from jetbridge.notify import email as mail
@@ -43,7 +43,7 @@ def ready(tmp_path, monkeypatch):
     monkeypatch.setenv("JETBRIDGE_HOME", str(tmp_path))
     monkeypatch.setattr(mail, "load_config", lambda: mail.EmailConfig("o@x.com", "owner@x.com"))
     monkeypatch.setattr(mail.keyring, "get_password", lambda *a: "secret")
-    monkeypatch.setattr(winsched, "is_installed", lambda: True)
+    monkeypatch.setattr(autorun, "is_installed", lambda: True)
     monkeypatch.setattr(cli, "date", type("D", (), {"today": staticmethod(lambda: TODAY)}))
     monkeypatch.setattr(service, "live_tick", lambda *_, **__: TickReport())
 
@@ -380,8 +380,8 @@ def test_closing_at_the_notice_accepts_nothing():
 # ---- first run ------------------------------------------------------------------------
 def first_run(monkeypatch):
     done = []
-    monkeypatch.setattr(winsched, "is_installed", lambda: False)
-    monkeypatch.setattr(winsched, "install", lambda: done.append("install"))
+    monkeypatch.setattr(autorun, "is_installed", lambda: False)
+    monkeypatch.setattr(autorun, "install", lambda: done.append("install"))
     monkeypatch.setattr(cli, "doctor", lambda: done.append("doctor"))
     return done
 
@@ -403,7 +403,7 @@ def test_first_run_with_nothing_added_changes_nothing(monkeypatch):
 def test_later_runs_skip_setup(monkeypatch):
     called = []
     monkeypatch.setattr(cli, "notify_setup", lambda: called.append("setup"))
-    monkeypatch.setattr(winsched, "install", lambda: called.append("install"))
+    monkeypatch.setattr(autorun, "install", lambda: called.append("install"))
     result = cli_runner.invoke(app, ["start"], input=lines(*ROUTE, "CX845", "", "", "y", "n"))
     assert result.exit_code == 0, result.output
     assert called == []

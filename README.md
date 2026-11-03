@@ -3,7 +3,7 @@
 [![CI](https://github.com/xiuruichen/jetbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/xiuruichen/jetbridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
-![Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
+![Windows, with an experimental Mac version](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20(experimental)-lightgrey.svg)
 ![Works with Claude Desktop](https://img.shields.io/badge/works%20with-Claude%20Desktop-d97757.svg)
 
 **Get an email when award seats open on the exact flight you want.**
@@ -18,7 +18,7 @@ own PC, and emails you the price and a booking link as soon as seats appear.
   partner flights they sell.
 - **Chat or commands:** run it all by [chatting in Claude Desktop](#using-it-through-claude), or with
   [simple commands](#command-reference). Claude is optional.
-- **Runs on your PC:** there's no account or subscription, and your details stay on your computer.
+- **Runs on your computer:** there's no account or subscription, and your details stay on your computer.
 - **Alerts for anyone:** each watch can alert different people, so friends and family don't need to
   install anything.
 - **Proves it's watching:** the daily summary and chat show how many of the last 24 hours each flight
@@ -30,7 +30,7 @@ own PC, and emails you the price and a booking link as soon as seats appear.
 
 > [!IMPORTANT]
 > Automated searching likely goes against the airlines' terms of use, so [read how jetbridge handles
-> that](#blocks-and-the-airlines-terms) first. Checks only run while your PC is on, so seats that
+> that](#blocks-and-the-airlines-terms) first. Checks only run while your computer is on, so seats that
 > open and close between checks can be missed. Don't rely on it as your only way of finding seats.
 
 ## Get started
@@ -40,6 +40,16 @@ Open PowerShell on Windows and paste this line. [Quick start](#quick-start) expl
 ```powershell
 irm https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.ps1 | iex
 ```
+
+> [!WARNING]
+> **On a Mac, jetbridge is experimental and hasn't been tried on a real Mac yet.** Airline searches,
+> sleep and Claude Desktop may not work as they do on Windows, and Chrome may appear during checks.
+> If you'd like to try it, paste this into Terminal, then
+> [follow the checklist and tell us how it went](docs/mac-testing.md).
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.sh | bash
+> ```
 
 ## Contents
 
@@ -67,7 +77,7 @@ irm https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.ps1 | ie
 
 ## Requirements
 
-- **Windows**, because automatic checks use Windows Task Scheduler
+- **Windows**, or a Mac if you'd like to try the [experimental version](docs/mac-testing.md)
 - **Google Chrome**, installed normally
 - **[uv](https://docs.astral.sh/uv/)**, which installs Python 3.12 and the other dependencies
 - **[Git](https://git-scm.com/)**, to download jetbridge
@@ -149,7 +159,7 @@ numbers. Some examples:
   cabin, just ask: Claude adds the new version and offers to remove the old one, whose history goes
   with it.
 - **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND", "Turn
-  off automatic checks" or "Keep this PC awake while it's plugged in."
+  off automatic checks" or "Keep this computer awake while it's plugged in."
 - **When something seems wrong:** "Is my watcher healthy?" or "Why aren't I getting alerts?"
 
 ### What to expect
@@ -157,8 +167,9 @@ numbers. Some examples:
 - **Nothing is saved or deleted until you say yes.** Claude asks for anything missing and shows you
   the same review as `jetbridge start`. Read it, especially who gets the alerts, then say yes or ask
   for a change.
-- **Your Gmail password never goes in the chat.** Claude opens a small private window on your PC, and
-  the password goes straight to Windows Credential Manager. Never paste it into a chat.
+- **Your Gmail password never goes in the chat.** Claude opens a small private window on your computer, and
+  the password goes straight to Windows Credential Manager, or Keychain on a Mac. Never paste it into
+  a chat.
 - **Automatic checks turn on by themselves** when you save your first flight.
 - **You find out straight away if a watch looks wrong.** Claude checks a new watch right after saving
   it, and tells you if the site can't see that flight. It may also mention other flights it saw with
@@ -170,7 +181,7 @@ numbers. Some examples:
   the answer. When seats are open, it gives you the booking link.
 - **A check can send real emails.** If it finds seats have opened, everyone on that watch gets an
   alert, the same as a scheduled check.
-- **It only works on the PC running jetbridge.** You can't use it from claude.ai or the phone apps.
+- **It only works on the computer running jetbridge.** You can't use it from claude.ai or the phone apps.
 - **What Claude sees.** The details it handles in your chat, including your watches and alert
   addresses, go to Claude like the rest of the conversation.
 
@@ -273,7 +284,7 @@ uv run jetbridge doctor
 
 Every line should say `OK`. Anything marked `FAIL` tells you how to fix it.
 
-You're done. You don't need to keep a window open, but the PC has to stay on, awake and logged
+You're done. You don't need to keep a window open, but the computer has to stay on, awake and logged
 in. See [Limitations](#limitations).
 
 ## Adding a watch
@@ -446,7 +457,7 @@ If seats appear but are gone by the re-check, it's logged in `history` and no em
 The daily summary also shows proof of watching for each flight: how many of the last 24 hours it
 stayed on schedule, and the longest gap between clear answers.
 
-**If the daily email stops arriving, the watcher isn't running.** The PC can't send anything
+**If the daily email stops arriving, the watcher isn't running.** The computer can't send anything
 while it's off, so that missing email is your warning. To turn the summary off, run
 `jetbridge notify digest off`, but you'd lose that signal.
 
@@ -469,7 +480,7 @@ The alerts are `seats_open`, `seats_open_unconfirmed`, `price_drop`, `more_seats
 a subject reads `DEAL FOUND, BOOK NOW: AA100 business on Jun 14, 2027 - 110,000 mi`.
 
 This changes the wording only, not when alerts are sent. Headlines are saved in `alerts.json` in your
-state folder, so they stay on your PC and survive `notify setup`. If that file ever can't be read,
+state folder, so they stay on your computer and survive `notify setup`. If that file ever can't be read,
 alerts still go out with the built-in wording and `doctor` tells you.
 
 ## Phone alerts (optional)
@@ -486,7 +497,7 @@ jetbridge notify push off
 This uses [ntfy](https://ntfy.sh), a free service with no account. Only seats-open, unconfirmed and
 price-drop alerts go this way, and each one still comes by email. **The alert's text and booking link
 pass through ntfy.sh**, and anyone who knows your private channel name could read them, so jetbridge
-makes a long random name, keeps it on your PC and never shows it in a chat. Phone alerts only go to
+makes a long random name, keeps it on your computer and never shows it in a chat. Phone alerts only go to
 you, not to other people on a watch. An alert that can't be sent within an hour is dropped, because
 it would no longer be useful, and the email still arrives.
 
@@ -510,7 +521,7 @@ A few details in the email:
 
 ## How checks work
 
-1. Every 15 minutes, Windows runs `jetbridge tick`, which does whatever is due and exits.
+1. Every 15 minutes, your computer runs `jetbridge tick`, which does whatever is due and exits.
 2. Each date's next check is set from the watch's checks per day, with random variation of 30%
    either way. At 6 a day, that's roughly every 3-5 hours. The pace changes with how far off the date
    is, because seats are often released close to departure:
@@ -527,7 +538,7 @@ A few details in the email:
    - **Movement:** if seats vanish, a price changes, another flight on the route opens or a nearby
      date opens, that date gets up to 3 extra checks over the next several hours.
    - **Booking night:** a date gets one check just after midnight at the airline's home on the day it
-     should become bookable, if your PC is awake. Evidence for this timing is thin, so it's a cheap
+     should become bookable, if your computer is awake. Evidence for this timing is thin, so it's a cheap
      experiment.
    - **Priority:** `jetbridge watch priority 1 high` makes a watch go first and get checked about 1.5
      times as often.
@@ -546,8 +557,8 @@ After sleep or downtime it runs one catch-up check, never a burst of missed ones
 
 ## Limitations
 
-- **It only runs while this PC is on, awake and logged in.** Chrome needs a desktop session, so
-  checks stop while the PC sleeps or is signed out. To catch seats overnight, run `jetbridge
+- **It only runs while this computer is on, awake and logged in.** Chrome needs a desktop session, so
+  checks stop while the computer sleeps or is signed out. To catch seats overnight, run `jetbridge
   keep-awake on`, which stops it sleeping while plugged in. `jetbridge keep-awake off` puts your old
   settings back, and battery settings never change. `doctor` tells you if sleep would stop checks.
 - **Short-lived seats can be missed.** Checks are hours apart, so seats that open and close between
@@ -622,7 +633,7 @@ folder. Add `--help` to any command for details.
 | `insights ID` | What's been seen so far: openings, how long they lasted, prices |
 | `check ID` | Check one active watch now, still within the rate limit |
 | `doctor` | Find out what's wrong |
-| `keep-awake on` / `off` | Stop this PC sleeping while plugged in, or put its settings back |
+| `keep-awake on` / `off` | Stop this computer sleeping while plugged in, or put its settings back |
 | `uninstall` | Remove jetbridge's checks, watches, settings and saved password |
 | `--version` | Show the version |
 | `update` | Install the newest jetbridge |
@@ -688,7 +699,7 @@ $env:JETBRIDGE_SHOW_BROWSER = "1"
 
 ## Where your data lives
 
-Everything is on your PC. Nothing goes anywhere except:
+Everything is on your computer. Nothing goes anywhere except:
 
 - searches to the airline sites
 - emails through Gmail
@@ -702,7 +713,8 @@ Everything is on your PC. Nothing goes anywhere except:
 | Database, config, custom headlines and log | `%LOCALAPPDATA%\jetbridge\` |
 | jetbridge's Chrome profile | `%LOCALAPPDATA%\jetbridge\profiles\` |
 | Failed responses, for repairs (newest 50) | `%LOCALAPPDATA%\jetbridge\raw\` |
-| Gmail app password | Windows Credential Manager, under `jetbridge-gmail` |
+| On a Mac | `~/Library/Application Support/jetbridge/` in place of the folder above |
+| Gmail app password | Windows Credential Manager or Mac Keychain, under `jetbridge-gmail` |
 | Private phone alert channel name, if you use it | `%LOCALAPPDATA%\\jetbridge\\push.json` |
 
 Set the `JETBRIDGE_HOME` environment variable to use a different folder.
@@ -741,7 +753,8 @@ uv run ruff format .
 | `src/jetbridge/acquire/governor.py` | Each site's rate limit and rest periods |
 | `src/jetbridge/acquire/broker.py`, `fetcher.py` | Chrome session and classified answers |
 | `src/jetbridge/notify/email.py` | Gmail sending and queue flushing |
-| `src/jetbridge/winsched.py` | The Windows scheduled task |
+| `src/jetbridge/autorun.py`, `winsched.py`, `launchd.py` | The background task on each system |
+| `src/jetbridge/platforms.py` | The other differences between Windows and a Mac |
 | `src/jetbridge/cli.py`, `mcp_server.py`, `board.py`, `service.py` | Commands, Claude tools, the in-chat board and shared wiring |
 | `src/jetbridge/claude_desktop.py`, `doctor.py`, `power.py`, `uninstall.py` | Connecting Claude, health checks, sleep settings, removal |
 

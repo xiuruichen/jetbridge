@@ -9,8 +9,6 @@ import functools
 import json
 import re
 import secrets
-import subprocess
-import sys
 import threading
 import time
 from collections.abc import Callable, Hashable
@@ -23,7 +21,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from jetbridge import board, doctor, headlines, power, service, updater, winsched, wizard
+from jetbridge import autorun, board, doctor, headlines, platforms, power, service, updater, wizard
 from jetbridge import draft as drafts
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES, parse_program
@@ -71,19 +69,20 @@ server = MCPServer(
         "confirm_watch_removal only after a yes. Before turning off automatic checks, say that no "
         "watch will be checked until they're turned back on, and wait for a yes. Read addresses "
         "back before adding someone to alerts or sending them a test email. Say that anyone new "
-        "gets one short note saying they were added. Only change the PC's sleep setting after they "
-        "say yes to it.\n\n"
+        "gets one short note saying they were added. Only change the computer's sleep setting "
+        "after they say yes to it.\n\n"
         "A live check or flight lookup can take a few minutes: if an answer says finished false, "
         "tell them it's still going and call check_result with its check_id until it finishes. A "
         "check can email everyone on that watch if seats have opened, so say so if they're "
         "checking a watch that alerts other people. When seats are open, give the book_at link "
         "and booking_note, and say that seats can go quickly.\n\n"
-        "If get_started shows update_available, mention it once, and call install_update only "
-        "after a yes. Phone alerts are optional: use open_phone_setup, which opens a private "
-        "and explains that alert text passes through ntfy.sh.\n\n"
+        "If get_started shows mac_notice, tell them once. If it shows update_available, mention it "
+        "once, and call install_update only after a yes. Phone alerts are optional: use "
+        "open_phone_setup, which opens a private window and explains that alert text passes "
+        "through ntfy.sh.\n\n"
         "The Gmail app password must never go in this chat. To set up email, use open_email_setup, "
-        "which opens a private window on this PC. If someone pastes a password here, tell them to "
-        "revoke it in their Google account and make a new one.\n\n"
+        "which opens a private window on this computer. If someone pastes a password here, tell "
+        "them to revoke it in their Google account and make a new one.\n\n"
         "Quote only numbers returned by these tools, and say only what they show: the latest state "
         "of a date doesn't tell you about earlier checks, so use watch_history for that. 'unknown' "
         "means the check couldn't tell, so never describe it as no seats. A flight missing from a "
@@ -270,7 +269,7 @@ def get_started() -> dict[str, Any]:
     store = service.open_store()
     accepted = store.get(service.RISK_ACCEPTED, "0") == "1"
     email = _email_ready()
-    checks_on = winsched.is_installed()
+    checks_on = autorun.is_installed()
     watches = len(store.list_watches())
     if not accepted:
         next_step = "Show the notice word for word, then call accept_notice if they agree."
@@ -300,6 +299,8 @@ def get_started() -> dict[str, Any]:
     newer = updater.newer_version(store)
     if newer:
         answer["update_available"] = newer
+    if platforms.IS_MAC:
+        answer["mac_notice"] = platforms.MAC_NOTICE
     return answer
 
 
@@ -312,41 +313,35 @@ def accept_notice() -> dict[str, Any]:
 
 @_tool()
 def open_email_setup() -> dict[str, str]:
-    """Open a private window on this PC for the Gmail address and app password.
+    """Open a private window on this computer for the Gmail address and app password.
 
-    The password is typed there, hidden, and goes straight to Windows Credential Manager. Never
-    ask for it in the chat. The window sends a test email when it's done."""
+    The password is typed there, hidden, and goes straight to this computer's secure password
+    store. Never ask for it in the chat. The window sends a test email when it's done."""
     try:
-        subprocess.Popen(
-            [sys.executable, "-m", "jetbridge", "notify", "setup-window"],
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
+        platforms.open_private_window("notify", "setup-window")
     except OSError as exc:
         raise ToolError(f"the window couldn't open: {exc}") from exc
     return {
-        "message": "A window opened on this PC, possibly behind this one. It asks for the Gmail "
-        "address to send from, the address alerts go to, and the app password, then sends a test "
-        "email. Ask them to say when it's done, then call get_started to confirm."
+        "message": "A window opened on this computer, possibly behind this one. It asks for the "
+        "Gmail address to send from, the address alerts go to, and the app password, then sends a "
+        "test email. Ask them to say when it's done, then call get_started to confirm."
     }
 
 
 @_tool()
 def open_phone_setup() -> dict[str, str]:
-    """Open a private window on this PC to turn on optional phone alerts through ntfy.
+    """Open a private window on this computer to turn on optional phone alerts through ntfy.
 
     The private channel name stays in that window and never goes in the chat. It explains what
     passes through ntfy.sh and asks before turning anything on, then sends a test."""
     try:
-        subprocess.Popen(
-            [sys.executable, "-m", "jetbridge", "notify", "push-window"],
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
+        platforms.open_private_window("notify", "push-window")
     except OSError as exc:
         raise ToolError(f"the window couldn't open: {exc}") from exc
     return {
-        "message": "A window opened on this PC, possibly behind this one. It explains how phone "
-        "alerts work and asks before turning them on. Ask them to say when it's done, then call "
-        "alert_settings to confirm."
+        "message": "A window opened on this computer, possibly behind this one. It explains how "
+        "phone alerts work and asks before turning them on. Ask them to say when it's done, then "
+        "call alert_settings to confirm."
     }
 
 
@@ -482,9 +477,9 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
     except ValueError as exc:
         raise ToolError(f"{exc}. Nothing was saved. Call review_watch again") from exc
     next_steps = []
-    if not winsched.is_installed():
+    if not autorun.is_installed():
         try:
-            winsched.install()
+            autorun.install()
             next_steps.append("Automatic checks are now on, so the first check runs soon.")
         except RuntimeError as exc:
             next_steps.append(f"Automatic checks couldn't be turned on, so it won't run: {exc}")
@@ -906,7 +901,7 @@ def alert_settings() -> dict[str, Any]:
     custom = headlines.load()
     return {
         "daily_summary_on": service.open_store().get("digest_enabled", "1") == "1",
-        "automatic_checks_on": winsched.is_installed(),
+        "automatic_checks_on": autorun.is_installed(),
         "alerts_go_to": _owner_address(),
         "phone_alerts_on": push.enabled(),
         "headlines": [
@@ -954,9 +949,9 @@ def set_automatic_checks(on: bool) -> dict[str, Any]:
         _require_notice()
     try:
         if on:
-            winsched.install()
-        elif winsched.is_installed():
-            winsched.remove()
+            autorun.install()
+        elif autorun.is_installed():
+            autorun.remove()
     except RuntimeError as exc:
         raise ToolError(str(exc)) from exc
     return {"automatic_checks_on": on}
@@ -968,7 +963,7 @@ OVERDUE_S = 3600  # the scheduled task runs every 15 minutes
 
 @_tool()
 def set_keep_awake(on: bool) -> dict[str, Any]:
-    """Stop this PC sleeping while it's plugged in, so checks keep running, or put its sleep
+    """Stop this computer sleeping while it's plugged in, so checks keep running, or put its sleep
     settings back. Battery settings never change. Call this only after the person says yes."""
     store = service.open_store()
     try:
@@ -977,7 +972,7 @@ def set_keep_awake(on: bool) -> dict[str, Any]:
         else:
             power.restore(store)
     except OSError as exc:
-        raise ToolError(f"Windows wouldn't change that: {exc}") from exc
+        raise ToolError(f"This computer wouldn't change that: {exc}") from exc
     timers = power.plugged_in_timers()
     return {"stays_awake_while_plugged_in": bool(timers and timers.stays_awake)}
 
@@ -989,7 +984,7 @@ def health() -> dict[str, Any]:
     governor = Governor(store, time.time)
     now = time.time()
     last = store.get("last_tick_at")
-    checks_on = winsched.is_installed()
+    checks_on = autorun.is_installed()
     problems = [
         f"{check.label}: {check.chat_fix or check.fix}"
         for check in doctor.checks(store)
@@ -997,8 +992,8 @@ def health() -> dict[str, Any]:
     ]
     if checks_on and last and now - float(last) > OVERDUE_S:
         problems.append(
-            f"Checks last ran {format_when(float(last))}. They only run while this PC is on, awake "
-            "and logged in."
+            f"Checks last ran {format_when(float(last))}. They only run while this computer is on, "
+            "awake and logged in."
         )
     for site in SITES.values():
         if governor.cooldown_until(site.id) > now:

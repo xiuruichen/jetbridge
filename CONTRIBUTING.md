@@ -1,6 +1,6 @@
 # Contributing
 
-Bug reports and pull requests are welcome. jetbridge runs on Windows, using Python 3.12 and
+Bug reports and pull requests are welcome. jetbridge runs on Windows, with an experimental Mac version, using Python 3.12 and
 [uv](https://docs.astral.sh/uv/).
 
 ```powershell

@@ -33,7 +33,7 @@ def isolated(tmp_path, monkeypatch):
     config = mail.EmailConfig("o@x.com", "owner@x.com")
     monkeypatch.setattr(mail, "load_config", lambda: config)
     monkeypatch.setattr(mail.keyring, "get_password", lambda *_: "secret")
-    monkeypatch.setattr(mcp_server.winsched, "is_installed", lambda: True)
+    monkeypatch.setattr(mcp_server.autorun, "is_installed", lambda: True)
     open_store().set(service.RISK_ACCEPTED, "1")
     mcp_server._checks.clear()
 

@@ -1,7 +1,8 @@
 """Email through Gmail SMTP, plus the outbox flush.
 
-Addresses are in config.json in the state folder. The Gmail app password is stored only in
-Windows Credential Manager through ``keyring``, and is never written to a file or a log.
+Addresses are in config.json in the state folder. The Gmail app password is stored only in the
+system's secure store (Credential Manager or Keychain) through ``keyring``, and is never written to
+a file or a log.
 """
 
 from __future__ import annotations

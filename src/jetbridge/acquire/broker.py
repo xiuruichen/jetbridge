@@ -14,6 +14,8 @@ from patchright.async_api import BrowserContext, Page, Playwright, async_playwri
 
 from jetbridge.paths import profile_dir
 
+OFF_SCREEN_ARGS = ["--window-position=-2400,-2400", "--window-size=1400,1000"]
+
 
 class SessionBroker:
     def __init__(self) -> None:
@@ -31,7 +33,7 @@ class SessionBroker:
             return self._page  # type: ignore[return-value]
         await self.close()
         self._pw = await async_playwright().start()
-        args = [] if self.show else ["--window-position=-2400,-2400", "--window-size=1400,1000"]
+        args = [] if self.show else OFF_SCREEN_ARGS
         self._ctx = await self._pw.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir(site)),
             channel="chrome",

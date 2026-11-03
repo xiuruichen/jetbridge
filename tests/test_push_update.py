@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from conftest import FakeSender, add_cx, answer_from, cx_slice, make_runner, response
 
-from jetbridge import doctor, updater
+from jetbridge import doctor, platforms, updater
 from jetbridge.alerts import AlertKind
 from jetbridge.notify import push
 from jetbridge.notify.email import flush_outbox
@@ -262,7 +262,7 @@ def machine(monkeypatch, tmp_path):
     monkeypatch.setattr(updater, "project_folder", lambda: Path("C:/jb"))
     monkeypatch.setattr(updater.shutil, "which", lambda name: name)
     monkeypatch.setattr(updater, "current", lambda: "0.4.0")
-    monkeypatch.setattr(updater.winsched, "is_installed", lambda: False)
+    monkeypatch.setattr(updater.autorun, "is_installed", lambda: False)
     monkeypatch.setattr(
         updater.claude_desktop, "status", lambda: updater.claude_desktop.State.CONNECTED
     )
@@ -320,7 +320,7 @@ def test_a_copy_without_git_says_so(monkeypatch):
 
 
 def test_the_launcher_runs_through_python():
-    assert updater.launcher_text().endswith('python.exe" -m jetbridge %*\r\n')
+    assert b"-m jetbridge" in platforms.launcher_bytes()
 
 
 def test_the_alert_body_is_kept_as_data():

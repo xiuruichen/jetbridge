@@ -20,6 +20,7 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 `draft.py` a watch being entered, friendly input · `wizard.py` `jetbridge start` questions ·
 `headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py` ·
 `claude_desktop.py` connects Claude Desktop · `doctor.py` health checks · `uninstall.py` removal ·
+`platforms.py`, `autorun.py`, `launchd.py` what differs on a Mac ·
 `insights.py` what a watch's record shows (pure) · `power.py` sleep settings · `updater.py` new
 versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
 
@@ -81,6 +82,9 @@ versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
   server through python, so it doesn't lock a program the update has to replace.
 - The in-chat board only shows things. It has no outside scripts, puts everything on the page as
   plain text, and anywhere that can't draw it still gets the same facts as data.
+- The Mac version is experimental. Don't claim anything about it that hasn't been seen on a real
+  Mac, and keep the notice in the README, the installer and `doctor` until `docs/mac-testing.md` has
+  been done. Anything that differs by system goes through `platforms.py`, `autorun.py` or `power.py`.
 - Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
   uninstall.
 - Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.

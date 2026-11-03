@@ -1,0 +1,60 @@
+name: How jetbridge went on my Mac
+description: Results from trying the experimental Mac version, good or bad
+labels: [mac]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying this. [The checklist](https://github.com/xiuruichen/jetbridge/blob/main/docs/mac-testing.md) says what's most useful to know. Please remove email addresses and anything else personal, and never post your Gmail app password.
+  - type: input
+    id: mac
+    attributes:
+      label: Which Mac and macOS version?
+      description: For example, MacBook Air M2, macOS 15.
+    validations:
+      required: true
+  - type: dropdown
+    id: search
+    attributes:
+      label: Did a real search give a clear answer?
+      options:
+        - Yes, a clear answer
+        - It said unknown or blocked
+        - I couldn't get that far
+    validations:
+      required: true
+  - type: dropdown
+    id: chrome
+    attributes:
+      label: Did Chrome appear or take focus during a check?
+      options:
+        - No, I didn't notice it
+        - It appeared but didn't take focus
+        - It appeared and took focus
+        - I couldn't get that far
+    validations:
+      required: true
+  - type: dropdown
+    id: automatic
+    attributes:
+      label: Did automatic checks keep running?
+      options:
+        - "Yes"
+        - "No"
+        - I couldn't get that far
+    validations:
+      required: true
+  - type: dropdown
+    id: claude
+    attributes:
+      label: Did it work with Claude Desktop?
+      options:
+        - "Yes"
+        - "No"
+        - I didn't try
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: Permission prompts, sleep behavior, or the output of `jetbridge doctor` with anything personal removed.
+      render: text

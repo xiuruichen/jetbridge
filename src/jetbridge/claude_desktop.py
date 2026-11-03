@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from jetbridge import platforms
+
+_MAC_APP = Path("/Applications/Claude.app")
 SERVER_NAME = "jetbridge"
 CONFIG_NAME = "claude_desktop_config.json"
 
@@ -31,11 +33,14 @@ class ConfigProblem(Exception):
 
 
 def config_files() -> list[Path]:
-    """Where this PC's Claude Desktop keeps its config. Empty if the app isn't installed.
+    """Where this computer's Claude Desktop keeps its config. Empty if the app isn't installed.
 
     The Microsoft Store build reads a copy inside its package folder, and its Edit Config button
     has been reported to open the other file, so both are kept the same when both exist.
     """
+    if platforms.IS_MAC:
+        folder = Path.home() / "Library" / "Application Support" / "Claude"
+        return [folder / CONFIG_NAME] if folder.is_dir() or _MAC_APP.exists() else []
     files: list[Path] = []
     local = os.environ.get("LOCALAPPDATA")
     roaming = os.environ.get("APPDATA")
@@ -55,7 +60,7 @@ def server_program() -> Path:
     """The full path, because the app starts servers without this folder or uv to go on. It's
     python rather than jetbridge-mcp.exe because the app keeps the program open, and an update can't
     replace that .exe while it's in use."""
-    return Path(sys.prefix) / "Scripts" / "python.exe"
+    return platforms.environment_python()
 
 
 def server_entry() -> dict[str, Any]:
@@ -117,7 +122,7 @@ def connect() -> bool:
     """Add or update the jetbridge entry. True if a file changed. Requires the app installed."""
     files = config_files()
     if not files:
-        raise ConfigProblem("Claude Desktop isn't installed on this PC")
+        raise ConfigProblem("Claude Desktop isn't installed on this computer")
     if not server_program().exists():
         raise ConfigProblem(f"{server_program()} is missing. Run 'uv sync' and try again")
     # Read them all first, so a damaged file means nothing changes anywhere.

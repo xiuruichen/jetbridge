@@ -21,9 +21,9 @@ START = datetime(2027, 1, 10, 9, 0).timestamp()
 
 @pytest.fixture(autouse=True)
 def nothing_real(monkeypatch, tmp_path):
-    """Tests run offline: none can open Chrome, send anything, change this PC's settings or see
-    its real state folder."""
-    from jetbridge import power, updater
+    """Tests run offline: none can open Chrome, send anything, change this computer's settings or
+    see its real state folder."""
+    from jetbridge import launchd, platforms, power, updater
     from jetbridge.acquire import broker
     from jetbridge.notify import push
 
@@ -37,6 +37,9 @@ def nothing_real(monkeypatch, tmp_path):
     monkeypatch.setattr("smtplib.SMTP_SSL", refuse)
     monkeypatch.setattr(power, "_powercfg", no_powercfg)
     monkeypatch.setattr(push, "_post", refuse)
+    monkeypatch.setattr(launchd, "_launchctl", refuse)
+    monkeypatch.setattr(power, "_pmset", no_powercfg)
+    monkeypatch.setattr(platforms, "open_private_window", refuse)
     monkeypatch.setattr(updater, "_fetch_latest", lambda: None)
     monkeypatch.setenv("JETBRIDGE_HOME", str(tmp_path))
 

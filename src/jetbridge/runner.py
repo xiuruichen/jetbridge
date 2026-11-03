@@ -494,7 +494,7 @@ class Runner:
         gap = float(self.store.get("longest_gap_s", "0") or 0)
         if gap:
             lines.append(
-                f"This PC was off or asleep for up to {gap / 3600:.0f} hours since the "
+                f"This computer was off or asleep for up to {gap / 3600:.0f} hours since the "
                 "last digest, so no checks ran during that time."
             )
         for site in SITES.values():

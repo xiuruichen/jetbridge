@@ -12,12 +12,10 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import urllib.request
 from pathlib import Path
 
-from jetbridge import claude_desktop, winsched
-from jetbridge.paths import home
+from jetbridge import autorun, claude_desktop, platforms
 from jetbridge.store import Store
 
 LATEST_URL = "https://raw.githubusercontent.com/xiuruichen/jetbridge/main/pyproject.toml"
@@ -26,7 +24,6 @@ TIMEOUT_S = 5
 _LATEST = "latest_version"
 _CHECKED_AT = "latest_version_checked_at"
 _VERSION = re.compile(r'^version\s*=\s*"([0-9]+(?:\.[0-9]+)*)"', re.MULTILINE)
-_CREATE_NO_WINDOW = 0x08000000
 
 
 class UpdateProblem(Exception):
@@ -87,7 +84,7 @@ def _uv() -> str | None:
     found = shutil.which("uv")
     if found:
         return found
-    local = Path.home() / ".local" / "bin" / "uv.exe"
+    local = Path.home() / ".local" / "bin" / ("uv" if platforms.IS_MAC else "uv.exe")
     return str(local) if local.exists() else None
 
 
@@ -99,20 +96,14 @@ def _run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         errors="replace",
         check=False,
-        creationflags=_CREATE_NO_WINDOW,
+        **platforms.quiet(),
     )
 
 
-def launcher_text() -> str:
-    """Through python, so the running command doesn't lock a program the update has to replace."""
-    python = Path(sys.prefix) / "Scripts" / "python.exe"
-    return f'@"{python}" -m jetbridge %*\r\n'
-
-
 def _refresh_launcher() -> None:
-    launcher = home() / "bin" / "jetbridge.cmd"
+    launcher = platforms.launcher_path()
     if launcher.exists():
-        launcher.write_bytes(launcher_text().encode("oem", "replace"))  # how cmd.exe reads it
+        launcher.write_bytes(platforms.launcher_bytes())
 
 
 def install() -> list[str]:
@@ -146,8 +137,8 @@ def install() -> list[str]:
 
     report = [f"Updated from {before}."]
     _refresh_launcher()
-    if winsched.is_installed():
-        winsched.install()
+    if autorun.is_installed():
+        autorun.install()
     try:
         if claude_desktop.status() is claude_desktop.State.OUT_OF_DATE:
             claude_desktop.connect()

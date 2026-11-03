@@ -11,7 +11,7 @@ from datetime import date, datetime
 import typer
 import typer.core
 
-from jetbridge import claude_desktop, headlines, power, service, updater, winsched, wizard
+from jetbridge import autorun, claude_desktop, headlines, platforms, power, service, updater, wizard
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
 from jetbridge import insights as record
@@ -48,7 +48,7 @@ app = typer.Typer(
 )
 watch_app = typer.Typer(no_args_is_help=True, help="Add and manage watches.")
 notify_app = typer.Typer(no_args_is_help=True, help="Set up and test email alerts.")
-schedule_app = typer.Typer(no_args_is_help=True, help="Run checks automatically on this PC.")
+schedule_app = typer.Typer(no_args_is_help=True, help="Run checks automatically on this computer.")
 app.add_typer(watch_app, name="watch")
 app.add_typer(notify_app, name="notify")
 claude_app = typer.Typer(no_args_is_help=True, help="Use jetbridge from the Claude Desktop app.")
@@ -191,7 +191,7 @@ def watch_add(
     except ValueError as exc:
         raise _fail(str(exc)) from exc
     typer.echo(_describe(watch))
-    if winsched.is_installed():
+    if autorun.is_installed():
         typer.echo("The first check runs within about 15 minutes.")
     else:
         typer.echo("Automatic checks are off. Turn them on with: jetbridge schedule install")
@@ -444,6 +444,8 @@ def doctor() -> None:
     if good is not None:
         typer.echo(f"Last clear answer: {good}")
     _print_health(store)
+    if platforms.IS_MAC:
+        typer.echo(platforms.MAC_NOTICE)
     typer.echo(f"Claude Desktop (optional): {claude_desktop.status().value}")
     newer = updater.newer_version(store)
     if newer:
@@ -479,7 +481,7 @@ def notify_setup() -> None:
 def notify_setup_window() -> None:
     """The window Claude opens, so a password is never typed into a chat."""
     ctypes.windll.kernel32.SetConsoleTitleW("jetbridge email setup")
-    typer.echo("jetbridge email setup. What you type here stays on this PC.\n")
+    typer.echo("jetbridge email setup. What you type here stays on this computer.\n")
     try:
         notify_setup()
         typer.echo("\nAll done. You can go back to Claude and tell it you've finished.")
@@ -513,7 +515,7 @@ _PHONE_NOTICE = """Phone alerts tell you the moment seats open, as well as email
 
 They go through ntfy.sh, a free service with no account. It sees the alert's text and booking link,
 and anyone who knows your private channel name could read them. jetbridge makes a long random name
-and keeps it on this PC."""
+and keeps it on this computer."""
 
 
 def _phone_steps(name: str) -> None:
@@ -650,7 +652,7 @@ def _start_email(store: Store) -> None:
 def start() -> None:
     """Set up jetbridge and add flights by answering a few questions. Start here."""
     store = service.open_store()
-    first_run = not winsched.is_installed()
+    first_run = not autorun.is_installed()
     try:
         if not _accept_risks(store):
             return
@@ -665,10 +667,10 @@ def start() -> None:
     if added and first_run:
         typer.echo("\nTurning on automatic checks...")
         try:
-            winsched.install()
+            autorun.install()
         except RuntimeError as exc:
             raise _fail(f"{exc}. Try 'jetbridge schedule install'") from exc
-        typer.echo(f"Installed task '{winsched.TASK_NAME}'. It runs while you're logged on.\n")
+        typer.echo(f"Installed task '{autorun.task_name()}'. It runs while you're logged on.\n")
         doctor()
         typer.echo(
             "\n'A clear answer from an airline' can say FAIL until the first check finishes, which "
@@ -768,7 +770,7 @@ def claude_disconnect() -> None:
 def uninstall_command(
     yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask first"),
 ) -> None:
-    """Remove jetbridge's checks, watches, settings and saved password from this PC."""
+    """Remove jetbridge's checks, watches, settings and saved password from this computer."""
     typer.echo(
         "This stops all checks and deletes your watches, their history, your email settings and "
         f"your saved password, including everything in {home()}. It can't be undone."
@@ -798,16 +800,18 @@ def update() -> None:
 
 @app.command("keep-awake")
 def keep_awake(state: str = typer.Argument(..., help="on or off")) -> None:
-    """Stop this PC sleeping while it's plugged in, so checks keep running. Off puts it back."""
+    """Keep this computer awake while plugged in, so checks keep running. Off puts it back."""
     if state not in ("on", "off"):
         raise _fail("say on or off")
     store = service.open_store()
     try:
         if state == "on":
             power.keep_awake(store)
-            typer.echo("This PC now stays awake while plugged in. It can still sleep on battery.")
+            typer.echo(
+                "This computer now stays awake while plugged in. It can still sleep on battery."
+            )
         elif power.restore(store):
-            typer.echo("Your PC's sleep settings are back as they were.")
+            typer.echo("Your computer's sleep settings are back as they were.")
         else:
             typer.echo("jetbridge hasn't changed your sleep settings, so there's nothing to undo.")
     except OSError as exc:
@@ -817,19 +821,19 @@ def keep_awake(state: str = typer.Argument(..., help="on or off")) -> None:
 # ---- schedule -------------------------------------------------------------------------
 @schedule_app.command("install")
 def schedule_install() -> None:
-    """Create the Windows scheduled task that runs a tick every 15 minutes."""
+    """Create the background task that runs a tick every 15 minutes."""
     try:
-        winsched.install()
+        autorun.install()
     except RuntimeError as exc:
         raise _fail(str(exc)) from exc
-    typer.echo(f"Installed task '{winsched.TASK_NAME}'. It runs while you're logged on.")
+    typer.echo(f"Installed task '{autorun.task_name()}'. It runs while you're logged on.")
 
 
 @schedule_app.command("remove")
 def schedule_remove() -> None:
     """Remove the scheduled task. Watches are kept."""
     try:
-        winsched.remove()
+        autorun.remove()
     except RuntimeError as exc:
         raise _fail(str(exc)) from exc
     typer.echo("Removed the scheduled task.")

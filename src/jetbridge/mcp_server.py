@@ -168,8 +168,9 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         others = store.get_also_seen(watch.id, day) if day >= today else None
         if others and state.status is not CheckStatus.AVAILABLE:
             view["also_seen"] = {
-                "note": "Other flights with seats in this cabin. jetbridge isn't watching these, "
-                "and the list may be incomplete.",
+                "note": "Other flights that showed seats in this cabin at that time. jetbridge "
+                "isn't watching these and hasn't re-checked them, so they may already be gone: "
+                "don't call them bookable. The list may be incomplete.",
                 "as_of": format_when(others["at"]),
                 "flights": [
                     {"flight": o["flight"], "miles": o["miles"]} for o in others["flights"]

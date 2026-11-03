@@ -21,6 +21,10 @@ own PC, and emails you the price and a booking link as soon as seats appear.
 - **Runs on your PC:** there's no account or subscription, and your details stay on your computer.
 - **Alerts for anyone:** each watch can alert different people, so friends and family don't need to
   install anything.
+- **Proves it's watching:** the daily summary and chat show how many of the last 24 hours each flight
+  stayed on schedule, and each flight builds up its own record of past openings and prices.
+- **Double-checked:** seats are searched again live before an alert goes out, so you're not sent
+  after seats that were only there for a moment.
 - **Careful by design:** it searches as a guest at low volume, and backs off if a site pushes back. It
   never logs in, books anything or moves your miles.
 
@@ -157,7 +161,10 @@ numbers. Some examples:
   the password goes straight to Windows Credential Manager. Never paste it into a chat.
 - **Automatic checks turn on by themselves** when you save your first flight.
 - **You find out straight away if a watch looks wrong.** Claude checks a new watch right after saving
-  it, and tells you if the site can't see that flight.
+  it, and tells you if the site can't see that flight. It may also mention other flights it saw with
+  seats on that route.
+- **"Show me my flights" draws a board in the chat,** with each date, proof of watching and any past
+  openings. Claude Desktop shows this directly in the conversation.
 - **Live checks take a while.** A check can take a few minutes, because Chrome has to start and load
   the airline's site. Claude will say when it's still going, and may ask permission again to collect
   the answer. When seats are open, it gives you the booking link.
@@ -417,7 +424,8 @@ Over time, each watch builds up a record of what happened on your flight:
   They don't count as open and don't send an alert.
 - **Other flights:** each search lists other flights on that route and date anyway. If one has seats
   in your cabin while yours doesn't, the daily summary and chat mention it, at no extra searches.
-  jetbridge isn't watching those flights, and the list may be incomplete.
+  jetbridge isn't watching those flights and hasn't re-checked them, so confirm on the site. The list
+  may be incomplete.
 
 ## The emails you'll get
 

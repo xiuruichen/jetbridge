@@ -674,6 +674,7 @@ async def test_the_list_shows_near_misses_and_other_flights(watch):
     assert row["seats_above_price_limit_at_miles"] == 130_000
     assert row["also_seen"]["flights"] == [{"flight": "DL99", "miles": 95_000}]
     assert "isn't watching" in row["also_seen"]["note"]
+    assert "don't call them bookable" in row["also_seen"]["note"]
 
 
 # ---- the in-chat board ----------------------------------------------------------------

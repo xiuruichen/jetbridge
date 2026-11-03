@@ -39,8 +39,8 @@
   <rect x="772" y="516" width="62" height="42" rx="12" fill="#30302e"/>
   <text x="791" y="542" class="sans">Yes</text>
 
-  <text x="28" y="592" class="sans">Saved, and automatic checks are on. The first check runs within about 15 minutes,</text>
-  <text x="28" y="614" class="sans">and I'll email you as soon as seats open.</text>
+  <text x="28" y="592" class="sans">Saved, and I've run the first check: aa.com lists this flight, with no business seats yet.</text>
+  <text x="28" y="614" class="sans">You'll get an email as soon as seats open.</text>
 
   <line x1="28" y1="642" x2="832" y2="642" stroke="#30302e"/>
   <text x="28" y="668" class="small">An illustration of a typical conversation. Claude's wording varies.</text>

@@ -6,6 +6,7 @@
 - Show proof of watching: how many of the last 24 hours each flight stayed on schedule.
 - Keep a record of each flight's past openings, how long they lasted and their prices, with a short
   line about it in seat alerts.
+- "Show me my flights" draws a board of every watch inside the Claude Desktop chat.
 - Show seats above your price limit, and other flights seen with seats on the same route, without
   any extra searches or alerts.
 - Check more often in the last two weeks and just after a program can show a date, and less often

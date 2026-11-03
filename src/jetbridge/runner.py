@@ -418,7 +418,8 @@ class Runner:
                     lines.append(
                         f"    Also seen with {watch.cabin.value} seats on this route and date, "
                         f"as of {format_when(others['at'])}: {names}. jetbridge isn't watching "
-                        "these, and the list may be incomplete."
+                        "these and hasn't re-checked them, so they may be gone, and the list may "
+                        "be incomplete."
                     )
                 if state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER:
                     all_never_seen = False

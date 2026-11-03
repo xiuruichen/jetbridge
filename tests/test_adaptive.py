@@ -446,38 +446,55 @@ def test_deleting_a_watch_deletes_its_bursts(store, clock):
 
 
 # ---- the worst cases ------------------------------------------------------------------
-def test_a_day_of_planning_stays_inside_the_budget_at_its_worst():
-    """Many watches on 14 dates, all moving at once: planned requests still stop at the budget."""
-    watches = [
-        watch_on(*(out(5 + i) for i in range(14)), id_=number, base=24, program="united")
-        for number in range(1, 6)
-    ]
-    # Separate routes, so nothing is shared and every search costs requests.
-    routes = [
+def _busy_watches(count: int) -> list[Watch]:
+    """Separate routes, so nothing is shared and every search costs requests."""
+    days = tuple(out(5 + i) for i in range(14))
+    return [
         Watch(
-            w.id,
-            w.flight,
-            f"A{w.id:02d}",
+            number,
+            Flight("CX", "805"),
+            f"A{number:02d}",
             "HKG",
-            w.dates,
-            w.cabin,
+            days,
+            Cabin.BUSINESS,
             program="united",
             checks_per_day=24,
         )
-        for w in watches
+        for number in range(1, count + 1)
     ]
+
+
+def _plan_a_day(watches: list[Watch]) -> tuple[int, list[bool]]:
+    """Every date moving all day. Returns the requests planned, and for each search made after the
+    budget ran out, whether that date was past its minimum pace."""
     used = 0
+    after_budget: list[bool] = []
     last: dict[tuple[int, date], float] = {}
     for tick in range(96):
         now = NOW + tick * 900.0
 
-        def view(watch, day, now=now):
-            at = last.get((watch.id, day), now - 3600)
-            return DateView(at, at, Burst("x", now - 60, 0, now - 1))
+        def view(watch: Watch, day: date, moment: float = now) -> DateView:
+            at = last.get((watch.id, day), moment - 3600)
+            return DateView(at, at, Burst("x", moment - 60, 0, moment - 1))
 
-        plan = plan_searches(routes, TODAY, now, view, lambda _: max(0, PLANNED_DAILY - used))
-        for query, planned in plan.items():
+        room = max(0, PLANNED_DAILY - used)
+        for query, planned in plan_searches(watches, TODAY, now, view, lambda _, r=room: r).items():
+            if used >= PLANNED_DAILY:
+                overdue = [
+                    now - last.get((w.id, query.date), now - 3600) >= 12 * HOUR
+                    for w in planned.watches
+                ]
+                after_budget.append(any(overdue))
             used += 2
             for watch in planned.watches:
                 last[(watch.id, query.date)] = now
-    assert used <= PLANNED_DAILY + 2
+    return used, after_budget
+
+
+@pytest.mark.parametrize("watches", [2, 5])
+def test_past_the_budget_only_overdue_dates_still_search(watches):
+    """Every date moving all day. Ordinary searches and bursts stop at the budget. Dates past their
+    minimum pace still go ahead, and the hard limit in the governor stops those if need be."""
+    used, after_budget = _plan_a_day(_busy_watches(watches))
+    assert after_budget and all(after_budget)
+    assert used <= PLANNED_DAILY + 2 * 2 * 14 * watches  # one overdue round past the budget

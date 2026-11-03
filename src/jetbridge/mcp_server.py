@@ -115,9 +115,9 @@ _PACE_NOTE = (
     "checks_per_day is the watch's setting, and this is its normal pace: dates more than 60 days "
     "out get about 5/6 of it, dates in the last two weeks or just after the program can first show "
     "them get 1.5 times it. Dates also get a few extra checks soon after seats or prices move, "
-    "and high priority watches go first and more often. All of this stays within the same daily limits. "
-    "It's a choice about where searches do the most good, not a problem to look into, and it "
-    "doesn't predict when seats will open."
+    "and high priority watches go first and more often. All of this stays within the same daily "
+    "limits. It's a choice about where searches do the most good, not a problem to look into, and "
+    "it doesn't predict when seats will open."
 )
 
 _BOOKING_NOTES = {

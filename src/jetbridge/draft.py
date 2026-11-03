@@ -338,7 +338,8 @@ def review_text(draft: WatchDraft, owner: str, *, editing: bool = False) -> str:
     if busiest * site.requests_per_search > PLANNED_DAILY:
         lines.append(
             f"             That's over the {PLANNED_DAILY} requests a day jetbridge plans per "
-            "site, so the closest dates would go first and others less often. Fewer dates would help."
+            "site, so the closest dates would go first and others less often. Fewer dates would "
+            "help."
         )
     elif busiest > HIGH_VOLUME_SEARCHES:
         lines.append(

@@ -23,7 +23,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from jetbridge import doctor, headlines, power, service, winsched, wizard
+from jetbridge import doctor, headlines, power, service, updater, winsched, wizard
 from jetbridge import draft as drafts
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES, parse_program
@@ -31,6 +31,7 @@ from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.insights import TOO_FEW_ANSWERS, clear_answers, openings
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
+from jetbridge.notify import push
 from jetbridge.runner import NEVER_SEEN_AFTER, above_limit_miles, seen_history, watch_coverage
 from jetbridge.scheduler import checks_per_day_on, is_searchable, search_starts
 
@@ -75,6 +76,9 @@ server = MCPServer(
         "check can email everyone on that watch if seats have opened, so say so if they're "
         "checking a watch that alerts other people. When seats are open, give the book_at link "
         "and booking_note, and say that seats can go quickly.\n\n"
+        "If get_started shows update_available, mention it once, and call install_update only "
+        "after a yes. Phone alerts are optional: use open_phone_setup, which opens a private "
+        "and explains that alert text passes through ntfy.sh.\n\n"
         "The Gmail app password must never go in this chat. To set up email, use open_email_setup, "
         "which opens a private window on this PC. If someone pastes a password here, tell them to "
         "revoke it in their Google account and make a new one.\n\n"
@@ -275,6 +279,9 @@ def get_started() -> dict[str, Any]:
     }
     if not accepted:
         answer["notice"] = service.RISK_NOTICE
+    newer = updater.newer_version(store)
+    if newer:
+        answer["update_available"] = newer
     return answer
 
 
@@ -303,6 +310,48 @@ def open_email_setup() -> dict[str, str]:
         "address to send from, the address alerts go to, and the app password, then sends a test "
         "email. Ask them to say when it's done, then call get_started to confirm."
     }
+
+
+@_tool()
+def open_phone_setup() -> dict[str, str]:
+    """Open a private window on this PC to turn on optional phone alerts through ntfy.
+
+    The private channel name stays in that window and never goes in the chat. It explains what
+    passes through ntfy.sh and asks before turning anything on, then sends a test."""
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jetbridge", "notify", "push-window"],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+    except OSError as exc:
+        raise ToolError(f"the window couldn't open: {exc}") from exc
+    return {
+        "message": "A window opened on this PC, possibly behind this one. It explains how phone "
+        "alerts work and asks before turning them on. Ask them to say when it's done, then call "
+        "alert_settings to confirm."
+    }
+
+
+@_tool()
+def turn_off_phone_alerts() -> dict[str, bool]:
+    """Stop phone alerts. Emails carry on."""
+    push.turn_off()
+    return {"phone_alerts_on": False}
+
+
+@_tool()
+def install_update() -> dict[str, Any]:
+    """Install the newest jetbridge. Call this only after the person says yes. It can take a
+    minute or two: if finished is false, call check_result with its check_id. They need to restart
+    Claude Desktop afterward. Checks and watches aren't affected."""
+
+    def work() -> dict[str, Any]:
+        try:
+            return {"updated": True, "report": updater.install()}
+        except updater.UpdateProblem as exc:
+            return {"updated": False, "problem": str(exc)}
+
+    return _start_search(("update",), work)
 
 
 @_tool()
@@ -787,6 +836,7 @@ def alert_settings() -> dict[str, Any]:
         "daily_summary_on": service.open_store().get("digest_enabled", "1") == "1",
         "automatic_checks_on": winsched.is_installed(),
         "alerts_go_to": _owner_address(),
+        "phone_alerts_on": push.enabled(),
         "headlines": [
             {
                 "kind": kind.value,
@@ -903,7 +953,9 @@ def health() -> dict[str, Any]:
             }
             for site in SITES.values()
         },
-        "emails_waiting": len(store.pending_alerts()),
+        "emails_waiting": sum(
+            item.recipient != push.PUSH_RECIPIENT for item in store.pending_alerts()
+        ),
     }
 
 

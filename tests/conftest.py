@@ -20,10 +20,12 @@ START = datetime(2027, 1, 10, 9, 0).timestamp()
 
 
 @pytest.fixture(autouse=True)
-def nothing_real(monkeypatch):
-    """Tests run offline: none can open Chrome, send an email or change this PC's settings."""
-    from jetbridge import power
+def nothing_real(monkeypatch, tmp_path):
+    """Tests run offline: none can open Chrome, send anything, change this PC's settings or see
+    its real state folder."""
+    from jetbridge import power, updater
     from jetbridge.acquire import broker
+    from jetbridge.notify import push
 
     def refuse(*_, **__):
         raise AssertionError("a test tried to reach something real. Use a fake")
@@ -34,6 +36,9 @@ def nothing_real(monkeypatch):
     monkeypatch.setattr(broker, "async_playwright", refuse)
     monkeypatch.setattr("smtplib.SMTP_SSL", refuse)
     monkeypatch.setattr(power, "_powercfg", no_powercfg)
+    monkeypatch.setattr(push, "_post", refuse)
+    monkeypatch.setattr(updater, "_fetch_latest", lambda: None)
+    monkeypatch.setenv("JETBRIDGE_HOME", str(tmp_path))
 
 
 def to_html(state: dict) -> str:

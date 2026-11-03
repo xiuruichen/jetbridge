@@ -11,7 +11,7 @@ from datetime import date, datetime
 import typer
 import typer.core
 
-from jetbridge import claude_desktop, headlines, power, service, winsched, wizard
+from jetbridge import claude_desktop, headlines, power, service, updater, winsched, wizard
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
 from jetbridge import insights as record
@@ -21,6 +21,7 @@ from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import CheckStatus, Watch
 from jetbridge.notify import email as mail
+from jetbridge.notify import push
 from jetbridge.paths import home, raw_dir
 from jetbridge.runner import seen_history
 from jetbridge.store import Store
@@ -378,7 +379,7 @@ def _print_health(store: Store) -> None:
             typer.echo(f"{site.domain} is RESTING after a block until {format_when(until)}.")
     last = store.get("last_tick_at")
     typer.echo(f"Last tick: {format_when(float(last)) if last else 'never'}")
-    pending = store.pending_alerts()
+    pending = [item for item in store.pending_alerts() if item.recipient != push.PUSH_RECIPIENT]
     if pending:
         typer.echo(f"Emails waiting to send: {len(pending)}")
 
@@ -431,6 +432,9 @@ def doctor() -> None:
         typer.echo(f"Last clear answer: {good}")
     _print_health(store)
     typer.echo(f"Claude Desktop (optional): {claude_desktop.status().value}")
+    newer = updater.newer_version(store)
+    if newer:
+        typer.echo(f"jetbridge {newer} is available. Run: jetbridge update")
     typer.echo(f"State folder: {home()}")
     typer.echo(f"Saved failed responses: {len(list(raw_dir().glob('*.html')))}")
 
@@ -490,6 +494,63 @@ def notify_test(
     except Exception as exc:
         raise _fail(f"couldn't send: {exc}") from exc
     typer.echo("Sent. Check the inbox, and the spam folder if it isn't there.")
+
+
+_PHONE_NOTICE = """Phone alerts tell you the moment seats open, as well as emailing you.
+
+They go through ntfy.sh, a free service with no account. It sees the alert's text and booking link,
+and anyone who knows your private channel name could read them. jetbridge makes a long random name
+and keeps it on this PC."""
+
+
+def _phone_steps(name: str) -> None:
+    typer.echo(f"""
+1. Install the free ntfy app on your phone, from https://ntfy.sh
+2. In the app, press + and subscribe to this channel, exactly as written:
+
+   {name}
+
+Keep that name private.""")
+
+
+@notify_app.command("push")
+def notify_push(state: str = typer.Argument(..., help="on, off or test")) -> None:
+    """Turn phone alerts through ntfy on or off, or send a test to your phone."""
+    if state == "on":
+        typer.echo(_PHONE_NOTICE)
+        if not typer.confirm("\nTurn on phone alerts?", default=False):
+            typer.echo("OK, nothing changed.")
+            return
+        _phone_steps(push.turn_on())
+        typer.echo("\nThen run: jetbridge notify push test")
+    elif state == "off":
+        push.turn_off()
+        typer.echo("Phone alerts are off. Emails carry on, and you can delete the app.")
+    elif state == "test":
+        try:
+            push.send_test()
+        except (OSError, LookupError) as exc:
+            raise _fail(f"couldn't send it: {exc}") from exc
+        typer.echo("Sent. If nothing arrives, check the channel name in the app.")
+    else:
+        raise _fail("say on, off or test")
+
+
+@notify_app.command("push-window", hidden=True)
+def notify_push_window() -> None:
+    """The private window Claude opens, so the channel name never goes in a chat."""
+    typer.echo(_PHONE_NOTICE)
+    if not typer.confirm("\nTurn on phone alerts?", default=False):
+        typer.echo("OK, nothing changed.")
+    else:
+        _phone_steps(push.turn_on())
+        typer.prompt("\nPress Enter once you've subscribed", default="", show_default=False)
+        try:
+            push.send_test()
+            typer.echo("Sent a test to your phone. If nothing arrives, check the channel name.")
+        except OSError as exc:
+            typer.echo(f"Couldn't send a test: {exc}")
+    typer.prompt("\nPress Enter to close this window", default="", show_default=False)
 
 
 @notify_app.command("digest")
@@ -710,6 +771,16 @@ def uninstall_command(
 def claude_status() -> None:
     """Show whether Claude Desktop is connected to jetbridge."""
     typer.echo(f"Claude Desktop: {claude_desktop.status().value}")
+
+
+@app.command()
+def update() -> None:
+    """Install the newest jetbridge, including any fixes for airline sites."""
+    try:
+        for line in updater.install():
+            typer.echo(line)
+    except updater.UpdateProblem as exc:
+        raise _fail(str(exc)) from exc
 
 
 @app.command("keep-awake")

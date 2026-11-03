@@ -141,7 +141,7 @@ def test_launcher_passes_arguments_to_the_program(tmp_path):
         text=True,
         check=True,
     )
-    assert result.stdout.strip() == "ARGS watch list"
+    assert result.stdout.strip() == "ARGS -m jetbridge watch list"
 
 
 def test_environment_folder_follows_the_synced_folder_setting():

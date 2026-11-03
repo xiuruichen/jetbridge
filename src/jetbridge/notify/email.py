@@ -14,6 +14,7 @@ from typing import Protocol
 
 import keyring
 
+from jetbridge.notify import push
 from jetbridge.paths import config_path
 from jetbridge.store import NewAlert, Store
 
@@ -94,11 +95,32 @@ class GmailSender:
                 raise BadRecipient(str(exc)) from exc
 
 
+def _flush_pushes(store: Store, now: float) -> None:
+    """Phone alerts go first and on their own: neither kind of failure holds up the other."""
+    for item in store.pending_alerts():
+        if item.recipient != push.PUSH_RECIPIENT:
+            continue
+        if now - item.created_at > push.MAX_AGE_S:
+            store.drop_alert(item.id)
+            continue
+        try:
+            push.deliver(item.subject, item.body)
+        except Exception as exc:
+            store.mark_failed(item.id, f"{type(exc).__name__}: {exc}"[:300])
+            store.set(push.LAST_ERROR, f"{type(exc).__name__}: {exc}"[:300])
+            continue
+        store.mark_sent(item.id, now)
+        store.delete(push.LAST_ERROR)
+
+
 def flush_outbox(store: Store, sender: Sender, now: float) -> int:
-    """Send what's pending, oldest first. A failure stops the flush, and everything stays
-    queued for the next tick, so nothing is lost and order is preserved."""
+    """Send what's pending, oldest first. A failed email stops the emails, and they stay queued
+    for the next tick, so nothing is lost and order is preserved. Returns the emails sent."""
+    _flush_pushes(store, now)
     sent = 0
     for item in store.pending_alerts():
+        if item.recipient == push.PUSH_RECIPIENT:
+            continue
         if item.kind == "digest" and now - item.created_at > DIGEST_MAX_AGE_S:
             store.drop_alert(item.id)  # a stale summary is noise; real alerts are always kept
             continue

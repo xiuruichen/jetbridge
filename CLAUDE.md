@@ -71,6 +71,10 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
   an answer are only mentioned in the daily summary and chat, never as alerts, and never trigger a
   search. Editing a watch can't change its flight, airports, cabin, program or party size, because
   its history would stop applying.
+- Phone alerts are off until turned on, and each seat alert still goes by email. The channel name
+  never goes in a chat. Phone and email delivery can't hold each other up.
+- An update only fast-forwards and refuses a folder with local changes. Claude Desktop runs the
+  server through python, so it doesn't lock a program the update has to replace.
 - Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
   uninstall.
 - Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.

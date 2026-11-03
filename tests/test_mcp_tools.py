@@ -76,6 +76,9 @@ async def test_every_command_has_a_way_in_from_chat():
     assert names == {
         "get_started",
         "set_keep_awake",
+        "open_phone_setup",
+        "turn_off_phone_alerts",
+        "install_update",
         "watch_insights",
         "review_watch_change",
         "confirm_watch_change",

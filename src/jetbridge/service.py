@@ -418,11 +418,13 @@ def find_flights(store: Store, query: Query, cabin: Cabin) -> FlightSearch:
 
 def live_tick(store: Store, only_watch: int | None = None):
     """Run one real tick under the lock. Imports the browser layer only when it's needed."""
+    from jetbridge import updater
     from jetbridge.acquire.fetcher import LiveFetcher
     from jetbridge.notify.email import GmailSender
     from jetbridge.runner import Runner
 
     with tick_lock():
+        updater.refresh(store, time.time())
         governor = Governor(store, time.time)
         runner = Runner(
             store,

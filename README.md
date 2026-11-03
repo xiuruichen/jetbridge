@@ -48,6 +48,7 @@ irm https://raw.githubusercontent.com/xiuruichen/jetbridge/main/install.ps1 | ie
 - [Checking on your watches](#checking-on-your-watches)
 - [The emails you'll get](#the-emails-youll-get)
 - [Customizing alert headlines](#customizing-alert-headlines)
+- [Phone alerts (optional)](#phone-alerts-optional)
 - [When you get a SEATS OPEN email](#when-you-get-a-seats-open-email)
 - [How checks work](#how-checks-work)
 - [Limitations](#limitations)
@@ -92,8 +93,8 @@ That's all you need.
 Running a script from the internet means trusting it, so you can
 [read it first](https://github.com/xiuruichen/jetbridge/blob/main/install.ps1).
 
-To add more flights later, run `jetbridge start`. To update jetbridge, quit Claude Desktop if it's
-open and run the same line again.
+To add more flights later, run `jetbridge start`. To update, run `jetbridge update` or ask Claude.
+The daily summary tells you when there's a new version.
 
 After [installing by hand](#installing-by-hand), run commands from the project folder and start them
 with `uv run`, like `uv run jetbridge start`.
@@ -463,9 +464,27 @@ This changes the wording only, not when alerts are sent. Headlines are saved in 
 state folder, so they stay on your PC and survive `notify setup`. If that file ever can't be read,
 alerts still go out with the built-in wording and `doctor` tells you.
 
+## Phone alerts (optional)
+
+Email can take a while to get noticed, and seats can go in minutes. To get a phone alert too, ask
+Claude to "set up phone alerts" or run:
+
+```powershell
+jetbridge notify push on      # explains it and asks first
+jetbridge notify push test
+jetbridge notify push off
+```
+
+This uses [ntfy](https://ntfy.sh), a free service with no account. Only seats-open, unconfirmed and
+price-drop alerts go this way, and each one still comes by email. **The alert's text and booking link
+pass through ntfy.sh**, and anyone who knows your private channel name could read them, so jetbridge
+makes a long random name, keeps it on your PC and never shows it in a chat. Phone alerts only go to
+you, not to other people on a watch. An alert that can't be sent within an hour is dropped, because
+it would no longer be useful, and the email still arrives.
+
 ## When you get a SEATS OPEN email
 
-1. **Open the link in the email.** It fills in that route, date and party size. American goes
+1. **Open the link at the top of the email.** It fills in that route, date and party size. American goes
    straight to the results. Delta opens a date grid with your date selected, so press Continue.
    United asks you to sign in before it shows prices in miles.
 2. **Find your flight** and check the price, cabin and taxes. Award seats can disappear in minutes.
@@ -583,7 +602,9 @@ folder. Add `--help` to any command for details.
 | `keep-awake on` / `off` | Stop this PC sleeping while plugged in, or put its settings back |
 | `uninstall` | Remove jetbridge's checks, watches, settings and saved password |
 | `--version` | Show the version |
+| `update` | Install the newest jetbridge |
 | `notify setup` | Save Gmail details and send a test email |
+| `notify push on` / `off` / `test` | Phone alerts through ntfy |
 | `notify test [--to ADDRESS]` | Send a test email to you or someone else |
 | `notify digest on` / `off` | Turn the daily summary on or off |
 | `notify headline [KIND] [TEXT]` | Show or change seat alert headlines |
@@ -604,8 +625,8 @@ connected, quit Claude Desktop fully, including from the system tray, and reopen
 claude connect` if it says anything else. If they still don't appear, the app's logs are in `%LOCALAPPDATA%\Claude\logs`, in
 `mcp-server-jetbridge.log`.
 
-**Updating fails with "being used by another process".** Claude Desktop keeps a jetbridge program
-open. Quit it fully, including from the system tray, and run the update again.
+**Updating fails with "being used by another process".** Claude Desktop is keeping a jetbridge
+program open. Quit it fully, including from the system tray, and run `jetbridge update` again.
 
 **The test email fails with a login error.** Use an app password, not your normal Gmail password,
 and make sure 2-Step Verification is on. Google Workspace accounts, including school ones, may have
@@ -644,9 +665,14 @@ $env:JETBRIDGE_SHOW_BROWSER = "1"
 
 ## Where your data lives
 
-Everything is on your PC. Nothing goes anywhere except searches to the airline sites and emails
-through Gmail, plus whatever Claude handles in your chat if you [use it through
-Claude](#using-it-through-claude).
+Everything is on your PC. Nothing goes anywhere except:
+
+- searches to the airline sites
+- emails through Gmail
+- whatever Claude handles in your chat, if you [use it through Claude](#using-it-through-claude)
+- seat alerts through ntfy.sh, if you [turn on phone alerts](#phone-alerts-optional)
+- one plain request a day to GitHub to see if there's a new version, which carries nothing about you.
+  Set `JETBRIDGE_NO_UPDATE_CHECK=1` to stop it
 
 | What | Where |
 |---|---|
@@ -654,6 +680,7 @@ Claude](#using-it-through-claude).
 | jetbridge's Chrome profile | `%LOCALAPPDATA%\jetbridge\profiles\` |
 | Failed responses, for repairs (newest 50) | `%LOCALAPPDATA%\jetbridge\raw\` |
 | Gmail app password | Windows Credential Manager, under `jetbridge-gmail` |
+| Private phone alert channel name, if you use it | `%LOCALAPPDATA%\\jetbridge\\push.json` |
 
 Set the `JETBRIDGE_HOME` environment variable to use a different folder.
 

@@ -169,6 +169,9 @@ def render_availability(
 
     subject = f"{head} - {result.miles:,} mi" if result.miles else head
     lines = [
+        "Check and book:",
+        booking_url,
+        "",
         f"Flight:   {watch.flight.code} {watch.origin} to {watch.destination}",
         f"Date:     {day_text}",
         f"Cabin:    {watch.cabin.value}",
@@ -187,9 +190,6 @@ def render_availability(
     if kind is AlertKind.SEATS_OPEN_UNCONFIRMED:
         lines += ["", "The follow-up check was inconclusive, so this may already be gone."]
     lines += [
-        "",
-        "Check and book:",
-        booking_url,
         "",
         "Award seats can vanish quickly. "
         "Confirm on the site before moving any points, because transfers can't be undone.",

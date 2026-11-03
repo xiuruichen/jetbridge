@@ -52,12 +52,17 @@ def config_files() -> list[Path]:
 
 
 def server_program() -> Path:
-    """The full path, because the app starts servers without this folder or uv to go on."""
-    return Path(sys.prefix) / "Scripts" / "jetbridge-mcp.exe"
+    """The full path, because the app starts servers without this folder or uv to go on. It's
+    python rather than jetbridge-mcp.exe because the app keeps the program open, and an update can't
+    replace that .exe while it's in use."""
+    return Path(sys.prefix) / "Scripts" / "python.exe"
 
 
 def server_entry() -> dict[str, Any]:
-    entry: dict[str, Any] = {"command": str(server_program())}
+    entry: dict[str, Any] = {
+        "command": str(server_program()),
+        "args": ["-m", "jetbridge.mcp_server"],
+    }
     state_folder = os.environ.get("JETBRIDGE_HOME")
     if state_folder:
         entry["env"] = {"JETBRIDGE_HOME": state_folder}

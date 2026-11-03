@@ -20,7 +20,7 @@ def machine(tmp_path, monkeypatch):
     local, roaming = tmp_path / "Local", tmp_path / "Roaming"
     local.mkdir()
     roaming.mkdir()
-    program = tmp_path / "venv" / "Scripts" / "jetbridge-mcp.exe"
+    program = tmp_path / "venv" / "Scripts" / "python.exe"
     program.parent.mkdir(parents=True)
     program.write_text("")
     monkeypatch.setenv("LOCALAPPDATA", str(local))
@@ -64,7 +64,12 @@ def test_nothing_is_written_when_the_app_is_not_installed(machine):
 
 def test_connect_creates_the_file_with_the_full_program_path(machine, config):
     assert desktop.connect() is True
-    assert servers(config) == {"jetbridge": {"command": str(desktop.server_program())}}
+    assert servers(config) == {
+        "jetbridge": {
+            "command": str(desktop.server_program()),
+            "args": ["-m", "jetbridge.mcp_server"],
+        }
+    }
     assert desktop.status() is State.CONNECTED
 
 

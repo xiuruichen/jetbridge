@@ -11,6 +11,7 @@ from jetbridge import headlines, power, winsched
 from jetbridge.alerts import format_when
 from jetbridge.models import CheckStatus
 from jetbridge.notify import email as mail
+from jetbridge.notify import push
 from jetbridge.store import Store
 
 
@@ -55,10 +56,13 @@ def checks(store: Store) -> list[Check]:
         row["last_error"]
         for row in store.conn.execute(
             "SELECT last_error FROM outbox WHERE sent_at IS NULL AND last_error IS NOT NULL"
+            " AND (recipient IS NULL OR recipient!=?)",
+            (push.PUSH_RECIPIENT,),
         )
     ]
     headline_problem = headlines.problem()
     timers = power.plugged_in_timers()
+    push_problem = store.get(push.LAST_ERROR) if push.enabled() else None
     return [
         Check(
             "Google Chrome installed",
@@ -73,6 +77,12 @@ def checks(store: Store) -> list[Check]:
             "Offer open_email_setup.",
         ),
         Check("Emails sending", not failures, failures[-1] if failures else ""),
+        Check(
+            "Phone alerts sending (optional)",
+            push_problem is None,
+            f"{push_problem}. Emails aren't affected",
+            serious=False,
+        ),
         Check("Alert headlines readable", headline_problem is None, headline_problem or ""),
         Check(
             "Scheduled task installed",

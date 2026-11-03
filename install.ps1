@@ -142,7 +142,7 @@ function Write-Launcher {
     [void](New-Item -ItemType Directory -Force -Path $Folder)
     # cmd.exe reads batch files in the console's code page, so this keeps a non-English username.
     $encoding = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
-    [IO.File]::WriteAllText((Join-Path $Folder 'jetbridge.cmd'), "@`"$Program`" %*`r`n", $encoding)
+    [IO.File]::WriteAllText((Join-Path $Folder 'jetbridge.cmd'), "@`"$Program`" -m jetbridge %*`r`n", $encoding)
 }
 
 function Add-FolderToPathText {
@@ -188,12 +188,14 @@ function Install-Jetbridge {
         throw 'uv was installed, but this window cannot see it yet. Open a new PowerShell window and run this again.'
     }
     Write-Host 'Installing the Python packages jetbridge needs...'
-    # Claude Desktop keeps jetbridge-mcp.exe open, and Windows won't replace a program in use.
+    # An older connection to Claude Desktop can keep a program open that this has to replace.
     Invoke-Native $uv @('sync', '--project', $target) "Couldn't install the Python packages. If Claude Desktop is open, quit it and run this again"
 
     $program = Join-Path (Get-EnvironmentFolder $target) 'Scripts\jetbridge.exe'
+    $python = Join-Path (Get-EnvironmentFolder $target) 'Scripts\python.exe'
     $launcher = Join-Path $env:LOCALAPPDATA 'jetbridge\bin'
-    Write-Launcher $program $launcher
+    # Through python, so a running command doesn't lock a program that an update has to replace.
+    Write-Launcher $python $launcher
 
     Write-Host ''
     Write-Host "jetbridge is installed in $target."

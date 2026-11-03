@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from jetbridge import updater
 from jetbridge.acquire.fetcher import Fetcher
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES, get_site
@@ -24,6 +25,7 @@ from jetbridge.alerts import (
 from jetbridge.insights import Coverage, Seen, alert_note, coverage
 from jetbridge.matcher import also_seen, evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
+from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox
 from jetbridge.scheduler import (
     date_is_due,
@@ -276,6 +278,8 @@ class Runner:
             # One email per person, so recipients never see each other's addresses.
             for recipient in watch.recipients or (None,):
                 alerts.append(NewAlert(kind.value, subject, body, recipient=recipient))
+            if push.wanted_for(kind):
+                alerts.append(push.alert_for(kind, subject, url))
         self.store.commit_check(watch.id, day, result, decision.state, alerts, now)
 
     # ---- health ---------------------------------------------------------------------
@@ -333,7 +337,8 @@ class Runner:
                         f"jetbridge: {site.domain}'s page format may have changed",
                         "Recent responses could not be read, so checks are coming back as "
                         f"'unknown' rather than 'no seats'.\n\nLatest detail: {detail}\n\n"
-                        "The raw responses are saved for repairing the parser.",
+                        "The raw responses are saved for repairing the parser. If a fix is out, "
+                        "'jetbridge update' installs it.",
                         dedupe_key=f"drift:{site.id}:{int(float(since))}",
                     ),
                     now,
@@ -436,6 +441,12 @@ class Runner:
             until = self.governor.cooldown_until(site.id)
             if until > now:
                 lines.append(f"{site.domain} is resting after a block until {format_when(until)}.")
+        newer = updater.newer_version(self.store)
+        if newer:
+            lines.append(
+                f"jetbridge {newer} is available, which may include fixes for airline sites. Run "
+                "'jetbridge update', or ask Claude to update it."
+            )
         lines.append("If this daily email stops arriving, the watcher isn't running.")
         status = f"{open_count} date(s) OPEN" if open_count else "no seats yet"
         return f"jetbridge daily: {status}, still watching", "\n".join(lines)

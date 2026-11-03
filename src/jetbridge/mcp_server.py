@@ -53,8 +53,9 @@ server = MCPServer(
         "City names are fine; if a city has several airports, ask which. If they don't know the "
         "flight number, offer find_flights, then let them choose. Call review_watch, show the "
         "review word for word, and call confirm_watch only after they say yes to it. If they want "
-        "a change, call review_watch again. Right after saving, call check_now and tell them what "
-        "its means says, so a wrong flight or route shows up straight away.\n\n"
+        "a change, call review_watch again. Saving also runs the first check: tell them what "
+        "first_check's means says, so a wrong flight or route shows up straight away. If it says "
+        "finished false, tell them it's still going and call check_result.\n\n"
         "Changing a watch's dates, price limit or checks per day: call review_watch_change, show "
         "the review word for word, and call confirm_watch_change only after a yes. Its history is "
         "kept. Changing its flight, airports, cabin, program or party size makes it a different "
@@ -460,9 +461,10 @@ def review_watch(
 
 @_tool()
 def confirm_watch(review_id: str) -> dict[str, Any]:
-    """Save a reviewed watch. Call this only after the person has seen the review from
-    review_watch and said yes to it. Each review can be saved once. Automatic checks are turned
-    on if they aren't already."""
+    """Save a reviewed watch, then run its first check. Call this only after the person has seen
+    the review from review_watch and said yes to it. Each review can be saved once. Automatic checks
+    are turned on if they aren't already. first_check has the answer, including what it means. If
+    its finished is false, call check_result with its check_id."""
     _require_notice()
     saved = _recall(_REVIEW, review_id)
     if saved is None:
@@ -482,7 +484,12 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
             next_steps.append(f"Automatic checks couldn't be turned on, so it won't run: {exc}")
     if not _email_ready():
         next_steps.append("Email isn't set up, so alerts will wait. Offer open_email_setup.")
-    return {**_watch_view(watch), "next_steps": next_steps}
+    try:
+        first_check = _start_search(("check", watch.id), lambda: _check_results(watch))
+    except ToolError as exc:  # the watch is saved, and scheduled checks will still run
+        first_check = {"finished": True, "problem": f"{exc}. A scheduled check will try again."}
+    updated = _require_watch(watch.id)
+    return {**_watch_view(updated), "first_check": first_check, "next_steps": next_steps}
 
 
 # ---- long searches --------------------------------------------------------------------

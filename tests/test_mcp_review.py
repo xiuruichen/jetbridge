@@ -11,6 +11,7 @@ from mcp import Client
 
 from jetbridge import mcp_server, service
 from jetbridge.notify import email as mail
+from jetbridge.runner import TickReport
 from jetbridge.service import open_store
 
 FUTURE = date.today() + timedelta(days=200)
@@ -28,6 +29,7 @@ DETAILS = {
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("JETBRIDGE_HOME", str(tmp_path))
+    monkeypatch.setattr(service, "live_tick", lambda *_, **__: TickReport())
     config = mail.EmailConfig("o@x.com", "owner@x.com")
     monkeypatch.setattr(mail, "load_config", lambda: config)
     monkeypatch.setattr(mail.keyring, "get_password", lambda *_: "secret")
@@ -230,3 +232,51 @@ async def test_checks_need_a_real_watch_and_a_real_check_id():
     async with Client(mcp_server.server) as client:
         assert "no watch" in await refused(client, "check_now", watch_id=999)
         assert "nothing is running" in await refused(client, "check_result", check_id="made-up")
+
+
+# ---- the first check happens when a watch is saved ------------------------------------
+def _first_check_fields():
+    return {
+        "flight": "CX845",
+        "origin": "JFK",
+        "destination": "HKG",
+        "dates": (date.today() + timedelta(days=30)).isoformat(),
+        "cabin": "business",
+        "program": "american",
+        "pax": 1,
+    }
+
+
+async def test_saving_a_watch_runs_its_first_check_and_says_what_it_means(monkeypatch):
+    from jetbridge.models import CheckResult, CheckStatus
+    from jetbridge.runner import CheckLine
+
+    def tick(store, only_watch=None):
+        watch = store.get_watch(only_watch)
+        result = CheckResult(CheckStatus.NOT_LISTED)
+        return TickReport(checks=[CheckLine(watch.id, watch.label, watch.dates[0], result)])
+
+    monkeypatch.setattr(service, "live_tick", tick)
+    async with Client(mcp_server.server) as client:
+        review = await client.call_tool("review_watch", _first_check_fields())
+        saved = await client.call_tool(
+            "confirm_watch", {"review_id": review.structured_content["review_id"]}
+        )
+    first = saved.structured_content["first_check"]
+    assert first["finished"] is True
+    assert "wasn't in its results" in first["results"][0]["means"]
+
+
+async def test_a_failed_first_check_still_keeps_the_watch(monkeypatch):
+    def tick(*_, **__):
+        raise RuntimeError("Chrome wouldn't start")
+
+    monkeypatch.setattr(service, "live_tick", tick)
+    async with Client(mcp_server.server) as client:
+        review = await client.call_tool("review_watch", _first_check_fields())
+        saved = await client.call_tool(
+            "confirm_watch", {"review_id": review.structured_content["review_id"]}
+        )
+    assert not saved.is_error
+    assert "scheduled check will try again" in saved.structured_content["first_check"]["problem"]
+    assert len(service.open_store().list_watches()) == 1

@@ -14,6 +14,7 @@ from jetbridge import cli, mcp_server, service
 from jetbridge.alerts import AlertKind
 from jetbridge.models import CheckStatus
 from jetbridge.notify import email as mail
+from jetbridge.runner import TickReport
 from jetbridge.service import FlightOption, FlightSearch, open_store
 
 FUTURE = date.today() + timedelta(days=200)
@@ -32,6 +33,7 @@ ROUTE = {k: DETAILS[k] for k in ("origin", "destination", "dates", "cabin", "pro
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("JETBRIDGE_HOME", str(tmp_path))
+    monkeypatch.setattr(service, "live_tick", lambda *_, **__: TickReport())
     monkeypatch.setattr(mail, "load_config", lambda: mail.EmailConfig("o@x.com", "owner@x.com"))
     monkeypatch.setattr(mail.keyring, "get_password", lambda *_: "secret")
     tasks = SimpleNamespace(on=True)

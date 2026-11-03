@@ -24,7 +24,14 @@ from jetbridge.alerts import (
 from jetbridge.matcher import evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
 from jetbridge.notify.email import Sender, flush_outbox
-from jetbridge.scheduler import group_queries, is_due, is_expired, next_check_at, upcoming_dates
+from jetbridge.scheduler import (
+    group_queries,
+    is_due,
+    is_expired,
+    longest_gap_s,
+    next_check_at,
+    upcoming_dates,
+)
 from jetbridge.store import NewAlert, Store
 
 TICK_BUDGET_S = 12 * 60
@@ -232,7 +239,8 @@ class Runner:
                 self.store.date_state(watch.id, d).last_conclusive_at or watch.created_at
                 for d in days
             )
-            if now - last_good >= BLIND_AFTER_S:
+            # A slow watch is normally quiet for longer, and that alone isn't a problem.
+            if now - last_good >= max(BLIND_AFTER_S, 2 * longest_gap_s(watch.checks_per_day)):
                 hours = (now - last_good) / 3600
                 self.store.enqueue(
                     NewAlert(

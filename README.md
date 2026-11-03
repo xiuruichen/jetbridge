@@ -109,7 +109,7 @@ The one-step install offers to do this if Claude Desktop is already installed. I
 later, or installed jetbridge by hand:
 
 1. Open Claude Desktop once and sign in.
-2. Run this in PowerShell. After installing by hand, use `jetbridge` from the project folder.
+2. Run this in PowerShell. After installing by hand, use `uv run jetbridge` from the project folder.
 
    ```powershell
    jetbridge claude connect
@@ -489,7 +489,10 @@ After sleep or downtime it runs one catch-up check, never a burst of missed ones
 
 Automated searching likely goes against these airlines' terms of use, so you're accepting that risk
 by running this. jetbridge keeps the risk low: it never logs in, so your frequent flyer accounts
-aren't involved, and it searches at low volume. Each site has its own hard limit:
+aren't involved, and it searches at low volume. It drives Chrome through
+[patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python), a browser-automation tool
+built to look like normal Chrome, because these sites often refuse ordinary automation. Each site
+has its own hard limit:
 
 | Site | Most requests |
 |---|---|
@@ -511,7 +514,7 @@ happening, lower `--checks-per-day`.
 
 ## Command reference
 
-Run these as `jetbridge ...` after the one-step install, or `jetbridge ...` from the project
+Run these as `jetbridge ...` after the one-step install, or `uv run jetbridge ...` from the project
 folder. Add `--help` to any command for details.
 
 | Command | What it does |
@@ -543,7 +546,7 @@ Start with `jetbridge doctor`, which covers most problems.
 its folder is on your PATH.
 
 **`jetbridge` isn't recognized.** Close and reopen PowerShell. After installing by hand, use
-`jetbridge` from the project folder.
+`uv run jetbridge` from the project folder.
 
 **Claude Desktop doesn't show the jetbridge tools.** Run `jetbridge claude status`. If it says
 connected, quit Claude Desktop fully, including from the system tray, and reopen it. Run `jetbridge

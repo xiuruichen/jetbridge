@@ -155,7 +155,8 @@ class WatchDraft:
 
     @property
     def searches_per_day(self) -> int:
-        return len(service.parse_dates(self.dates or "")) * self.checks_per_day
+        days = service.parse_dates(self.dates or "")
+        return sum(day >= date.today() for day in days) * self.checks_per_day
 
 
 def resolve_airport(text: str) -> tuple[str, ...]:

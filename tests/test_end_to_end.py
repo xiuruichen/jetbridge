@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+import pytest
 from conftest import DAY, FakeSender, add_cx, answer_from, cx_slice, make_runner, response
 
 from jetbridge.acquire import american
@@ -226,3 +227,27 @@ def test_interpret_clears_probe_only_on_real_answer(store, clock):
         RawResponse(200, to_html(response())), gov, american.SITE, lambda _raw, _label: None
     )
     assert answer.kind is AnswerKind.ANSWER and not gov.health("american").needs_probe
+
+
+@pytest.mark.parametrize("checks_per_day", [1, 2])
+async def test_a_slow_watch_on_schedule_is_not_called_blind(store, clock, checks_per_day):
+    """At 1 check a day, the next one can be up to 31 hours away. That's normal, not a problem."""
+    state = response(cx_slice(business_miles=None))
+    runner, _, sender, _ = make_runner(store, clock, [answer_from(state)])
+    add_cx(store, clock, checks_per_day=checks_per_day)
+    await runner.tick()
+    clock.now += 25 * 3600  # past 24 hours, but within this watch's normal gap
+    store.set_next_check(1, clock.now + 6 * 3600)
+    await runner.tick()
+    assert not [s for s in sender.subjects if "can't see" in s]
+
+
+async def test_a_slow_watch_is_blind_after_two_missed_gaps(store, clock):
+    state = response(cx_slice(business_miles=None))
+    runner, _, sender, _ = make_runner(store, clock, [answer_from(state)])
+    add_cx(store, clock, checks_per_day=1)
+    await runner.tick()
+    clock.now += 63 * 3600  # twice the longest gap (31.2 hours) has gone by with no answer
+    store.set_next_check(1, clock.now + 3600)
+    await runner.tick()
+    assert [s for s in sender.subjects if "can't see" in s]

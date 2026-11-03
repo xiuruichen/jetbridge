@@ -17,6 +17,11 @@ def next_check_at(now: float, checks_per_day: int, rng: random.Random) -> float:
     return now + DAY_S / checks_per_day * rng.uniform(*JITTER)
 
 
+def longest_gap_s(checks_per_day: int) -> float:
+    """The longest a healthy watch can go between checks."""
+    return DAY_S / checks_per_day * JITTER[1]
+
+
 def is_due(watch: Watch, now: float) -> bool:
     return watch.status == "active" and watch.next_check_at <= now
 

@@ -415,3 +415,20 @@ def test_failed_email_stops_and_asks_again_next_time(monkeypatch):
     monkeypatch.setattr(mail, "load_config", lambda: mail.EmailConfig("o@x.com", "o@x.com"))
     second = cli_runner.invoke(app, ["start"])
     assert second.exit_code == 1 and calls == ["setup", "setup"]
+
+
+def test_search_count_leaves_out_dates_that_have_passed(monkeypatch):
+    class Yesterdayish(date):
+        @classmethod
+        def today(cls):
+            return cls(2027, 6, 15)
+
+    monkeypatch.setattr("jetbridge.draft.date", Yesterdayish)
+    watch = draft.WatchDraft(
+        origin="JFK",
+        destination="LHR",
+        dates="2027-06-14..2027-06-16",
+        flight="AA100",
+        checks_per_day=6,
+    )
+    assert watch.searches_per_day == 12

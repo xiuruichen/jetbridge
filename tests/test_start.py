@@ -147,15 +147,15 @@ def test_cabin_names():
 
 def test_review_shows_the_cost_and_warns_when_high():
     small = draft.WatchDraft("JFK", "HKG", "2027-05-21..2027-05-23", "CX845")
-    assert "about 9 aa.com searches a day, up to 36" in draft.review_text(small, "owner@x.com")
+    assert "about 15 aa.com searches a day, up to 27" in draft.review_text(small, "owner@x.com")
     assert "owner@x.com" in draft.review_text(small, "owner@x.com")
     assert "block more likely" not in draft.review_text(small, "owner@x.com")
 
     large = draft.WatchDraft("JFK", "HKG", "2027-05-21..2027-06-03", "CX845")
-    assert "about 42 aa.com searches" in draft.review_text(large, "o")
-    assert "limit of 150 requests a day" in draft.review_text(large, "o")
+    assert "about 70 aa.com searches" in draft.review_text(large, "o")
+    assert "over the 120 requests a day" in draft.review_text(large, "o")
 
-    busy = draft.WatchDraft("JFK", "HKG", "2027-05-21..2027-05-24", "CX845")
+    busy = draft.WatchDraft("JFK", "HKG", "2027-05-21..2027-05-25", "CX845")
     assert "block more likely" in draft.review_text(busy, "o")
 
 
@@ -234,7 +234,7 @@ def test_picking_a_flight_saves_exactly_what_was_reviewed(monkeypatch):
     assert "no business seats right now" in result.output
     assert "business seats open right now: 110,000 miles" in result.output
     assert "not_offered" not in result.output
-    assert "about 9 aa.com searches a day" in result.output
+    assert "about 15 aa.com searches a day" in result.output
 
     watch = watches()[0]
     assert watch.flight.code == "CX831" and (watch.origin, watch.destination) == ("JFK", "HKG")
@@ -443,7 +443,7 @@ def test_search_count_leaves_out_dates_that_have_passed(monkeypatch):
         flight="AA100",
         checks_per_day=6,
     )
-    assert watch.searches_per_day == 24  # two dates left, each in its last two weeks
+    assert watch.searches_per_day == 18  # two dates left, each in its last two weeks
 
 
 def test_start_checks_a_new_watch_and_says_what_it_means(monkeypatch):

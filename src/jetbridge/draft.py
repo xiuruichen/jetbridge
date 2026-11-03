@@ -14,7 +14,7 @@ from datetime import date
 from typing import Any
 
 from jetbridge import service
-from jetbridge.acquire.governor import DAILY_LIMIT
+from jetbridge.acquire.governor import PLANNED_DAILY
 from jetbridge.acquire.sites import get_site
 from jetbridge.models import Cabin, Watch
 from jetbridge.scheduler import is_searchable, search_starts, searches_per_day
@@ -335,10 +335,10 @@ def review_text(draft: WatchDraft, owner: str, *, editing: bool = False) -> str:
             f"             {site.domain} doesn't show {_format_day(unopened[0])} yet, so searching "
             f"for it starts {starts:%b %d, %Y}."
         )
-    if busiest > DAILY_LIMIT:
+    if busiest * site.requests_per_search > PLANNED_DAILY:
         lines.append(
-            f"             That's over jetbridge's limit of {DAILY_LIMIT} requests a day per site, "
-            "so some checks would be put off. Fewer dates would help."
+            f"             That's over the {PLANNED_DAILY} requests a day jetbridge plans per "
+            "site, so the closest dates would go first and others less often. Fewer dates would help."
         )
     elif busiest > HIGH_VOLUME_SEARCHES:
         lines.append(

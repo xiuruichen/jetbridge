@@ -33,7 +33,7 @@ from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
 from jetbridge.notify import push
 from jetbridge.runner import NEVER_SEEN_AFTER, above_limit_miles, seen_history, watch_coverage
-from jetbridge.scheduler import checks_per_day_on, is_searchable, search_starts
+from jetbridge.scheduler import WHY, is_searchable, search_starts, watch_checks_per_day
 
 server = MCPServer(
     "jetbridge",
@@ -113,8 +113,11 @@ def _tool[**P, R](
 
 _PACE_NOTE = (
     "checks_per_day is the watch's setting, and this is its normal pace: dates more than 60 days "
-    "out get half of it, dates in the last two weeks or just after the program can first show them "
-    "get double. It's a choice about where searches do the most good, not a problem to look into."
+    "out get about 5/6 of it, dates in the last two weeks or just after the program can first show "
+    "them get 1.5 times it. Dates also get a few extra checks soon after seats or prices move, "
+    "and high priority watches go first and more often. All of this stays within the same daily limits. "
+    "It's a choice about where searches do the most good, not a problem to look into, and it "
+    "doesn't predict when seats will open."
 )
 
 _BOOKING_NOTES = {
@@ -159,9 +162,10 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
             "date_has_passed": day < today,
         }
         if day >= today and not unopened:
-            view["checks_per_day_now"] = checks_per_day_on(
-                day, watch.program, watch.checks_per_day, today
-            )
+            view["checks_per_day_now"] = watch_checks_per_day(watch, day, today)
+            burst = store.get_burst(watch.id, day)
+            if burst is not None and burst.next_at is not None:
+                view["checking_sooner_because"] = burst.reason
         over = above_limit_miles(store, watch, day) if day >= today else None
         if over:
             view["seats_above_price_limit_at_miles"] = over
@@ -204,6 +208,7 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "pax": watch.pax,
         "checks_per_day": watch.checks_per_day,
         "pace_note": _PACE_NOTE,
+        "high_priority": watch.high_priority,
         "max_miles": watch.max_miles,
         "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
@@ -659,6 +664,7 @@ def watch_history(watch_id: int, limit: int = 30) -> list[dict[str, Any]]:
             "miles": row["miles"],
             "seats": row["seats"],
             "detail": row["detail"],
+            "why_it_was_checked": WHY.get(row["reason"]),
         }
         for row in service.open_store().history(watch_id, limit)
     ]
@@ -824,6 +830,16 @@ def confirm_watch_change(change_id: str) -> dict[str, Any]:
     except ValueError as exc:
         raise ToolError(f"{exc}. Nothing changed. Call review_watch_change again") from exc
     return _watch_view(updated)
+
+
+@_tool()
+def set_watch_priority(watch_id: int, high: bool) -> dict[str, Any]:
+    """Say whether this is the watch that matters most. A high priority watch goes first when a
+    site's searches are limited, and is checked about 1.5 times as often. The daily limits don't
+    change, so other watches on that site may be checked less if the limit is reached."""
+    _require_watch(watch_id)
+    service.open_store().set_high_priority(watch_id, high)
+    return _watch_view(_require_watch(watch_id))
 
 
 @_tool()
@@ -1002,6 +1018,7 @@ def health() -> dict[str, Any]:
                 "max_in_window": governor.budget(site.id).max_requests,
                 "window_minutes": governor.budget(site.id).window_s // 60,
                 "requests_last_24_hours": governor.used_today(site.id),
+                "planned_per_24_hours": governor.planned_today(site.id),
                 "max_per_24_hours": DAILY_LIMIT,
                 "resting_until": format_when(governor.cooldown_until(site.id))
                 if governor.cooldown_until(site.id) > now

@@ -10,12 +10,13 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 
 from jetbridge.alerts import DateState
 from jetbridge.models import Cabin, CheckResult, CheckStatus, Flight, Watch
+from jetbridge.scheduler import Burst
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS watches (
@@ -74,8 +75,8 @@ class NewAlert:
     recipient: str | None = None  # None means the owner's address
 
 
-def _also_seen_scope(watch_id: int) -> tuple[int, str]:
-    prefix = f"also_seen:{watch_id}:"
+def _scope(name: str, watch_id: int) -> tuple[int, str]:
+    prefix = f"{name}:{watch_id}:"
     return len(prefix), prefix
 
 
@@ -92,6 +93,7 @@ def _watch(row: sqlite3.Row) -> Watch:
         checks_per_day=row["checks_per_day"],
         max_miles=row["max_miles"],
         recipients=tuple(json.loads(row["recipients"])),
+        high_priority=bool(row["high_priority"]),
         status=row["status"],
         created_at=row["created_at"],
         next_check_at=row["next_check_at"],
@@ -111,6 +113,8 @@ class Store:
         for table, column, definition in (
             ("watches", "recipients", "TEXT NOT NULL DEFAULT '[]'"),
             ("outbox", "recipient", "TEXT"),
+            ("observations", "reason", "TEXT"),
+            ("watches", "high_priority", "INTEGER NOT NULL DEFAULT 0"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -195,6 +199,9 @@ class Store:
             (json.dumps([d.isoformat() for d in dates]), checks_per_day, max_miles, watch_id),
         )
 
+    def set_high_priority(self, watch_id: int, high: bool) -> None:
+        self.conn.execute("UPDATE watches SET high_priority=? WHERE id=?", (int(high), watch_id))
+
     def set_next_check(self, watch_id: int, at: float) -> None:
         self.conn.execute("UPDATE watches SET next_check_at=? WHERE id=?", (at, watch_id))
 
@@ -203,7 +210,8 @@ class Store:
             c.execute("DELETE FROM watches WHERE id=?", (watch_id,))
             c.execute("DELETE FROM date_state WHERE watch_id=?", (watch_id,))
             c.execute("DELETE FROM observations WHERE watch_id=?", (watch_id,))
-            c.execute("DELETE FROM kv WHERE substr(key, 1, ?)=?", _also_seen_scope(watch_id))
+            for name in ("also_seen", "burst"):
+                c.execute("DELETE FROM kv WHERE substr(key, 1, ?)=?", _scope(name, watch_id))
 
     # ---- check state ----------------------------------------------------------------
     def date_state(self, watch_id: int, day: date) -> DateState:
@@ -231,11 +239,12 @@ class Store:
         state: DateState,
         alerts: list[NewAlert],
         now: float,
+        reason: str | None = None,
     ) -> None:
         with self._tx() as c:
             c.execute(
                 "INSERT INTO observations (watch_id, day, observed_at, status, miles, taxes,"
-                " currency, seats, detail) VALUES (?,?,?,?,?,?,?,?,?)",
+                " currency, seats, detail, reason) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     watch_id,
                     day.isoformat(),
@@ -246,6 +255,7 @@ class Store:
                     result.currency,
                     result.seats_text if result.status is CheckStatus.AVAILABLE else None,
                     result.detail,
+                    reason,
                 ),
             )
             c.execute(
@@ -285,6 +295,17 @@ class Store:
                 (watch_id, day.isoformat()),
             )
         )
+
+    def get_burst(self, watch_id: int, day: date) -> Burst | None:
+        saved = self.get(f"burst:{watch_id}:{day.isoformat()}")
+        return Burst(**json.loads(saved)) if saved else None
+
+    def set_burst(self, watch_id: int, day: date, burst: Burst | None) -> None:
+        key = f"burst:{watch_id}:{day.isoformat()}"
+        if burst is None:
+            self.delete(key)
+        else:
+            self.set(key, json.dumps(asdict(burst)))
 
     def set_also_seen(self, watch_id: int, day: date, flights: list[dict], at: float) -> None:
         key = f"also_seen:{watch_id}:{day.isoformat()}"

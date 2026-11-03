@@ -36,6 +36,10 @@ BUDGETS = {
 }
 # However a site's short window fills up, no site gets more than this in any 24 hours.
 DAILY_LIMIT = 150
+# Planned searching stays under that, leaving room for manual checks and re-checks of openings. A
+# block halves it for a day, then it recovers in steps while there are no more.
+PLANNED_DAILY = 120
+RECOVERY_S = (86400.0, 2 * 86400.0)
 DAY_S = 86400.0
 COOLDOWN_BASE_S = 600.0
 COOLDOWN_MAX_S = 4 * 3600.0
@@ -105,6 +109,19 @@ class Governor:
     def used_today(self, site: str) -> int:
         count, _ = self.store.window_starts(site, self.clock() - DAY_S)
         return count
+
+    def planned_today(self, site: str) -> int:
+        """How many requests planned searching may use in 24 hours, given recent blocks."""
+        last = self.health(site).last_block
+        since = self.clock() - last
+        if last and since < RECOVERY_S[0]:
+            return PLANNED_DAILY // 2
+        if last and since < RECOVERY_S[1]:
+            return PLANNED_DAILY * 3 // 4
+        return PLANNED_DAILY
+
+    def room_today(self, site: str) -> int:
+        return max(0, self.planned_today(site) - self.used_today(site))
 
     def used(self, site: str) -> int:
         count, _ = self.store.window_starts(site, self.clock() - self.budget(site).window_s)

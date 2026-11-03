@@ -517,13 +517,26 @@ A few details in the email:
 
    | Date is | Checks a day, if you chose 6 |
    |---|---|
-   | More than 60 days away | 3 (half, but never below 2 unless you chose fewer) |
+   | More than 60 days away | 5 (never below 2 unless you chose fewer) |
    | 15-60 days away | 6 |
-   | 14 days away or less | 12 (double, up to 24) |
-   | In the first days after a program can show it | 12 (double, up to 24) |
+   | 14 days away or less | 9 (up to 24) |
+   | In the first days after a program can show it | 9 (up to 24) |
 
-   This is a rule of thumb about where searches do the most good, not a prediction. A manual check
-   looks at every date the program can show.
+   A few things change this, always within the same limits:
+
+   - **Movement:** if seats vanish, a price changes, another flight on the route opens or a nearby
+     date opens, that date gets up to 3 extra checks over the next several hours.
+   - **Booking night:** a date gets one check just after midnight at the airline's home on the day it
+     should become bookable, if your PC is awake. Evidence for this timing is thin, so it's a cheap
+     experiment.
+   - **Priority:** `jetbridge watch priority 1 high` makes a watch go first and get checked about 1.5
+     times as often.
+   - **After a block:** planned searching on that site is halved for a day, then recovers.
+
+   These are rules of thumb about where searches do the most good, not predictions. There's no good
+   public data on when seats are released, so the sizes were chosen with a
+   [simulator](tools/simulate.py) of made-up patterns: enough tilt to help if seats open late, without
+   doing worse if there's no pattern at all. A manual check looks at every date the program can show.
 3. Chrome opens off-screen and searches one airline at a time, waiting 20-60 seconds between
    searches on the same site. Watches on the same route, date, party size and program share one search.
 4. If seats have just appeared, it waits 1-2 minutes and searches again before alerting you.
@@ -572,8 +585,9 @@ has its own hard limit:
 | delta.com | 20 per 5 minutes |
 | united.com | 30 per 5 minutes |
 
-No site gets more than 150 requests in any 24 hours. Past that, checks are put off and show as
-`unknown` until the count falls.
+Planned searching uses up to 120 requests per site in 24 hours, with the most deserving dates first.
+Every date still gets at least 2 checks a day, or 1 if you chose 1. No site ever gets more than 150
+requests in any 24 hours. Past that, checks are put off and show as `unknown` until the count falls.
 
 A single check can use more than one request: United needs a guest token and then the search, and
 Delta asks for each page of results separately. Opening a site's home page counts too.
@@ -599,6 +613,7 @@ folder. Add `--help` to any command for details.
 | `watch add FLIGHT ...` | Start watching a flight |
 | `watch list` | List every watch |
 | `watch edit ID ...` | Change dates, price limit or pace, keeping the history |
+| `watch priority ID high` / `normal` | Put a watch first, within the same daily limits |
 | `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |
 | `watch pause ID` / `watch resume ID` | Stop or restart checking |
 | `watch rm ID` | Delete a watch and its history |

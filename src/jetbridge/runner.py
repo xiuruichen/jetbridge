@@ -28,15 +28,21 @@ from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, Search
 from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox
 from jetbridge.scheduler import (
-    date_is_due,
-    fastest_checks_per_day,
+    MANUAL,
+    NEIGHBOUR_DAYS,
+    DateView,
+    PlannedSearch,
+    burst_is_due,
     group_queries,
     is_due,
     is_expired,
-    next_check_at,
+    next_visit_at,
     normal_gap_s,
+    plan_searches,
     search_starts,
     searchable_dates,
+    spend_burst,
+    start_burst,
     upcoming_dates,
 )
 from jetbridge.store import NewAlert, Store
@@ -157,11 +163,13 @@ class Runner:
     async def _run_checks(self, due: list[Watch], report: TickReport, paced: bool = True) -> None:
         today = self._today()
         started = self.clock()
-
-        def wanted(watch: Watch, day: date) -> bool:
-            last = self.store.date_state(watch.id, day).last_conclusive_at
-            return date_is_due(watch, day, last, started, today)
-
+        if paced:
+            plan = plan_searches(due, today, started, self._view, self.governor.room_today)
+        else:  # someone asked for this one, so it looks at everything the program can show
+            plan = {
+                query: PlannedSearch(tuple(watches), MANUAL)
+                for query, watches in group_queries(due, today).items()
+            }
         deadline = self.clock() + TICK_BUDGET_S
         retry_at: dict[int, float] = {}  # watches with dates that didn't get an answer
         stops: dict[str, SearchAnswer] = {}  # sites that may not be asked anything more
@@ -176,7 +184,8 @@ class Runner:
                 f"{report.stopped_early}; {note}" if report.stopped_early else note
             )
 
-        for query, watches in group_queries(due, today, wanted if paced else None).items():
+        for query, planned in plan.items():
+            watches, reason = list(planned.watches), planned.reason
             site = query.program
             if site not in stops and self.clock() >= deadline:
                 stops[site] = SearchAnswer(
@@ -197,14 +206,14 @@ class Runner:
                 for watch in watches:
                     retry_at[watch.id] = answer.retry_at
 
-            confirm = self._apply(query, watches, answer, report)
+            confirm = self._apply(query, watches, answer, report, reason)
             self._note_parser_health(query, watches, answer)
             if confirm:
                 await self.sleep(self.rng.uniform(*CONFIRM_DELAY_S))
                 recheck = await self.fetcher.search(query, deadline)
                 if recheck.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
                     stop_site(site, recheck)
-                self._apply_confirmation(query, confirm, recheck, report)
+                self._apply_confirmation(query, confirm, recheck, report, reason)
             report.alerts_sent += flush_outbox(self.store, self.sender, self.clock())
 
         now = self.clock()
@@ -212,11 +221,37 @@ class Runner:
             if watch.id in retry_at:
                 at = retry_at[watch.id] + self.rng.uniform(*DEFER_JITTER_S)
             else:
-                at = next_check_at(now, fastest_checks_per_day(watch, today), self.rng)
+                bursts = [
+                    burst
+                    for day in searchable_dates(watch, today)
+                    if (burst := self.store.get_burst(watch.id, day)) is not None
+                ]
+                at = next_visit_at(watch, now, today, bursts, self.rng)
             self.store.set_next_check(watch.id, at)
 
+    def _view(self, watch: Watch, day: date) -> DateView:
+        state = self.store.date_state(watch.id, day)
+        return DateView(
+            state.last_conclusive_at, state.last_check_at, self.store.get_burst(watch.id, day)
+        )
+
+    def _note_movement(self, watch: Watch, day: date, reason: str) -> None:
+        """Seats or prices moved, so the next checks on this date come sooner, within the budget."""
+        current = self.store.get_burst(watch.id, day)
+        self.store.set_burst(watch.id, day, start_burst(current, reason, self.clock(), self.rng))
+
+    def _spend_burst(self, watch: Watch, day: date) -> None:
+        current = self.store.get_burst(watch.id, day)
+        if current is not None and burst_is_due(current, self.clock()):
+            self.store.set_burst(watch.id, day, spend_burst(current, self.clock(), self.rng))
+
     def _apply(
-        self, query: Query, watches: list[Watch], answer: SearchAnswer, report: TickReport
+        self,
+        query: Query,
+        watches: list[Watch],
+        answer: SearchAnswer,
+        report: TickReport,
+        reason: str | None = None,
     ) -> list[tuple[Watch, CheckResult, DateState]]:
         """Record results. Returns the watches whose opening needs a live re-check."""
         pending = []
@@ -226,7 +261,10 @@ class Runner:
             report.checks.append(CheckLine(watch.id, watch.label, query.date, result))
             prev = self.store.date_state(watch.id, query.date)
             decision = decide(prev, result, now)
+            self._spend_burst(watch, query.date)
             if answer.kind is AnswerKind.ANSWER:
+                before = self.store.get_also_seen(watch.id, query.date)
+                known = {o["flight"] for o in before["flights"]} if before else set()
                 flights = [
                     {
                         "flight": other.flight,
@@ -236,7 +274,18 @@ class Runner:
                     for other in also_seen(watch, query, answer)
                 ]
                 self.store.set_also_seen(watch.id, query.date, flights, now)
-            self._commit(watch, query.date, result, prev, decision, now)
+                if prev.last_check_at is not None and {o["flight"] for o in flights} - known:
+                    self._note_movement(watch, query.date, "another flight opened on this route")
+            if AlertKind.SEATS_GONE in decision.alerts:
+                self._note_movement(watch, query.date, "seats just went")
+            elif (
+                result.status is CheckStatus.AVAILABLE
+                and prev.miles
+                and result.miles
+                and prev.miles != result.miles
+            ):
+                self._note_movement(watch, query.date, "the price just changed")
+            self._commit(watch, query.date, result, prev, decision, now, reason=reason)
             if decision.needs_confirmation:
                 pending.append((watch, result, decision.state))
         return pending
@@ -247,6 +296,7 @@ class Runner:
         pending: list[tuple[Watch, CheckResult, DateState]],
         answer: SearchAnswer,
         report: TickReport,
+        reason: str | None = None,
     ) -> None:
         now = self.clock()
         for watch, first, state in pending:
@@ -254,7 +304,15 @@ class Runner:
             report.checks.append(CheckLine(watch.id, watch.label, query.date, recheck))
             decision = confirm_opening(state, first, recheck, now)
             shown = first if decision.alerts == (AlertKind.SEATS_OPEN_UNCONFIRMED,) else recheck
-            self._commit(watch, query.date, recheck, state, decision, now, shown=shown)
+            self._commit(
+                watch, query.date, recheck, state, decision, now, shown=shown, reason=reason
+            )
+            if recheck.status is CheckStatus.AVAILABLE:
+                for other in watch.dates:
+                    if other != query.date and abs((other - query.date).days) <= NEIGHBOUR_DAYS:
+                        self._note_movement(watch, other, "a neighbouring date opened")
+            elif recheck.status.conclusive:
+                self._note_movement(watch, query.date, "seats appeared and went quickly")
 
     def _commit(
         self,
@@ -265,6 +323,7 @@ class Runner:
         decision: Decision,
         now: float,
         shown: CheckResult | None = None,
+        reason: str | None = None,
     ) -> None:
         url = get_site(watch.program).search_url(query_for(watch, day))
         alerts = []
@@ -280,7 +339,7 @@ class Runner:
                 alerts.append(NewAlert(kind.value, subject, body, recipient=recipient))
             if push.wanted_for(kind):
                 alerts.append(push.alert_for(kind, subject, url))
-        self.store.commit_check(watch.id, day, result, decision.state, alerts, now)
+        self.store.commit_check(watch.id, day, result, decision.state, alerts, now, reason)
 
     # ---- health ---------------------------------------------------------------------
     def _note_parser_health(self, query: Query, watches: list[Watch], answer: SearchAnswer) -> None:

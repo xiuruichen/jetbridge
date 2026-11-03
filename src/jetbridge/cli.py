@@ -127,7 +127,7 @@ def watch_add(
     program: str = typer.Option("american", help="Miles to search: american, delta or united"),
     pax: int = typer.Option(1, help="Party size; searched at this real size"),
     checks_per_day: int = typer.Option(
-        6, help="Checks per day, per date. Halved far out, doubled in the last two weeks"
+        6, help="Checks per day, per date. Lower far out, higher in the last two weeks"
     ),
     max_miles: int | None = typer.Option(None, help="Only alert at or below this price"),
     notify: str | None = typer.Option(
@@ -236,6 +236,17 @@ def watch_edit(
     except ValueError as exc:
         raise _fail(str(exc)) from exc
     typer.echo(_describe(updated))
+
+
+@watch_app.command("priority")
+def watch_priority(watch_id: int, level: str = typer.Argument(..., help="high or normal")) -> None:
+    """Make a watch go first and get checked more often, within the same daily limits."""
+    if level not in ("high", "normal"):
+        raise _fail("say high or normal")
+    store = service.open_store()
+    _require(store, watch_id)
+    store.set_high_priority(watch_id, level == "high")
+    typer.echo(f"Watch {watch_id} is now {level} priority.")
 
 
 @watch_app.command("recipients")

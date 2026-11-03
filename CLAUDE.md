@@ -67,7 +67,10 @@ versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
 - A date isn't searched until `scheduler.is_searchable`, and an unopened date never counts toward
   the "no clear answer" warning. Insights report what was seen and never predict.
 - Pacing decides which dates to search on a tick and never changes what a result means. A manual
-  check isn't paced. No site gets more than `governor.DAILY_LIMIT` requests in 24 hours.
+  check isn't paced. No site gets more than `governor.DAILY_LIMIT` requests in 24 hours, and
+  `plan_searches` stops planning at `Governor.room_today`, except for dates past their minimum pace.
+  Bursts spend from that budget and never add to it, or get around a rest. Nothing adaptive may be
+  described as a prediction.
 - Seats above a price limit are recorded with their price but stay `NOT_OFFERED`. Other flights in
   an answer are only mentioned in the daily summary and chat, never as alerts, and never trigger a
   search. Editing a watch can't change its flight, airports, cabin, program or party size, because

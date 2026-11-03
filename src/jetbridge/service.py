@@ -13,14 +13,13 @@ from datetime import date, datetime, timedelta
 from jetbridge import headlines
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import PROGRAMS, get_site
-from jetbridge.matcher import evaluate
+from jetbridge.matcher import evaluate, is_single_flight
 from jetbridge.models import (
     AnswerKind,
     Cabin,
     CheckResult,
     CheckStatus,
     Flight,
-    ParsedSlice,
     Query,
     SearchAnswer,
     Watch,
@@ -219,12 +218,48 @@ def create_watch(
     return watch
 
 
+def change_watch(
+    store: Store,
+    watch: Watch,
+    *,
+    dates: str,
+    checks_per_day: int,
+    max_miles: int | None,
+    now: float | None = None,
+) -> Watch:
+    """Change what can change without making a watch's history wrong. New dates are checked on the
+    next run, and a finished watch given new dates starts again."""
+    valid = validate_watch(
+        flight=watch.flight.code,
+        origin=watch.origin,
+        destination=watch.destination,
+        dates=dates,
+        cabin=watch.cabin.value,
+        program=watch.program,
+        pax=watch.pax,
+        checks_per_day=checks_per_day,
+        max_miles=max_miles,
+        recipients=",".join(watch.recipients),
+        now=now,
+    )
+    store.update_watch(watch.id, valid.days, checks_per_day, max_miles)
+    if set(valid.days) - set(watch.dates):
+        store.set_next_check(watch.id, valid.now)
+    if watch.status == "finished":
+        store.set_watch_status(watch.id, "active")
+    updated = store.get_watch(watch.id)
+    assert updated is not None
+    return updated
+
+
 def first_check_means(watch: Watch, result: CheckResult) -> str:
     """What a result says about whether this watch was set up correctly, in plain words."""
     domain = get_site(watch.program).domain
     if result.status is CheckStatus.AVAILABLE:
         price = f", at {result.miles:,} miles" if result.miles else ""
         return f"Seats are open now{price}."
+    if result.status is CheckStatus.NOT_OFFERED and result.miles:
+        return f"{domain} lists this flight, with seats above your price limit: {result.detail}."
     if result.status is CheckStatus.NOT_OFFERED:
         return f"{domain} lists this flight, but has no qualifying seats yet. That's working."
     if result.status is CheckStatus.NOT_LISTED:
@@ -315,18 +350,6 @@ class FlightSearch:
     incomplete: bool = False
 
 
-def _is_single_flight(item: ParsedSlice, query: Query) -> bool:
-    """One flight number the whole way, which is the only thing a watch can match."""
-    legs = item.legs
-    return (
-        bool(legs)
-        and all(leg.code == legs[0].code for leg in legs)
-        and legs[0].origin == query.origin
-        and legs[-1].destination == query.destination
-        and legs[0].departs_at.date() == query.date
-    )
-
-
 _NO_ANSWER = {
     AnswerKind.BLOCKED: "{site} asked jetbridge to slow down, so it won't try again for a while.",
     AnswerKind.DEFERRED: "jetbridge is holding off on searches right now to stay under its limit.",
@@ -347,7 +370,7 @@ def flights_from_answer(answer: SearchAnswer, query: Query, cabin: Cabin) -> Fli
 
     options: dict[str, FlightOption] = {}
     for item in parsed.slices:
-        if not _is_single_flight(item, query):
+        if not is_single_flight(item, query):
             continue
         first, last = item.legs[0], item.legs[-1]
         watch = Watch(

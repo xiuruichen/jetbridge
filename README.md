@@ -137,11 +137,12 @@ numbers. Some examples:
   American miles, for 1 passenger." Claude asks about anything you left out.
 - **Not sure of the flight:** "What nonstop business flights go from Seattle to Seoul on May 21 on
   Delta miles?"
-- **Checking in:** "Which flights am I watching?", "What's happened with my AA100 watch this week?"
-  or "Check it now."
+- **Checking in:** "Which flights am I watching?", "How has my AA100 watch been doing? Has it ever
+  opened?" or "Check it now."
 - **Making changes:** "Pause my AA100 watch", "Start it again", "Delete it", "Also alert
-  ann@example.com" or "Stop alerting Ann." To change dates or a cabin, just ask: Claude adds the new version and offers to
-  remove the old one, whose history goes with it.
+  ann@example.com" or "Stop alerting Ann." "Add June 20 to that watch" and "Lower the limit to 90k" keep its history. To change a
+  cabin, just ask: Claude adds the new version and offers to remove the old one, whose history goes
+  with it.
 - **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND", "Turn
   off automatic checks" or "Keep this PC awake while it's plugged in."
 - **When something seems wrong:** "Is my watcher healthy?" or "Why aren't I getting alerts?"
@@ -325,8 +326,18 @@ jetbridge watch resume 1    # start again, with a check on the next run
 jetbridge watch rm 1        # delete the watch and its history
 ```
 
-To change a watch's dates or settings, remove it and add it again. Watches finish on their own
-once all their dates have passed.
+Watches finish on their own once all their dates have passed.
+
+To change dates, the price limit or the pace, edit the watch, which keeps its history:
+
+```powershell
+jetbridge watch edit 1 --dates 2027-06-14..2027-06-20
+jetbridge watch edit 1 --max-miles 90000
+jetbridge watch edit 1 --no-limit --checks-per-day 4
+```
+
+A different flight, route, cabin, program or party size is a different watch, because the old
+history wouldn't apply. Add the new one and remove the old one.
 
 ## Sending alerts to other people
 
@@ -380,6 +391,7 @@ A few things to know:
 ```powershell
 jetbridge status       # the latest state of every date, and the next check
 jetbridge history 1    # past results for watch 1, newest first
+jetbridge insights 1   # what's been seen so far: openings, how long they lasted, prices
 jetbridge doctor       # is everything working?
 ```
 
@@ -394,6 +406,17 @@ Each result is one of these:
 
 **`unknown` never means "no seats".** It can't trigger a seats alert, and it can't mark an open
 date as closed.
+
+Over time, each watch builds up a record of what happened on your flight:
+
+- **Past openings:** how many times seats appeared, how long they lasted, at what price and how far
+  ahead of departure. Checks are hours apart, so lengths are ranges like "between 2 and 6 hours". A
+  seats alert includes a short line about this. It's a record of what was seen, not a prediction.
+- **Near misses:** if seats appear above your price limit, the daily summary and chat show the price.
+  They don't count as open and don't send an alert.
+- **Other flights:** each search lists other flights on that route and date anyway. If one has seats
+  in your cabin while yours doesn't, the daily summary and chat mention it, at no extra searches.
+  jetbridge isn't watching those flights, and the list may be incomplete.
 
 ## The emails you'll get
 
@@ -548,11 +571,13 @@ folder. Add `--help` to any command for details.
 | `claude connect` / `claude disconnect` / `claude status` | Use jetbridge from Claude Desktop |
 | `watch add FLIGHT ...` | Start watching a flight |
 | `watch list` | List every watch |
+| `watch edit ID ...` | Change dates, price limit or pace, keeping the history |
 | `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |
 | `watch pause ID` / `watch resume ID` | Stop or restart checking |
 | `watch rm ID` | Delete a watch and its history |
 | `status` | Current state of every active watch |
 | `history ID [--limit N]` | Past results for a watch |
+| `insights ID` | What's been seen so far: openings, how long they lasted, prices |
 | `check ID` | Check one active watch now, still within the rate limit |
 | `doctor` | Find out what's wrong |
 | `keep-awake on` / `off` | Stop this PC sleeping while plugged in, or put its settings back |

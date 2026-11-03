@@ -74,6 +74,11 @@ class NewAlert:
     recipient: str | None = None  # None means the owner's address
 
 
+def _also_seen_scope(watch_id: int) -> tuple[int, str]:
+    prefix = f"also_seen:{watch_id}:"
+    return len(prefix), prefix
+
+
 def _watch(row: sqlite3.Row) -> Watch:
     return Watch(
         id=row["id"],
@@ -182,6 +187,14 @@ class Store:
             "UPDATE watches SET recipients=? WHERE id=?", (json.dumps(list(recipients)), watch_id)
         )
 
+    def update_watch(
+        self, watch_id: int, dates: tuple[date, ...], checks_per_day: int, max_miles: int | None
+    ) -> None:
+        self.conn.execute(
+            "UPDATE watches SET dates=?, checks_per_day=?, max_miles=? WHERE id=?",
+            (json.dumps([d.isoformat() for d in dates]), checks_per_day, max_miles, watch_id),
+        )
+
     def set_next_check(self, watch_id: int, at: float) -> None:
         self.conn.execute("UPDATE watches SET next_check_at=? WHERE id=?", (at, watch_id))
 
@@ -190,6 +203,7 @@ class Store:
             c.execute("DELETE FROM watches WHERE id=?", (watch_id,))
             c.execute("DELETE FROM date_state WHERE watch_id=?", (watch_id,))
             c.execute("DELETE FROM observations WHERE watch_id=?", (watch_id,))
+            c.execute("DELETE FROM kv WHERE substr(key, 1, ?)=?", _also_seen_scope(watch_id))
 
     # ---- check state ----------------------------------------------------------------
     def date_state(self, watch_id: int, day: date) -> DateState:
@@ -262,6 +276,26 @@ class Store:
                 (watch_id, limit),
             )
         )
+
+    def observations(self, watch_id: int, day: date) -> list[sqlite3.Row]:
+        """Everything recorded for one date, oldest first."""
+        return list(
+            self.conn.execute(
+                "SELECT * FROM observations WHERE watch_id=? AND day=? ORDER BY observed_at, id",
+                (watch_id, day.isoformat()),
+            )
+        )
+
+    def set_also_seen(self, watch_id: int, day: date, flights: list[dict], at: float) -> None:
+        key = f"also_seen:{watch_id}:{day.isoformat()}"
+        if flights:
+            self.set(key, json.dumps({"at": at, "flights": flights}))
+        else:
+            self.delete(key)
+
+    def get_also_seen(self, watch_id: int, day: date) -> dict | None:
+        saved = self.get(f"also_seen:{watch_id}:{day.isoformat()}")
+        return json.loads(saved) if saved else None
 
     def clear_answers(self, watch_id: int, day: date, since: float) -> list[float]:
         """When this date got a clear answer since then, plus the last one before that."""

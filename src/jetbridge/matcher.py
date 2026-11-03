@@ -5,14 +5,17 @@ The rule that matters most: only a positively recognized answer can mean "no sea
 
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 
 from jetbridge.models import (
     AnswerKind,
     CheckResult,
     CheckStatus,
+    Flight,
     Leg,
     ParsedSlice,
+    Query,
     SearchAnswer,
     Watch,
 )
@@ -35,6 +38,44 @@ def _is_watched_itinerary(legs: tuple[Leg, ...], watch: Watch, day: date) -> boo
 
 def _could_be_watched(hints: frozenset[str], watch: Watch) -> bool:
     return not hints or watch.flight.code in hints
+
+
+def is_single_flight(item: ParsedSlice, query: Query) -> bool:
+    """One flight number the whole way, which is the only thing a watch can match."""
+    legs = item.legs
+    return (
+        bool(legs)
+        and all(leg.code == legs[0].code for leg in legs)
+        and legs[0].origin == query.origin
+        and legs[-1].destination == query.destination
+        and legs[0].departs_at.date() == query.date
+    )
+
+
+@dataclass(frozen=True)
+class AlsoSeen:
+    """Another flight in the same answer that this watch's rules would have counted as open."""
+
+    flight: str
+    departs: datetime
+    miles: int | None
+
+
+def also_seen(watch: Watch, query: Query, answer: SearchAnswer) -> list[AlsoSeen]:
+    """Other flights with qualifying seats on this route and date. These come from an answer that
+    was already fetched, so looking costs no searches."""
+    if answer.kind is not AnswerKind.ANSWER or answer.parsed is None or answer.parsed.site_error:
+        return []
+    found: dict[str, AlsoSeen] = {}
+    for item in answer.parsed.slices:
+        if not is_single_flight(item, query) or item.legs[0].code == watch.flight.code:
+            continue
+        first = item.legs[0]
+        other = replace(watch, flight=Flight(first.carrier, first.number))
+        result = evaluate(other, query.date, answer)
+        if result.status is CheckStatus.AVAILABLE and first.code not in found:
+            found[first.code] = AlsoSeen(first.code, first.departs_at, result.miles)
+    return sorted(found.values(), key=lambda option: option.departs)
 
 
 def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
@@ -87,6 +128,10 @@ def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     if watch.max_miles is not None and best.miles > watch.max_miles:
         return CheckResult(
             CheckStatus.NOT_OFFERED,
+            # The price is kept for the record. These seats still don't count as open.
+            miles=best.miles,
+            taxes=best.taxes,
+            currency=best.currency,
             detail=f"cheapest is {best.miles:,} miles, above your limit of {watch.max_miles:,}",
         )
 

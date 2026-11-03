@@ -76,6 +76,9 @@ async def test_every_command_has_a_way_in_from_chat():
     assert names == {
         "get_started",
         "set_keep_awake",
+        "watch_insights",
+        "review_watch_change",
+        "confirm_watch_change",
         "accept_notice",
         "open_email_setup",
         "send_test_email",
@@ -111,6 +114,7 @@ async def test_only_the_tools_that_change_nothing_say_so():
         "watch_history",
         "alert_settings",
         "health",
+        "watch_insights",
         "diagnose",
     }
 
@@ -621,3 +625,45 @@ async def test_the_window_failing_to_open_says_why(monkeypatch):
 
     monkeypatch.setattr(mcp_server.subprocess, "Popen", fail)
     assert "not allowed" in await refused("open_email_setup")
+
+
+# ---- track record and edits -----------------------------------------------------------
+async def test_changing_a_watch_takes_a_review_and_a_yes(watch):
+    watch_id = watch
+    before = await call("review_watch_change", watch_id=watch_id, max_miles=90000)
+    assert before["changed"] is False and "90,000 miles per person" in before["review"]
+    assert open_store().get_watch(watch_id).max_miles is None
+    after = await call("confirm_watch_change", change_id=before["change_id"])
+    assert after["max_miles"] == 90000
+    assert "no review" in await refused("confirm_watch_change", change_id=before["change_id"])
+
+
+async def test_a_change_cant_set_and_remove_a_limit(watch):
+    text = await refused(
+        "review_watch_change", watch_id=watch, max_miles=90000, remove_price_limit=True
+    )
+    assert "Ask which" in text
+
+
+async def test_insights_show_what_was_seen_and_warn_against_predicting(watch):
+    answer = await call("watch_insights", watch_id=watch)
+    assert answer["dates"][0]["openings"] == [] and answer["enough_to_go_on"] is False
+    assert "predict" in answer["note"]
+
+
+async def test_the_list_shows_near_misses_and_other_flights(watch):
+    from jetbridge.models import CheckResult, CheckStatus
+
+    store = open_store()
+    watch_id = watch
+    day = store.get_watch(watch_id).dates[0]
+    state = store.date_state(watch_id, day)
+    near = CheckResult(CheckStatus.NOT_OFFERED, miles=130_000, detail="over")
+    store.commit_check(watch_id, day, near, state, [], datetime.now().timestamp())
+    flights = [{"flight": "DL99", "departs": "x", "miles": 95_000}]
+    store.set_also_seen(watch_id, day, flights, datetime.now().timestamp())
+    [view] = (await call("list_watches"))["result"]
+    row = view["dates"][0]
+    assert row["seats_above_price_limit_at_miles"] == 130_000
+    assert row["also_seen"]["flights"] == [{"flight": "DL99", "miles": 95_000}]
+    assert "isn't watching" in row["also_seen"]["note"]

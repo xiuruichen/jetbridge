@@ -67,6 +67,10 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
   the "no clear answer" warning. Insights report what was seen and never predict.
 - Pacing decides which dates to search on a tick and never changes what a result means. A manual
   check isn't paced. No site gets more than `governor.DAILY_LIMIT` requests in 24 hours.
+- Seats above a price limit are recorded with their price but stay `NOT_OFFERED`. Other flights in
+  an answer are only mentioned in the daily summary and chat, never as alerts, and never trigger a
+  search. Editing a watch can't change its flight, airports, cabin, program or party size, because
+  its history would stop applying.
 - Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
   uninstall.
 - Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.

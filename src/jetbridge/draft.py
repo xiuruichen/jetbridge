@@ -366,6 +366,22 @@ def _fields(draft: WatchDraft) -> dict[str, Any]:
     }
 
 
+def from_watch(watch: Watch, dates: str, checks_per_day: int, max_miles: int | None) -> WatchDraft:
+    """A saved watch with the things that can change in place changed."""
+    return WatchDraft(
+        origin=watch.origin,
+        destination=watch.destination,
+        dates=dates,
+        flight=watch.flight.code,
+        cabin=watch.cabin,
+        program=watch.program,
+        pax=watch.pax,
+        checks_per_day=checks_per_day,
+        max_miles=max_miles,
+        recipients=",".join(watch.recipients),
+    )
+
+
 def validate(draft: WatchDraft) -> None:
     """Raise ``ValueError`` if saving this draft would be refused, so a review can't mislead."""
     service.validate_watch(**_fields(draft))

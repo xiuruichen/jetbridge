@@ -14,6 +14,7 @@ import typer.core
 from jetbridge import claude_desktop, headlines, power, service, winsched, wizard
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
+from jetbridge import insights as record
 from jetbridge import uninstall as removal
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES
@@ -21,6 +22,7 @@ from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import CheckStatus, Watch
 from jetbridge.notify import email as mail
 from jetbridge.paths import home, raw_dir
+from jetbridge.runner import seen_history
 from jetbridge.store import Store
 
 
@@ -195,6 +197,44 @@ def watch_add(
     typer.echo(f"To check it now, run: jetbridge check {watch.id}")
 
 
+@watch_app.command("edit")
+def watch_edit(
+    watch_id: int,
+    dates: str | None = typer.Option(None, help="New dates, which replace the old ones"),
+    checks_per_day: int | None = typer.Option(None, help="Checks per day, per date"),
+    max_miles: int | None = typer.Option(None, help="New price limit per person"),
+    no_limit: bool = typer.Option(False, "--no-limit", help="Remove the price limit"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Save without asking, for use in scripts"),
+) -> None:
+    """Change a watch's dates, price limit or pace, keeping its history."""
+    store = service.open_store()
+    watch = _require(store, watch_id)
+    if max_miles is not None and no_limit:
+        raise _fail("choose a new price limit or --no-limit, not both")
+    new_dates = dates or ",".join(day.isoformat() for day in watch.dates)
+    new_pace = checks_per_day if checks_per_day is not None else watch.checks_per_day
+    new_limit = None if no_limit else (max_miles if max_miles is not None else watch.max_miles)
+    try:
+        draft = drafts.from_watch(watch, new_dates, new_pace, new_limit)
+        drafts.validate(draft)
+        if not yes:
+            owner = mail.load_config()
+            typer.echo("\nHere's how it will look. Its history is kept:")
+            typer.echo(drafts.review_text(draft, owner.to_address if owner else "you"))
+            try:
+                if not typer.confirm("\nSave this change?", default=False):
+                    typer.echo("OK, nothing was changed.")
+                    return
+            except typer.Abort as exc:
+                raise _fail("nothing was changed. Add --yes to save without asking") from exc
+        updated = service.change_watch(
+            store, watch, dates=new_dates, checks_per_day=new_pace, max_miles=new_limit
+        )
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo(_describe(updated))
+
+
 @watch_app.command("recipients")
 def watch_recipients(
     watch_id: int,
@@ -354,6 +394,28 @@ def history(watch_id: int, limit: int = 30) -> None:
         typer.echo(
             f"{format_when(row['observed_at'])}  {row['day']}  {row['status']}{price}{detail}"
         )
+
+
+@app.command()
+def insights(watch_id: int) -> None:
+    """What jetbridge has seen for a watch so far: openings, how long they lasted, and prices."""
+    store = service.open_store()
+    watch = _require(store, watch_id)
+    typer.echo(_describe(watch))
+    now = time.time()
+    for day in watch.dates:
+        history = seen_history(store, watch_id, day)
+        typer.echo(f"  {day:%b %d, %Y}: {record.clear_answers(history)} clear answers")
+        found = record.openings(history)
+        if not found:
+            typer.echo("    No seats seen.")
+        for opening in found:
+            price = f", {opening.lowest_miles:,} miles" if opening.lowest_miles else ""
+            typer.echo(
+                f"    Seen {format_when(opening.first_seen)}, {opening.lasted(now)}{price}, "
+                f"{(day - datetime.fromtimestamp(opening.first_seen).date()).days} days ahead"
+            )
+    typer.echo("This is only what jetbridge saw at its checks. It doesn't predict future seats.")
 
 
 @app.command()

@@ -21,8 +21,8 @@ from jetbridge.alerts import (
     query_for,
     render_availability,
 )
-from jetbridge.insights import Coverage, coverage
-from jetbridge.matcher import evaluate
+from jetbridge.insights import Coverage, Seen, alert_note, coverage
+from jetbridge.matcher import also_seen, evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
 from jetbridge.notify.email import Sender, flush_outbox
 from jetbridge.scheduler import (
@@ -55,6 +55,22 @@ def watching_since(watch: Watch, day: date) -> float:
     """When jetbridge could first have searched for this date on this watch."""
     opened = datetime.combine(search_starts(day, watch.program), datetime.min.time()).timestamp()
     return max(watch.created_at, opened)
+
+
+def seen_history(store: Store, watch_id: int, day: date) -> list[Seen]:
+    return [
+        Seen(row["observed_at"], row["status"], row["miles"])
+        for row in store.observations(watch_id, day)
+    ]
+
+
+def above_limit_miles(store: Store, watch: Watch, day: date) -> int | None:
+    """The price of seats over this watch's limit, if the latest clear answer found some."""
+    for row in reversed(store.observations(watch.id, day)):
+        if row["status"] != CheckStatus.UNKNOWN.value:
+            over = row["status"] == CheckStatus.NOT_OFFERED.value and row["miles"]
+            return row["miles"] if over else None
+    return None
 
 
 def watch_coverage(store: Store, watch: Watch, now: float) -> Coverage | None:
@@ -208,6 +224,16 @@ class Runner:
             report.checks.append(CheckLine(watch.id, watch.label, query.date, result))
             prev = self.store.date_state(watch.id, query.date)
             decision = decide(prev, result, now)
+            if answer.kind is AnswerKind.ANSWER:
+                flights = [
+                    {
+                        "flight": other.flight,
+                        "departs": other.departs.isoformat(),
+                        "miles": other.miles,
+                    }
+                    for other in also_seen(watch, query, answer)
+                ]
+                self.store.set_also_seen(watch.id, query.date, flights, now)
             self._commit(watch, query.date, result, prev, decision, now)
             if decision.needs_confirmation:
                 pending.append((watch, result, decision.state))
@@ -241,8 +267,11 @@ class Runner:
         url = get_site(watch.program).search_url(query_for(watch, day))
         alerts = []
         for kind in decision.alerts:
+            note = None
+            if kind in (AlertKind.SEATS_OPEN, AlertKind.SEATS_OPEN_UNCONFIRMED):
+                note = alert_note(seen_history(self.store, watch.id, day), now)
             subject, body = render_availability(
-                kind, watch, day, shown or result, prev, now, url, self.headlines
+                kind, watch, day, shown or result, prev, now, url, self.headlines, note
             )
             # One email per person, so recipients never see each other's addresses.
             for recipient in watch.recipients or (None,):
@@ -371,7 +400,21 @@ class Runner:
                     open_count += 1
                 text = state.status.value.replace("_", " ") if state.status else "not checked yet"
                 price = f", {state.miles:,} miles" if state.miles else ""
+                over = above_limit_miles(self.store, watch, day)
+                if over and watch.max_miles:
+                    price = f", seats at {over:,} miles, above your {watch.max_miles:,} limit"
                 lines.append(f"  {day:%b %d}: {text}{price}")
+                others = self.store.get_also_seen(watch.id, day)
+                if others and state.status is not CheckStatus.AVAILABLE:
+                    names = ", ".join(
+                        f"{o['flight']} ({o['miles']:,} miles)" if o["miles"] else o["flight"]
+                        for o in others["flights"]
+                    )
+                    lines.append(
+                        f"    Also seen with {watch.cabin.value} seats on this route and date, "
+                        f"as of {format_when(others['at'])}: {names}. jetbridge isn't watching "
+                        "these, and the list may be incomplete."
+                    )
                 if state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER:
                     all_never_seen = False
             if all_never_seen:

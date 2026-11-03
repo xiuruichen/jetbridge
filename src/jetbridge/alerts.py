@@ -151,6 +151,7 @@ def render_availability(
     now: float,
     booking_url: str,
     headlines: Mapping[AlertKind, str] | None = None,
+    history_note: str | None = None,
 ) -> tuple[str, str]:
     day_text = day.strftime("%b %d, %Y")
     headline = (headlines or {}).get(kind, DEFAULT_HEADLINES[kind])
@@ -181,6 +182,8 @@ def render_availability(
     if kind is AlertKind.MORE_SEATS and prev.seats_exact:
         lines.append(f"Was:      {prev.seats_exact} seats")
     lines.extend(f"Note:     {note}" for note in result.notes)
+    if history_note:
+        lines.append(f"History:  {history_note}")
     if kind is AlertKind.SEATS_OPEN_UNCONFIRMED:
         lines += ["", "The follow-up check was inconclusive, so this may already be gone."]
     lines += [

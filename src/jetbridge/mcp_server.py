@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable, Hashable
 from concurrent import futures
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -28,9 +28,10 @@ from jetbridge import draft as drafts
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES, parse_program
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
+from jetbridge.insights import TOO_FEW_ANSWERS, clear_answers, openings
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
-from jetbridge.runner import NEVER_SEEN_AFTER, watch_coverage
+from jetbridge.runner import NEVER_SEEN_AFTER, above_limit_miles, seen_history, watch_coverage
 from jetbridge.scheduler import checks_per_day_on, is_searchable, search_starts
 
 server = MCPServer(
@@ -53,10 +54,16 @@ server = MCPServer(
         "review word for word, and call confirm_watch only after they say yes to it. If they want "
         "a change, call review_watch again. Right after saving, call check_now and tell them what "
         "its means says, so a wrong flight or route shows up straight away.\n\n"
-        "Changing a watch's flight, dates, cabin, program, party size, price limit or checks per "
-        "day: review and confirm the new version, then offer to remove the old one. Only "
-        "recipients can be changed in place. To add or remove someone from alerts, use "
-        "set_recipients with action add or remove, so nobody else is dropped.\n\n"
+        "Changing a watch's dates, price limit or checks per day: call review_watch_change, show "
+        "the review word for word, and call confirm_watch_change only after a yes. Its history is "
+        "kept. Changing its flight, airports, cabin, program or party size makes it a different "
+        "watch: review and confirm the new version, then offer to remove the old one. To add or "
+        "remove someone from alerts, use set_recipients with action add or remove, so nobody else "
+        "is dropped.\n\n"
+        "When someone asks how a flight has been doing, use watch_insights, and say only what it "
+        "shows: never predict when seats will open. If list_watches shows also_seen, mention those "
+        "flights as something jetbridge happened to see rather than a watch or an alert, and offer "
+        "to watch one.\n\n"
         "Removing a watch takes two steps too: review_watch_removal, show what it says, and "
         "confirm_watch_removal only after a yes. Before turning off automatic checks, say that no "
         "watch will be checked until they're turned back on, and wait for a yes. Read addresses "
@@ -141,6 +148,20 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
             view["checks_per_day_now"] = checks_per_day_on(
                 day, watch.program, watch.checks_per_day, today
             )
+        over = above_limit_miles(store, watch, day) if day >= today else None
+        if over:
+            view["seats_above_price_limit_at_miles"] = over
+        others = store.get_also_seen(watch.id, day) if day >= today else None
+        if others and state.status is not CheckStatus.AVAILABLE:
+            view["also_seen"] = {
+                "note": "Other flights with seats in this cabin. jetbridge isn't watching these, "
+                "and the list may be incomplete.",
+                "as_of": format_when(others["at"]),
+                "flights": [
+                    {"flight": o["flight"], "miles": o["miles"]} for o in others["flights"]
+                ],
+                **_booking(_watch_query(watch, day)),
+            }
         if unopened:
             view["status"] = "not searched yet"
             view["searching_starts"] = search_starts(day, watch.program).strftime("%b %d, %Y")
@@ -308,13 +329,15 @@ def send_test_email(to: str | None = None) -> dict[str, str]:
 # these are saved where every copy can see them, and go stale after a day.
 _REVIEW = "chat_review:"
 _REMOVAL = "chat_removal:"
+_CHANGE = "chat_change:"
 _REVIEW_LIFETIME_S = 86400
 
 
 def _remember(prefix: str, payload: dict[str, Any]) -> str:
     store = service.open_store()
     now = time.time()
-    for key in store.keys_with_prefix(_REVIEW) + store.keys_with_prefix(_REMOVAL):
+    pending = (*store.keys_with_prefix(_REVIEW), *store.keys_with_prefix(_REMOVAL))
+    for key in (*pending, *store.keys_with_prefix(_CHANGE)):
         saved = json.loads(store.get(key) or "{}")
         if now - saved.get("saved_at", 0) > _REVIEW_LIFETIME_S:
             store.delete(key)
@@ -600,6 +623,102 @@ def set_recipients(watch_id: int, notify: str, action: str = "replace") -> dict[
     recipients = () if wanted == [owner] else service.parse_recipients(",".join(wanted))
     updated, welcomed = service.set_recipients(service.open_store(), watch, recipients)
     return {**_watch_view(updated), "will_get_a_short_note": welcomed}
+
+
+@_tool(read_only=True)
+def watch_insights(watch_id: int) -> dict[str, Any]:
+    """What jetbridge has seen for a watch so far: each opening, how long it lasted, its price, and
+    how far ahead of departure it was. Only what was seen at its checks, not a prediction."""
+    watch = _require_watch(watch_id)
+    store = service.open_store()
+    now = time.time()
+    days = []
+    for day in watch.dates:
+        history = seen_history(store, watch_id, day)
+        days.append(
+            {
+                "date": day.isoformat(),
+                "clear_answers": clear_answers(history),
+                "openings": [
+                    {
+                        "first_seen": format_when(found.first_seen),
+                        "how_long": found.lasted(now),
+                        "lowest_miles": found.lowest_miles,
+                        "highest_miles": found.highest_miles,
+                        "days_before_departure": (
+                            day - datetime.fromtimestamp(found.first_seen).date()
+                        ).days,
+                    }
+                    for found in openings(history)
+                ],
+            }
+        )
+    answers = sum(day["clear_answers"] for day in days)
+    return {
+        "flight": watch.label,
+        "dates": days,
+        "enough_to_go_on": answers >= TOO_FEW_ANSWERS,
+        "note": "Only what jetbridge saw at its checks, which are hours apart. Short openings "
+        "between checks aren't here. Don't use this to predict when seats will open.",
+    }
+
+
+@_tool()
+def review_watch_change(
+    watch_id: int,
+    dates: str | None = None,
+    max_miles: int | None = None,
+    remove_price_limit: bool = False,
+    checks_per_day: int | None = None,
+) -> dict[str, Any]:
+    """Show how a watch would look with new dates, a new price limit or a new pace. This changes
+    nothing. Leave out anything that stays the same. dates replaces all of its dates, so include any
+    being kept. Show the review word for word and ask them to confirm it."""
+    watch = _require_watch(watch_id)
+    if max_miles is not None and remove_price_limit:
+        raise ToolError("that sets a price limit and removes it. Ask which they want")
+    new_dates = (
+        drafts.parse_dates(dates, date.today())
+        if dates
+        else ",".join(day.isoformat() for day in watch.dates)
+    )
+    pace = checks_per_day if checks_per_day is not None else watch.checks_per_day
+    limit = (
+        None if remove_price_limit else (max_miles if max_miles is not None else watch.max_miles)
+    )
+    draft = drafts.from_watch(watch, new_dates, pace, limit)
+    drafts.validate(draft)
+    change_id = _remember(
+        _CHANGE,
+        {"watch_id": watch_id, "dates": new_dates, "checks_per_day": pace, "max_miles": limit},
+    )
+    return {
+        "changed": False,
+        "change_id": change_id,
+        "review": drafts.review_text(draft, _owner_address() or "you"),
+        "note": "Its history is kept.",
+    }
+
+
+@_tool()
+def confirm_watch_change(change_id: str) -> dict[str, Any]:
+    """Save a change from review_watch_change. Call this only after the person has seen that
+    review and said yes to it. Each review can be saved once."""
+    saved = _recall(_CHANGE, change_id)
+    if saved is None:
+        raise ToolError("no review with that id, so nothing changed. Call review_watch_change")
+    watch = _require_watch(saved["watch_id"])
+    try:
+        updated = service.change_watch(
+            service.open_store(),
+            watch,
+            dates=saved["dates"],
+            checks_per_day=saved["checks_per_day"],
+            max_miles=saved["max_miles"],
+        )
+    except ValueError as exc:
+        raise ToolError(f"{exc}. Nothing changed. Call review_watch_change again") from exc
+    return _watch_view(updated)
 
 
 @_tool()

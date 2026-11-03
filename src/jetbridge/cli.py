@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import importlib.metadata
 import re
 import time
@@ -481,7 +480,7 @@ def notify_setup() -> None:
 @notify_app.command("setup-window", hidden=True)
 def notify_setup_window() -> None:
     """The window Claude opens, so a password is never typed into a chat."""
-    ctypes.windll.kernel32.SetConsoleTitleW("jetbridge email setup")
+    platforms.set_window_title("jetbridge email setup")
     typer.echo("jetbridge email setup. What you type here stays on this computer.\n")
     try:
         notify_setup()

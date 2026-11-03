@@ -324,6 +324,7 @@ def test_an_unexpected_answer_is_refused():
 
 @pytest.fixture
 def fake_powercfg(monkeypatch):
+    monkeypatch.setattr(power.platforms, "IS_MAC", False)  # test_mac.py covers a Mac
     values = {"STANDBYIDLE": 1800, "HIBERNATEIDLE": 7200}
     calls: list[tuple[str, ...]] = []
 

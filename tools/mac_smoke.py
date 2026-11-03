@@ -12,7 +12,7 @@ import os
 import sys
 
 from jetbridge import autorun, power, service
-from jetbridge.acquire.broker import OFF_SCREEN_ARGS
+from jetbridge.acquire.broker import OFF_SCREEN_ARGS, minimize
 
 PAGE = "data:text/html,<title>smoke</title>"
 
@@ -47,14 +47,16 @@ async def chrome_window() -> str:
             channel="chrome", headless=False, args=OFF_SCREEN_ARGS
         )
         page = await browser.new_page()
+        await minimize(page)
         await page.goto(PAGE)
-        position = await page.evaluate(
-            "[window.screenX, window.screenY, screen.width, screen.height]"
-        )
+        session = await page.context.new_cdp_session(page)
+        window = await session.send("Browser.getWindowForTarget")
+        state = window["bounds"]["windowState"]
+        # Searches run as a fetch from the page, so this has to keep working while it's minimized.
+        fetched = await page.evaluate("fetch('data:text/plain,ok').then(r => r.text())")
+        visibility = await page.evaluate("document.visibilityState")
         await browser.close()
-    x, y, width, height = position
-    off = x + 1400 <= 0 or y + 1000 <= 0 or x >= width or y >= height
-    return f"window at {x},{y} on a {width}x{height} screen: {'off' if off else 'ON'} screen"
+    return f"window state {state}, page {visibility}, fetch from the page said {fetched}"
 
 
 def show(text: str) -> None:

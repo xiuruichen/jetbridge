@@ -12,9 +12,22 @@ import os
 
 from patchright.async_api import BrowserContext, Page, Playwright, async_playwright
 
+from jetbridge import platforms
 from jetbridge.paths import profile_dir
 
 OFF_SCREEN_ARGS = ["--window-position=-2400,-2400", "--window-size=1400,1000"]
+
+
+async def minimize(page: Page) -> None:
+    """macOS moves an off-screen window back onto the screen, so on a Mac it's minimized instead.
+    Only tidiness depends on this, so a failure doesn't stop the check."""
+    with contextlib.suppress(Exception):
+        session = await page.context.new_cdp_session(page)
+        window = await session.send("Browser.getWindowForTarget")
+        await session.send(
+            "Browser.setWindowBounds",
+            {"windowId": window["windowId"], "bounds": {"windowState": "minimized"}},
+        )
 
 
 class SessionBroker:
@@ -43,6 +56,8 @@ class SessionBroker:
         )
         self._page = self._ctx.pages[0] if self._ctx.pages else await self._ctx.new_page()
         self._site = site
+        if platforms.IS_MAC and not self.show:
+            await minimize(self._page)
         await self._page.goto(warmup_url, wait_until="domcontentloaded", timeout=90_000)
         await self._page.wait_for_timeout(settle_ms)
         return self._page

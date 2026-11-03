@@ -48,6 +48,14 @@ def launcher_bytes() -> bytes:
     return f'@"{python}" -m jetbridge %*\r\n'.encode(encoding, "replace")
 
 
+def set_window_title(title: str) -> None:
+    """A nicety on Windows, where a console window would otherwise show a program's path."""
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleTitleW(title)
+
+
 def terminal_script(command: str) -> str:
     """The AppleScript that runs a command in a new Terminal window."""
     escaped = command.replace("\\", "\\\\").replace('"', '\\"')

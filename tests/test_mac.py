@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from jetbridge import autorun, claude_desktop, launchd, paths, platforms, power, updater, winsched
+from jetbridge.acquire import broker
 
 _open_private_window = platforms.open_private_window  # conftest stops tests opening real windows
 
@@ -226,6 +227,46 @@ def test_windows_opens_its_own_console(monkeypatch):
     args, options = opened[0]
     assert args[1:] == ["-m", "jetbridge", "notify", "setup-window"]
     assert options["creationflags"] == 0x10
+
+
+def test_the_setup_window_title_is_safe_anywhere():
+    platforms.set_window_title("jetbridge email setup")
+
+
+# ---- Chrome ---------------------------------------------------------------------------
+class _FakeSession:
+    def __init__(self, failing=False):
+        self.calls, self.failing = [], failing
+
+    async def send(self, method, params=None):
+        if self.failing:
+            raise RuntimeError("no such window")
+        self.calls.append((method, params))
+        return {"windowId": 7}
+
+
+def _page(session):
+    class Context:
+        async def new_cdp_session(self, page):
+            return session
+
+    class Page:
+        context = Context()
+
+    return Page()
+
+
+async def test_chrome_minimizes_itself():
+    session = _FakeSession()
+    await broker.minimize(_page(session))
+    assert session.calls[-1] == (
+        "Browser.setWindowBounds",
+        {"windowId": 7, "bounds": {"windowState": "minimized"}},
+    )
+
+
+async def test_failing_to_minimize_doesnt_stop_a_check():
+    await broker.minimize(_page(_FakeSession(failing=True)))
 
 
 # ---- the installer --------------------------------------------------------------------

@@ -22,8 +22,11 @@ Add a flight with `jetbridge start`, or run `jetbridge check 1` for one you've a
 
 - **Did you get a clear answer**, or `unknown`? If it's `unknown`, what did it say? `blocked` is
   especially useful to know, because airline sites might treat a Mac differently.
-- **Did Chrome appear on your screen or take focus during the check?** This is the biggest unknown,
-  because macOS may not let a window stay off-screen.
+- **Did Chrome appear on your screen or take focus during the check?** This is the biggest unknown.
+  macOS moved its window back onto the screen on GitHub's test machine, so on a Mac jetbridge
+  minimizes it instead. It may still flash up or show in the Dock.
+- **Did minimizing change the answers?** Compare with one check after running
+  `export JETBRIDGE_SHOW_BROWSER=1` in the same Terminal window.
 
 ## 3. Automatic checks
 

@@ -38,7 +38,7 @@ async def test_closed_open_confirmed_gone_blocked(store, clock):
     await runner.tick()
     assert sender.sent == []
 
-    clock.now += 86400 / 6 * 1.5
+    clock.now += 86400 / 3 * 1.5
     await runner.tick()
     assert len(sender.sent) == 1
     subject, body = sender.sent[0]
@@ -47,11 +47,11 @@ async def test_closed_open_confirmed_gone_blocked(store, clock):
     assert "Seats:    2 (searched for 1)" in body
     assert "https://www.aa.com/booking/search?" in body and "searchType=Award" in body
 
-    clock.now += 86400 / 6 * 1.5
+    clock.now += 86400 / 3 * 1.5
     await runner.tick()
     assert sender.subjects[1] == "Seats gone: CX805 business on May 21, 2027"
 
-    clock.now += 86400 / 6 * 1.5
+    clock.now += 86400 / 3 * 1.5
     report = await runner.tick()
     assert len(sender.sent) == 2, "a block must not produce a seats alert"
     assert report.checks[-1].result.status is CheckStatus.UNKNOWN
@@ -148,7 +148,7 @@ async def test_drift_alerts_after_two_in_a_row_and_clears(store, clock):
     runner, _, sender, _ = make_runner(store, clock, [drift, answer_from(CLOSED), drift, drift])
     for _ in range(3):
         await runner.tick()
-        clock.now += 86400 / 3
+        clock.now += 86400 / 3 * 1.5
     assert not [s for s in sender.subjects if "format" in s]
     await runner.tick()
     assert [s for s in sender.subjects if "format" in s]
@@ -174,13 +174,13 @@ async def test_digest_daily_with_never_seen_and_offline_notes(store, clock):
     add_cx(store, clock)
     runner, _, sender, _ = make_runner(store, clock, [answer_from(response()) for _ in range(9)])
     for _ in range(7):
-        clock.now += 86400 / 6 * 1.5
+        clock.now += 86400 / 3 * 1.5
         await runner.tick()
     digests = [(s, b) for s, b in sender.sent if s.startswith("jetbridge daily")]
-    assert 1 <= len(digests) <= 3
+    assert 1 <= len(digests) <= 4
 
     # Land after the morning digest hour, past the 6-hour gap that counts as offline.
-    clock.now += 86400 * 2 + 6 * 3600
+    clock.now += 86400 * 2 + 12 * 3600
     assert datetime.fromtimestamp(clock()).hour >= 8
     await runner.tick()
     subject, body = next(

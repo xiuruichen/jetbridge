@@ -28,7 +28,7 @@ async def _open_alert_subject(store, clock, custom):
     )
     runner.headlines = custom
     await runner.tick()
-    clock.now += 86400 / 6 * 1.5
+    clock.now += 86400 / 3 * 1.5
     await runner.tick()
     return sender.sent[0]
 

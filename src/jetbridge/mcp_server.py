@@ -25,13 +25,13 @@ from mcp.types import ToolAnnotations
 
 from jetbridge import doctor, headlines, power, service, winsched, wizard
 from jetbridge import draft as drafts
-from jetbridge.acquire.governor import Governor
+from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES, parse_program
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
 from jetbridge.runner import NEVER_SEEN_AFTER, watch_coverage
-from jetbridge.scheduler import is_searchable, search_starts
+from jetbridge.scheduler import checks_per_day_on, is_searchable, search_starts
 
 server = MCPServer(
     "jetbridge",
@@ -137,6 +137,10 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
             "clear_answers_so_far": state.conclusive_count,
             "date_has_passed": day < today,
         }
+        if day >= today and not unopened:
+            view["checks_per_day_now"] = checks_per_day_on(
+                day, watch.program, watch.checks_per_day, today
+            )
         if unopened:
             view["status"] = "not searched yet"
             view["searching_starts"] = search_starts(day, watch.program).strftime("%b %d, %Y")
@@ -772,6 +776,8 @@ def health() -> dict[str, Any]:
                 "requests_in_window": governor.used(site.id),
                 "max_in_window": governor.budget(site.id).max_requests,
                 "window_minutes": governor.budget(site.id).window_s // 60,
+                "requests_last_24_hours": governor.used_today(site.id),
+                "max_per_24_hours": DAILY_LIMIT,
                 "resting_until": format_when(governor.cooldown_until(site.id))
                 if governor.cooldown_until(site.id) > now
                 else None,

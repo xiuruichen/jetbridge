@@ -15,7 +15,7 @@ from jetbridge import claude_desktop, headlines, power, service, winsched, wizar
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
 from jetbridge import uninstall as removal
-from jetbridge.acquire.governor import Governor
+from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import CheckStatus, Watch
@@ -123,7 +123,9 @@ def watch_add(
     cabin: str = typer.Option("business", help="economy, premium, business or first"),
     program: str = typer.Option("american", help="Miles to search: american, delta or united"),
     pax: int = typer.Option(1, help="Party size; searched at this real size"),
-    checks_per_day: int = typer.Option(6, help="Checks per day, per date"),
+    checks_per_day: int = typer.Option(
+        6, help="Checks per day, per date. Halved far out, doubled in the last two weeks"
+    ),
     max_miles: int | None = typer.Option(None, help="Only alert at or below this price"),
     notify: str | None = typer.Option(
         None, help="Who gets seat alerts: a@x.com,b@y.com or 'me'. Prompts if left out"
@@ -329,7 +331,8 @@ def _print_health(store: Store) -> None:
             minutes = budget.window_s // 60
             typer.echo(
                 f"{site.domain} requests in the last {minutes} minutes: "
-                f"{used}/{budget.max_requests}"
+                f"{used}/{budget.max_requests}, last 24 hours: "
+                f"{governor.used_today(site.id)}/{DAILY_LIMIT}"
             )
         if resting:
             typer.echo(f"{site.domain} is RESTING after a block until {format_when(until)}.")

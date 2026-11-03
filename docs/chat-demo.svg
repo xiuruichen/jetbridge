@@ -32,7 +32,7 @@
   <text x="48" y="386" class="mono" xml:space="preserve"><tspan class="label">Dates:       </tspan>Fri, May 21, 2027</text>
   <text x="48" y="409" class="mono" xml:space="preserve"><tspan class="label">Price limit: </tspan>no limit</text>
   <text x="48" y="432" class="mono" xml:space="preserve"><tspan class="label">Alerts go to:</tspan> you@example.com</text>
-  <text x="48" y="455" class="mono" xml:space="preserve"><tspan class="label">Searching:   </tspan>about 6 aa.com searches a day</text>
+  <text x="48" y="455" class="mono" xml:space="preserve"><tspan class="label">Searching:   </tspan>about 3 aa.com searches a day, up to 12 a day close to departure</text>
 
   <text x="28" y="500" class="sans">Shall I save it?</text>
 

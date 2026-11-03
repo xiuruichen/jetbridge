@@ -218,7 +218,7 @@ def test_requests_just_under_the_limit_still_go(store):
 async def test_hitting_the_limit_is_unknown_never_no_seats(store, clock):
     from jetbridge.acquire.fetcher import LiveFetcher
 
-    assert START == clock()
+    assert clock() == START
     governor = Governor(store, clock, clock.sleep)
     _fill(store, "american", DAILY_LIMIT, clock() - 20 * HOUR)
 

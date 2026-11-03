@@ -302,8 +302,9 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
   United's and Delta's front cabin usually counts as `first`.
 - **Party size:** a watch for 2 only reports seats the site offers to a party of 2. If you could
   split up, add a separate watch for 1. Prices can also change with party size.
-- **Checks per day:** this is per date, so 6 checks across 3 dates is about 18 searches a day.
-  Be conservative: more searching makes a block more likely.
+- **Checks per day:** this is per date, so 6 checks across 3 dates is about 18 searches a day, and
+  [the pace changes](#how-checks-work) as the date gets closer. The review shows how many searches
+  that means now and at the busiest. Be conservative: more searching makes a block more likely.
 
 ### Examples
 
@@ -460,8 +461,19 @@ A few details in the email:
 ## How checks work
 
 1. Every 15 minutes, Windows runs `jetbridge tick`, which does whatever is due and exits.
-2. Each watch's next check is set from its checks per day, with random variation of 30% either
-   way. At 6 a day, that's roughly every 3-5 hours.
+2. Each date's next check is set from the watch's checks per day, with random variation of 30%
+   either way. At 6 a day, that's roughly every 3-5 hours. The pace changes with how far off the date
+   is, because seats are often released close to departure:
+
+   | Date is | Checks a day, if you chose 6 |
+   |---|---|
+   | More than 60 days away | 3 (half, but never below 2 unless you chose fewer) |
+   | 15-60 days away | 6 |
+   | 14 days away or less | 12 (double, up to 24) |
+   | In the first days after a program can show it | 12 (double, up to 24) |
+
+   This is a rule of thumb about where searches do the most good, not a prediction. A manual check
+   looks at every date the program can show.
 3. Chrome opens off-screen and searches one airline at a time, waiting 20-60 seconds between
    searches on the same site. Watches on the same route, date, party size and program share one search.
 4. If seats have just appeared, it waits 1-2 minutes and searches again before alerting you.
@@ -509,6 +521,9 @@ has its own hard limit:
 | aa.com | 10 per 10 minutes |
 | delta.com | 20 per 5 minutes |
 | united.com | 30 per 5 minutes |
+
+No site gets more than 150 requests in any 24 hours. Past that, checks are put off and show as
+`unknown` until the count falls.
 
 A single check can use more than one request: United needs a guest token and then the search, and
 Delta asks for each page of results separately. Opening a site's home page counts too.

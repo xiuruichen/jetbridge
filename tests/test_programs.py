@@ -820,7 +820,7 @@ async def test_page_format_warning_names_the_right_site(store, clock):
     drift = SearchAnswer(AnswerKind.DRIFT, detail="no meta event")
     runner, _, sender, _ = make_runner(store, clock, [drift, drift])
     await runner.tick()
-    clock.now += 86400 / 3
+    clock.now += 86400 / 3 * 1.5
     await runner.tick()
     assert sender.subjects == ["jetbridge: united.com's page format may have changed"]
 
@@ -832,7 +832,7 @@ async def test_clear_answer_on_one_site_does_not_clear_anothers_warning(store, c
     answers = [answer_from(CLOSED), drift, answer_from(CLOSED), drift]
     runner, _, sender, _ = make_runner(store, clock, answers)
     await runner.tick()
-    clock.now += 86400 / 3
+    clock.now += 86400 / 3 * 1.5
     await runner.tick()
     assert sender.subjects == ["jetbridge: united.com's page format may have changed"]
 

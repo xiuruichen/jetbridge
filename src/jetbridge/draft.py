@@ -14,9 +14,10 @@ from datetime import date
 from typing import Any
 
 from jetbridge import service
+from jetbridge.acquire.governor import DAILY_LIMIT
 from jetbridge.acquire.sites import get_site
 from jetbridge.models import Cabin, Watch
-from jetbridge.scheduler import is_searchable, search_starts
+from jetbridge.scheduler import is_searchable, search_starts, searches_per_day
 from jetbridge.store import Store
 
 DEFAULT_CHECKS_PER_DAY = 6
@@ -156,9 +157,13 @@ class WatchDraft:
 
     @property
     def searches_per_day(self) -> int:
+        return self.search_plan[0]
+
+    @property
+    def search_plan(self) -> tuple[int, int]:
+        """About how many searches this uses a day: now, and at its busiest."""
         days = service.parse_dates(self.dates or "")
-        today = date.today()
-        return sum(is_searchable(day, self.program, today) for day in days) * self.checks_per_day
+        return searches_per_day(days, self.program, self.checks_per_day, date.today())
 
 
 def resolve_airport(text: str) -> tuple[str, ...]:
@@ -301,8 +306,11 @@ def review_text(draft: WatchDraft, owner: str) -> str:
     days = service.parse_dates(draft.dates or "")
     limit = f"{draft.max_miles:,} miles per person" if draft.max_miles else "no limit"
     addresses = service.parse_recipients(draft.recipients)
-    searches = draft.searches_per_day
+    searches, busiest = draft.search_plan
     site = get_site(draft.program)
+    pace = f"about {searches} {site.domain} searches a day" if searches else "none yet"
+    if busiest != searches:
+        pace += f", up to {busiest} a day close to departure"
     lines = [
         f"Flight:      {draft.flight} from {draft.origin} to {draft.destination}",
         f"Cabin:       {draft.cabin.value}",
@@ -317,7 +325,7 @@ def review_text(draft: WatchDraft, owner: str) -> str:
             if any(address != owner for address in addresses)
             else []
         ),
-        f"Searching:   about {searches} {site.domain} searches a day",
+        f"Searching:   {pace}",
     ]
     today = date.today()
     unopened = [d for d in days if d >= today and not is_searchable(d, draft.program, today)]
@@ -327,7 +335,12 @@ def review_text(draft: WatchDraft, owner: str) -> str:
             f"             {site.domain} doesn't show {_format_day(unopened[0])} yet, so searching "
             f"for it starts {starts:%b %d, %Y}."
         )
-    if searches > HIGH_VOLUME_SEARCHES:
+    if busiest > DAILY_LIMIT:
+        lines.append(
+            f"             That's over jetbridge's limit of {DAILY_LIMIT} requests a day per site, "
+            "so some checks would be put off. Fewer dates would help."
+        )
+    elif busiest > HIGH_VOLUME_SEARCHES:
         lines.append(
             f"             That's a lot, and more searching makes a {site.domain} block more "
             "likely. Fewer dates would help."

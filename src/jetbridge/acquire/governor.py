@@ -34,6 +34,9 @@ BUDGETS = {
     "delta": Budget(window_s=300, max_requests=20),
     "united": Budget(window_s=300, max_requests=30),
 }
+# However a site's short window fills up, no site gets more than this in any 24 hours.
+DAILY_LIMIT = 150
+DAY_S = 86400.0
 COOLDOWN_BASE_S = 600.0
 COOLDOWN_MAX_S = 4 * 3600.0
 EPISODE_MEMORY_S = 6 * 3600.0
@@ -99,6 +102,10 @@ class Governor:
                 health.episodes = 0
             self._save(site, health)
 
+    def used_today(self, site: str) -> int:
+        count, _ = self.store.window_starts(site, self.clock() - DAY_S)
+        return count
+
     def used(self, site: str) -> int:
         count, _ = self.store.window_starts(site, self.clock() - self.budget(site).window_s)
         return count
@@ -115,6 +122,11 @@ class Governor:
             until = self.cooldown_until(site)
             if until > now:
                 raise GovernorDeferred(site, "resting after a block", until)
+            today_count, today_oldest = self.store.window_starts(site, now - DAY_S)
+            if today_count >= DAILY_LIMIT:
+                # A day is too long to wait inside a tick, so this always hands back to the caller.
+                free_at = (today_oldest if today_oldest is not None else now) + DAY_S + 0.05
+                raise GovernorDeferred(site, "daily search limit reached", free_at)
             count, oldest = self.store.window_starts(site, now - budget.window_s)
             if count < budget.max_requests:
                 self.store.record_start(site, now)

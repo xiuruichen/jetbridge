@@ -26,11 +26,13 @@ from jetbridge.matcher import evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
 from jetbridge.notify.email import Sender, flush_outbox
 from jetbridge.scheduler import (
+    date_is_due,
+    fastest_checks_per_day,
     group_queries,
     is_due,
     is_expired,
-    longest_gap_s,
     next_check_at,
+    normal_gap_s,
     search_starts,
     searchable_dates,
     upcoming_dates,
@@ -65,7 +67,7 @@ def watch_coverage(store: Store, watch: Watch, now: float) -> Coverage | None:
             store.clear_answers(watch.id, day, start),
             start,
             now,
-            longest_gap_s(watch.checks_per_day),
+            normal_gap_s(watch, day, today),
         )
         if found and (worst is None or found.share < worst.share):
             worst = found
@@ -123,7 +125,7 @@ class Runner:
 
         try:
             if due:
-                await self._run_checks(due, report)
+                await self._run_checks(due, report, paced=only_watch is None)
         finally:
             await self.fetcher.close()
 
@@ -134,7 +136,14 @@ class Runner:
         return report
 
     # ---- checks ---------------------------------------------------------------------
-    async def _run_checks(self, due: list[Watch], report: TickReport) -> None:
+    async def _run_checks(self, due: list[Watch], report: TickReport, paced: bool = True) -> None:
+        today = self._today()
+        started = self.clock()
+
+        def wanted(watch: Watch, day: date) -> bool:
+            last = self.store.date_state(watch.id, day).last_conclusive_at
+            return date_is_due(watch, day, last, started, today)
+
         deadline = self.clock() + TICK_BUDGET_S
         retry_at: dict[int, float] = {}  # watches with dates that didn't get an answer
         stops: dict[str, SearchAnswer] = {}  # sites that may not be asked anything more
@@ -149,7 +158,7 @@ class Runner:
                 f"{report.stopped_early}; {note}" if report.stopped_early else note
             )
 
-        for query, watches in group_queries(due, self._today()).items():
+        for query, watches in group_queries(due, today, wanted if paced else None).items():
             site = query.program
             if site not in stops and self.clock() >= deadline:
                 stops[site] = SearchAnswer(
@@ -185,7 +194,7 @@ class Runner:
             if watch.id in retry_at:
                 at = retry_at[watch.id] + self.rng.uniform(*DEFER_JITTER_S)
             else:
-                at = next_check_at(now, watch.checks_per_day, self.rng)
+                at = next_check_at(now, fastest_checks_per_day(watch, today), self.rng)
             self.store.set_next_check(watch.id, at)
 
     def _apply(
@@ -267,7 +276,8 @@ class Runner:
                 for d in days
             )
             # A slow watch is normally quiet for longer, and that alone isn't a problem.
-            if now - last_good >= max(BLIND_AFTER_S, 2 * longest_gap_s(watch.checks_per_day)):
+            longest = max(normal_gap_s(watch, d, today) for d in days)
+            if now - last_good >= max(BLIND_AFTER_S, 2 * longest):
                 hours = (now - last_good) / 3600
                 self.store.enqueue(
                     NewAlert(

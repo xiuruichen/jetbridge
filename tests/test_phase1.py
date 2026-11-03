@@ -81,7 +81,7 @@ def test_review_says_when_searching_starts():
         draft.WatchDraft("JFK", "HKG", far.isoformat(), "CX805"),
         "owner@x.com",
     )
-    assert "about 0 aa.com searches a day" in text
+    assert "Searching:   none yet" in text
     assert f"starts {search_starts(far, 'american'):%b %d, %Y}" in text
 
 

@@ -65,6 +65,8 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
   powercfg fail, so anything new that calls `service.live_tick` needs a fake in its tests.
 - A date isn't searched until `scheduler.is_searchable`, and an unopened date never counts toward
   the "no clear answer" warning. Insights report what was seen and never predict.
+- Pacing decides which dates to search on a tick and never changes what a result means. A manual
+  check isn't paced. No site gets more than `governor.DAILY_LIMIT` requests in 24 hours.
 - Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
   uninstall.
 - Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.

@@ -21,7 +21,7 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 `headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py` ·
 `claude_desktop.py` connects Claude Desktop · `doctor.py` health checks · `uninstall.py` removal ·
 `platforms.py`, `autorun.py`, `launchd.py` what differs on a Mac ·
-`insights.py` what a watch's record shows (pure) · `power.py` sleep settings · `updater.py` new
+`insights.py` what a watch's record shows (pure) · `power.py` sleep settings · `report.py` problem reports · `updater.py` new
 versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
 
 ## Invariants (do not break)
@@ -87,6 +87,8 @@ versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
 - The Mac version is experimental. Don't claim anything about it that hasn't been seen on a real
   Mac, and keep the notice in the README, the installer and `doctor` until `docs/mac-testing.md` has
   been done. Anything that differs by system goes through `platforms.py`, `autorun.py` or `power.py`.
+- A problem report sends nothing, and holds only the version, check names and results, and reply
+  structure with every value removed. Never add watches, addresses or error text to it.
 - Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
   uninstall.
 - Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.

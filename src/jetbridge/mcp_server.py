@@ -23,6 +23,7 @@ from mcp.types import ToolAnnotations
 
 from jetbridge import autorun, board, doctor, headlines, platforms, power, service, updater, wizard
 from jetbridge import draft as drafts
+from jetbridge import report as problem_report
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES, parse_program
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
@@ -1087,6 +1088,21 @@ def health() -> dict[str, Any]:
         "emails_waiting": sum(
             item.recipient != push.PUSH_RECIPIENT for item in store.pending_alerts()
         ),
+    }
+
+
+@_tool(read_only=True)
+def prepare_problem_report() -> dict[str, Any]:
+    """Prepare a report of a problem for jetbridge's maintainers. This sends nothing. It has the
+    version, which checks failed and the structure of saved airline replies with every value
+    removed. Show it to the person and give them the link, so they can read it and post it."""
+    built = problem_report.build(service.open_store())
+    return {
+        "sent": False,
+        "report": built.body,
+        "open_to_post": built.url,
+        "note": "Ask them to read it before posting and to add a sentence about what happened. "
+        "It's meant to carry nothing personal, but it's their call. Posting makes it public.",
     }
 
 

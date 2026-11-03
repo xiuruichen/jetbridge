@@ -650,6 +650,7 @@ folder. Add `--help` to any command for details.
 | `uninstall` | Remove jetbridge's checks, watches, settings and saved password |
 | `--version` | Show the version |
 | `update` | Install the newest jetbridge |
+| `report` | Prepare a problem report to read and post, with nothing personal in it |
 | `notify setup` | Save Gmail details and send a test email |
 | `notify push on` / `off` / `test` | Phone alerts through ntfy |
 | `notify test [--to ADDRESS]` | Send a test email to you or someone else |
@@ -660,6 +661,10 @@ folder. Add `--help` to any command for details.
 ## Troubleshooting
 
 Start with `jetbridge doctor`, which covers most problems.
+
+If that doesn't solve it, `jetbridge report`, or asking Claude to "report this problem", prepares a
+GitHub issue for you to read and post. It has the version, which checks failed and the structure of
+any saved airline replies, with every value removed. Nothing is sent unless you post it.
 
 **`uv` isn't recognized.** Close and reopen PowerShell. If it still fails, install uv and make sure
 its folder is on your PATH.

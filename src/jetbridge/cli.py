@@ -15,6 +15,7 @@ from jetbridge import autorun, claude_desktop, headlines, platforms, power, serv
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
 from jetbridge import insights as record
+from jetbridge import report as problem_report
 from jetbridge import uninstall as removal
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES
@@ -796,6 +797,15 @@ def update() -> None:
             typer.echo(line)
     except updater.UpdateProblem as exc:
         raise _fail(str(exc)) from exc
+
+
+@app.command("report")
+def report_command() -> None:
+    """Prepare a problem report to read and post, with nothing personal in it."""
+    built = problem_report.build(service.open_store())
+    typer.echo(built.body)
+    typer.echo("\nNothing has been sent. Read it, and if you're happy to share it, open this link:")
+    typer.echo(built.url)
 
 
 @app.command("keep-awake")

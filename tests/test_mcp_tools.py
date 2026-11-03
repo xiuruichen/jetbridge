@@ -78,6 +78,7 @@ async def test_every_command_has_a_way_in_from_chat():
     assert names == {
         "get_started",
         "set_keep_awake",
+        "prepare_problem_report",
         "set_watch_priority",
         "show_board",
         "open_phone_setup",
@@ -121,6 +122,7 @@ async def test_only_the_tools_that_change_nothing_say_so():
         "watch_history",
         "alert_settings",
         "health",
+        "prepare_problem_report",
         "watch_insights",
         "show_board",
         "diagnose",

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+- Move searches to where the signals point, within the same limits. Seats vanishing, a price change,
+  another flight opening on the route or a nearby date opening brings a date's next checks forward.
+  A date also gets one check just after its first bookable midnight.
+- More checks overall: far-out dates now get 5 of every 6 checks, rather than half. A simulator of
+  made-up patterns set this, and it's labeled as such. Its results don't predict real catch rates.
+- Each site has a planned budget under the hard limit, the most deserving dates go first, and a block
+  lowers it for a while.
+- Say that a watch matters most, so it goes first and gets checked more often.
+- Watch any nonstop on a route, or several flights and cabins from one review. These add no searches.
+- An email the day before a date should become bookable, using no searches.
+- `jetbridge report` and "report this problem" prepare an issue to read and post, with nothing
+  personal in it.
+- An experimental Mac version, which hasn't been tried on a real Mac yet.
+
 ## 0.4.0
 
 - Check a new watch right away, and say plainly if the site can't see that flight.

@@ -178,7 +178,11 @@ async def test_a_quick_check_answers_straight_away(saved_watch, monkeypatch):
 async def test_a_date_checked_twice_reports_only_the_latest_answer(saved_watch, monkeypatch):
     def line(status):
         result = SimpleNamespace(
-            status=SimpleNamespace(value=status), miles=97_000, seats_text="1", detail=None
+            status=SimpleNamespace(value=status),
+            miles=97_000,
+            seats_text="1",
+            detail=None,
+            flights=(),
         )
         return SimpleNamespace(day=FUTURE, result=result)
 

@@ -295,7 +295,7 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 
 | Option | Default | What it does |
 |---|---|---|
-| `FLIGHT` | required | Flight number, such as `AA100` |
+| `FLIGHT` | required | Flight number, such as `AA100`, or `any` for [any nonstop](#any-nonstop-or-several-at-once) |
 | `--from`, `--to` | required | The airports this flight actually flies between |
 | `--dates` | required | Up to 14 dates: `2027-06-14..2027-06-16`, `2027-06-14,2027-06-18`, or a mix |
 | `--cabin` | `business` | `economy`, `premium`, `business` or `first` |
@@ -304,6 +304,18 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
 | `--max-miles` | none | Treat seats above this per-person price as not available |
 | `--notify` | asks you | Who gets seat alerts: `a@x.com,b@y.com`, or `me` for only you |
 | `--program` | `american` | Whose miles to search: `american`, `delta` or `united` |
+
+### Any nonstop, or several at once
+
+If you'd take any nonstop on a route, use `any` as the flight, or tell Claude "any nonstop". Each flight
+that opens gets the same live re-check and its own alert. Connections never count.
+
+```powershell
+jetbridge watch add any --from SEA --to ICN --dates 2027-05-21..2027-05-23 --cabin business --program delta
+```
+
+In chat, you can also ask for several at once: "Watch CX805 or CX889, business or first." One review
+covers them all. Each search already returns every flight on the route, so none of this adds searches.
 
 ### Getting these right
 
@@ -314,7 +326,7 @@ jetbridge watch add FLIGHT --from AAA --to BBB --dates DATES [options]
   tracker will show them. With a wrong route, the flight simply never appears. A city's other
   airports don't count: a watch to Tokyo Haneda won't match a flight landing at Narita.
 - **Dates:** use the local departure date at the origin airport.
-- **Connections:** only the flight on its own counts. An itinerary that connects onto it from
+- **Connections:** only the flight on its own counts, even on an `any` watch. An itinerary that connects onto it from
   another city doesn't, so watch each flight separately if you need more than one.
 - **Cabin:** every leg has to be in the cabin you asked for. If a site sells a "business" fare
   that's actually flown in another cabin, it doesn't count. A first-class seat doesn't count for
@@ -450,6 +462,7 @@ Over time, each watch builds up a record of what happened on your flight:
 | **Seats gone** | An open date closed |
 | **jetbridge can't see...** | No clear answer on any date for 24 hours |
 | **A site's page format may have changed** | Two checks in a row couldn't be read, so the parser may need fixing |
+| **... should open tomorrow** | The day before a date should become bookable. Takes no searches |
 | **jetbridge daily** | A summary, on the first run after 8 AM |
 
 If seats appear but are gone by the re-check, it's logged in `history` and no email is sent.

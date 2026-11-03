@@ -41,6 +41,8 @@ class Flight:
 
     @classmethod
     def parse(cls, text: str) -> Flight:
+        if " ".join(text.lower().split()) in _ANY_WORDS:
+            return ANY_FLIGHT
         match = _FLIGHT.match(text)
         if not match:
             raise ValueError(f"not a flight number: {text!r} (expected something like AA100)")
@@ -49,6 +51,16 @@ class Flight:
     @property
     def code(self) -> str:
         return f"{self.carrier}{self.number}"
+
+    @property
+    def is_any(self) -> bool:
+        return self == ANY_FLIGHT
+
+
+# A real airline code is two characters, so this can't be mistaken for a flight.
+ANY_FLIGHT = Flight("ANY", "")
+ANY_NAME = "any nonstop"
+_ANY_WORDS = ("any", "any flight", "any nonstop", "any nonstop flight")
 
 
 @dataclass(frozen=True)
@@ -70,8 +82,12 @@ class Watch:
     next_check_at: float = 0.0
 
     @property
+    def name(self) -> str:
+        return ANY_NAME if self.flight.is_any else self.flight.code
+
+    @property
     def label(self) -> str:
-        return f"{self.flight.code} {self.origin}-{self.destination} {self.cabin.value}"
+        return f"{self.name} {self.origin}-{self.destination} {self.cabin.value}"
 
 
 @dataclass(frozen=True)
@@ -166,6 +182,8 @@ class CheckResult:
     notes: tuple[str, ...] = ()
     detail: str | None = None
     suspect_parser: bool = False  # UNKNOWN because the response looked wrong
+    flight: str | None = None  # on an any-flight watch, the flight this price is for
+    flights: tuple[str, ...] = ()  # on an any-flight watch, every flight with seats
 
     @property
     def seats_text(self) -> str:

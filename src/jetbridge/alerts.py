@@ -34,6 +34,7 @@ class DateState:
     last_conclusive_at: float | None = None
     conclusive_count: int = 0
     ever_listed: bool = False
+    open_flights: tuple[str, ...] = ()  # on an any-flight watch, which flights have been announced
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ def _adopt(state: DateState, result: CheckResult) -> DateState:
         status=result.status,
         miles=result.miles if available else None,
         seats_exact=result.seats_exact if available else None,
+        open_flights=result.flights if available else (),
     )
 
 
@@ -77,6 +79,10 @@ def decide(prev: DateState, result: CheckResult, now: float) -> Decision:
 
     if was_open and not is_open:
         return Decision(replace(_adopt(state, result), last_alert_at=now), (AlertKind.SEATS_GONE,))
+
+    # On an any-flight watch, another flight opening is an opening too, re-checked the same way.
+    if is_open and set(result.flights) - set(prev.open_flights):
+        return Decision(state, needs_confirmation=True)
 
     new_state = _adopt(state, result)
     if not is_open:
@@ -104,6 +110,18 @@ def confirm_opening(
     state: DateState, first: CheckResult, recheck: CheckResult, now: float
 ) -> Decision:
     """Resolve the live re-check that follows a change to AVAILABLE."""
+    already_open = state.status is CheckStatus.AVAILABLE
+    if (
+        already_open
+        and recheck.status is CheckStatus.AVAILABLE
+        and not set(recheck.flights) - set(state.open_flights)
+    ):  # the extra flight didn't last, and the ones already announced are still there
+        return Decision(_adopt(_after_conclusive(state, recheck, now), recheck))
+    if already_open and recheck.status.conclusive and recheck.status is not CheckStatus.AVAILABLE:
+        return Decision(
+            replace(_adopt(_after_conclusive(state, recheck, now), recheck), last_alert_at=now),
+            (AlertKind.SEATS_GONE,),
+        )
     if recheck.status is CheckStatus.AVAILABLE:
         return Decision(
             replace(_adopt(_after_conclusive(state, recheck, now), recheck), last_alert_at=now),
@@ -155,7 +173,8 @@ def render_availability(
 ) -> tuple[str, str]:
     day_text = day.strftime("%b %d, %Y")
     headline = (headlines or {}).get(kind, DEFAULT_HEADLINES[kind])
-    head = f"{headline}: {watch.flight.code} {watch.cabin.value} on {day_text}"
+    shown_flight = result.flight or watch.name
+    head = f"{headline}: {shown_flight} {watch.cabin.value} on {day_text}"
     if kind is AlertKind.SEATS_GONE:
         lines = [
             f"{watch.label} on {day_text} no longer shows qualifying seats.",
@@ -172,7 +191,12 @@ def render_availability(
         "Check and book:",
         booking_url,
         "",
-        f"Flight:   {watch.flight.code} {watch.origin} to {watch.destination}",
+        f"Flight:   {shown_flight} {watch.origin} to {watch.destination}",
+        *(
+            [f"Also open: {', '.join(c for c in result.flights if c != result.flight)}"]
+            if len(result.flights) > 1
+            else []
+        ),
         f"Date:     {day_text}",
         f"Cabin:    {watch.cabin.value}",
         f"Price:    {_price(result)}",

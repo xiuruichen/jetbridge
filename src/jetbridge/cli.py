@@ -119,7 +119,7 @@ def _ask_recipients() -> str:
 # ---- watch ----------------------------------------------------------------------------
 @watch_app.command("add")
 def watch_add(
-    flight: str = typer.Argument(..., help="Flight number, e.g. AA100"),
+    flight: str = typer.Argument(..., help="Flight number, e.g. AA100, or 'any' for any nonstop"),
     origin: str = typer.Option(..., "--from", help="Departure airport of this flight"),
     destination: str = typer.Option(..., "--to", help="Arrival airport of this flight"),
     dates: str = typer.Option(..., help="2027-06-14..2027-06-16 or 2027-06-14,2027-06-16"),
@@ -687,17 +687,17 @@ def _first_checks(store: Store, watches: list[Watch]) -> None:
         try:
             report = service.live_tick(store, only_watch=watch.id)
         except service.TickBusy:
-            typer.echo(f"{watch.flight.code}: a check is already running, so this one runs soon.")
+            typer.echo(f"{watch.name}: a check is already running, so this one runs soon.")
             continue
         except Exception as exc:  # the watch is saved, and scheduled checks will still try
-            typer.echo(f"{watch.flight.code}: couldn't check it just now ({exc}). It'll try again.")
+            typer.echo(f"{watch.name}: couldn't check it just now ({exc}). It'll try again.")
             continue
         latest = {line.day: line.result for line in report.checks}
         if not latest:
-            typer.echo(f"{watch.flight.code}: its dates can't be searched yet.")
+            typer.echo(f"{watch.name}: its dates can't be searched yet.")
         for day, result in latest.items():
             means = service.first_check_means(watch, result)
-            typer.echo(f"{watch.flight.code} {day:%b %d}: {means}")
+            typer.echo(f"{watch.name} {day:%b %d}: {means}")
 
 
 # ---- claude ---------------------------------------------------------------------------

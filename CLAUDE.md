@@ -29,7 +29,9 @@ versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
   unexpected pages and unreadable results that might be the flight are all `UNKNOWN`.
 - `UNKNOWN` never sends a seats alert and never changes a date's open or closed status.
 - `AVAILABLE` requires the exact flight between the watched airports on that date, with every
-  leg in the requested cabin.
+  leg in the requested cabin. An `any` watch is chosen explicitly in the review, judges each nonstop
+  by those same rules, and never counts a connection. Another flight opening on one gets its own
+  live re-check and alert, tracked in `open_flights`.
 - Searches use the watch's real party size, because award prices can change with it.
 - Every live request goes through `Governor.acquire`, including the browser's first page load,
   United's guest token, each Delta result page and the navigation fallback. A site's `fetch` calls

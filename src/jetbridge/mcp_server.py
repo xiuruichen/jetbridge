@@ -30,7 +30,13 @@ from jetbridge.insights import TOO_FEW_ANSWERS, clear_answers, openings
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
 from jetbridge.notify import push
-from jetbridge.runner import NEVER_SEEN_AFTER, above_limit_miles, seen_history, watch_coverage
+from jetbridge.runner import (
+    NEVER_SEEN_AFTER,
+    above_limit_miles,
+    never_seen_note,
+    seen_history,
+    watch_coverage,
+)
 from jetbridge.scheduler import WHY, is_searchable, search_starts, watch_checks_per_day
 
 server = MCPServer(
@@ -48,6 +54,9 @@ server = MCPServer(
         "choose Always allow, but that Allow once is safest for saving or removing a watch.\n\n"
         "Adding a watch needs the flight, its departure and arrival airports, dates, cabin, miles "
         "program, party size and who gets the alerts. Ask for anything missing and never guess. "
+        "If they'd take any nonstop on the route, say flight any. If they'd take several flights "
+        "or cabins, list them, like CX805 or CX889, business or first: one review covers them all, "
+        "and they share searches. "
         "City names are fine; if a city has several airports, ask which. If they don't know the "
         "flight number, offer find_flights, then let them choose. Call review_watch, show the "
         "review word for word, and call confirm_watch only after they say yes to it. If they want "
@@ -185,6 +194,8 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
             view["searching_starts"] = search_starts(day, watch.program).strftime("%b %d, %Y")
         if state.status is CheckStatus.AVAILABLE and day >= today:
             view.update(_booking(_watch_query(watch, day)))
+            if state.open_flights:
+                view["open_flights"] = list(state.open_flights)
         days.append(view)
     extra: dict[str, Any] = {}
     watched = watch_coverage(store, watch, time.time()) if watch.status == "active" else None
@@ -192,14 +203,10 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         extra["proof_of_watching"] = watched.text
     if never_seen and any(day >= today for day in watch.dates):
         domain = SITES[watch.program].domain
-        extra["note"] = (
-            f"{watch.flight.code} has never appeared in {domain}'s results for this route. The "
-            f"flight number or route may be wrong, {domain} may not sell this flight with these "
-            "miles, or it may just hide flights with no award space."
-        )
+        extra["note"] = never_seen_note(watch, domain)
     return {
         "id": watch.id,
-        "flight": watch.flight.code,
+        "flight": watch.name,
         "route": f"{watch.origin}-{watch.destination}",
         "cabin": watch.cabin.value,
         "program": watch.program,
@@ -419,6 +426,13 @@ def _recall(prefix: str, token: str) -> dict[str, Any] | None:
     return saved
 
 
+MAX_WATCHES_AT_ONCE = 6
+
+
+def _several(text: str) -> list[str]:
+    return [part for part in re.split(r"\s*(?:,|/|&|\bor\b|\band\b)\s*", text.strip()) if part]
+
+
 @_tool()
 def review_watch(
     flight: str,
@@ -437,26 +451,41 @@ def review_watch(
     Show the person the review word for word and ask them to confirm it. origin and destination
     are cities or airport codes. program is american, delta or united. dates is like May 21-23 2027
     or 2027-06-14..2027-06-16. notify is who gets seat alerts, comma-separated; leave it out to
-    alert only the owner."""
-    draft = drafts.WatchDraft(
-        origin=_airport(origin),
-        destination=_airport(destination),
-        dates=drafts.parse_dates(dates, date.today()),
-        flight=Flight.parse(flight).code,
-        cabin=drafts.parse_cabin(cabin),
-        program=parse_program(program),
-        pax=pax,
-        checks_per_day=checks_per_day,
-        max_miles=max_miles,
-        recipients=notify,
-    )
-    drafts.validate(draft)
-    fields = {**asdict(draft), "cabin": draft.cabin.value}
-    review_id = _remember(_REVIEW, {"draft": fields})
+    alert only the owner. flight can be a flight number, several like CX805 or CX889, or any for any
+    nonstop on the route. cabin can be several too, like business or first."""
+    codes = tuple(Flight.parse(part).code for part in _several(flight))
+    cabins = tuple(drafts.parse_cabin(part) for part in _several(cabin))
+    if len(codes) * len(cabins) > MAX_WATCHES_AT_ONCE:
+        raise ToolError(f"that's over {MAX_WATCHES_AT_ONCE} watches at once. Ask them to narrow it")
+    shared = {
+        "origin": _airport(origin),
+        "destination": _airport(destination),
+        "dates": drafts.parse_dates(dates, date.today()),
+        "program": parse_program(program),
+        "pax": pax,
+        "checks_per_day": checks_per_day,
+        "max_miles": max_miles,
+        "recipients": notify,
+    }
+    all_drafts = [
+        drafts.WatchDraft(flight=code, cabin=each, **shared) for code in codes for each in cabins
+    ]
+    for draft in all_drafts:
+        drafts.validate(draft)
+    fields = [{**asdict(draft), "cabin": draft.cabin.value} for draft in all_drafts]
+    review_id = _remember(_REVIEW, {"drafts": fields})
+    several = len(all_drafts) > 1
     return {
         "saved": False,
         "review_id": review_id,
-        "review": drafts.review_text(draft, _owner_address() or "you"),
+        "review": drafts.review_text(
+            all_drafts[0],
+            _owner_address() or "you",
+            flights=codes if len(codes) > 1 else (),
+            cabins=cabins if len(cabins) > 1 else (),
+        )
+        if several
+        else drafts.review_text(all_drafts[0], _owner_address() or "you"),
     }
 
 
@@ -470,12 +499,19 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
     saved = _recall(_REVIEW, review_id)
     if saved is None:
         raise ToolError("no review with that id, so nothing was saved. Call review_watch first")
-    fields = saved["draft"]
-    draft = drafts.WatchDraft(**{**fields, "cabin": Cabin(fields["cabin"])})
+    # A review from before several could be saved at once has just the one.
+    listed = saved["drafts"] if "drafts" in saved else [saved["draft"]]
+    all_drafts = [
+        drafts.WatchDraft(**{**fields, "cabin": Cabin(fields["cabin"])}) for fields in listed
+    ]
     try:
-        watch = drafts.save(service.open_store(), draft)
+        for draft in all_drafts:
+            drafts.validate(draft)
+        store = service.open_store()
+        watches = [drafts.save(store, draft) for draft in all_drafts]
     except ValueError as exc:
         raise ToolError(f"{exc}. Nothing was saved. Call review_watch again") from exc
+    watch = watches[0]
     next_steps = []
     if not autorun.is_installed():
         try:
@@ -486,11 +522,16 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
     if not _email_ready():
         next_steps.append("Email isn't set up, so alerts will wait. Offer open_email_setup.")
     try:
-        first_check = _start_search(("check", watch.id), lambda: _check_results(watch))
-    except ToolError as exc:  # the watch is saved, and scheduled checks will still run
+        if len(watches) == 1:
+            first_check = _start_search(("check", watch.id), lambda: _check_results(watch))
+        else:
+            key = ("check", *(w.id for w in watches))
+            first_check = _start_search(key, lambda: _check_all(watches))
+    except ToolError as exc:  # the watches are saved, and scheduled checks will still run
         first_check = {"finished": True, "problem": f"{exc}. A scheduled check will try again."}
     updated = _require_watch(watch.id)
-    return {**_watch_view(updated), "first_check": first_check, "next_steps": next_steps}
+    extra = {"also_saved": [_watch_view(w) for w in watches[1:]]} if len(watches) > 1 else {}
+    return {**_watch_view(updated), **extra, "first_check": first_check, "next_steps": next_steps}
 
 
 # ---- long searches --------------------------------------------------------------------
@@ -550,6 +591,7 @@ def _check_results(watch: Watch) -> dict[str, Any]:
             "seats": line.result.seats_text,
             "detail": line.result.detail,
             "means": service.first_check_means(watch, line.result),
+            "flights": list(line.result.flights),
         }
         if line.result.status is CheckStatus.AVAILABLE:
             row.update(_booking(_watch_query(watch, line.day)))
@@ -564,6 +606,27 @@ def _check_results(watch: Watch) -> dict[str, Any]:
             }
             for day in watch.dates
             if day >= today and not is_searchable(day, watch.program, today)
+        ],
+        "emails_sent": report.alerts_sent,
+        "stopped_early": report.stopped_early,
+    }
+
+
+def _check_all(watches: list[Watch]) -> dict[str, Any]:
+    """An ordinary run, because new watches are all due and share their searches this way."""
+    report = service.live_tick(service.open_store())
+    named = {watch.id: watch for watch in watches}
+    return {
+        "results": [
+            {
+                "flight": line.label,
+                "date": line.day.isoformat(),
+                "status": line.result.status.value,
+                "miles": line.result.miles,
+                "means": service.first_check_means(named[line.watch_id], line.result),
+            }
+            for line in report.checks
+            if line.watch_id in named
         ],
         "emails_sent": report.alerts_sent,
         "stopped_early": report.stopped_early,
@@ -865,7 +928,7 @@ def review_watch_removal(watch_id: int) -> dict[str, Any]:
         "removed": False,
         "removal_id": removal_id,
         "review": (
-            f"Remove the watch on {watch.flight.code} from {watch.origin} to "
+            f"Remove the watch on {watch.name} from {watch.origin} to "
             f"{watch.destination}, {watch.cabin.value}, on {days}? This also deletes its history "
             "and can't be undone. Pausing it would keep the history."
         ),
@@ -881,7 +944,7 @@ def confirm_watch_removal(removal_id: str) -> dict[str, Any]:
         raise ToolError("no removal with that id, so nothing changed. Call review_watch_removal")
     watch = _require_watch(saved["watch_id"])
     service.open_store().delete_watch(watch.id)
-    return {"removed": True, "flight": watch.flight.code}
+    return {"removed": True, "flight": watch.name}
 
 
 # ---- settings -------------------------------------------------------------------------

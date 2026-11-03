@@ -274,7 +274,20 @@ def first_check_means(watch: Watch, result: CheckResult) -> str:
     domain = get_site(watch.program).domain
     if result.status is CheckStatus.AVAILABLE:
         price = f", at {result.miles:,} miles" if result.miles else ""
-        return f"Seats are open now{price}."
+        where = f" on {', '.join(result.flights)}" if result.flights else ""
+        return f"Seats are open now{where}{price}."
+    if watch.flight.is_any:
+        if result.status is CheckStatus.NOT_LISTED:
+            return (
+                f"{domain} answered, but listed no nonstop flights on this route and date. Check "
+                "the airports. Connections don't count for this watch."
+            )
+        if result.status is CheckStatus.NOT_OFFERED and result.miles:
+            return f"{domain} lists nonstops here, with seats above your limit: {result.detail}."
+        if result.status is CheckStatus.NOT_OFFERED:
+            return (
+                f"{domain} lists nonstops here, but none has qualifying seats yet. That's working."
+            )
     if result.status is CheckStatus.NOT_OFFERED and result.miles:
         return f"{domain} lists this flight, with seats above your price limit: {result.detail}."
     if result.status is CheckStatus.NOT_OFFERED:
@@ -294,7 +307,7 @@ def welcome_body(watch: Watch) -> str:
     return (
         "The person sending this email added you to their jetbridge flight watch, so you'll get "
         "an email if award seats open on:\n\n"
-        f"  {watch.flight.code} {watch.origin} to {watch.destination}, {watch.cabin.value}\n"
+        f"  {watch.name} {watch.origin} to {watch.destination}, {watch.cabin.value}\n"
         f"  {days}\n"
         f"  Using {site.label} miles\n\n"
         "You don't need to do or install anything. So you don't miss an alert, please mark this "
@@ -332,7 +345,7 @@ def welcome_new_recipients(
         store.enqueue(
             NewAlert(
                 "welcome",
-                f"You've been added to a flight alert for {watch.flight.code}",
+                f"You've been added to a flight alert for {watch.name}",
                 welcome_body(watch),
                 dedupe_key=f"welcome:{address}",
                 recipient=address,

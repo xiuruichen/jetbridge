@@ -37,7 +37,7 @@ def _is_watched_itinerary(legs: tuple[Leg, ...], watch: Watch, day: date) -> boo
 
 
 def _could_be_watched(hints: frozenset[str], watch: Watch) -> bool:
-    return not hints or watch.flight.code in hints
+    return not hints or watch.flight.is_any or watch.flight.code in hints
 
 
 def is_single_flight(item: ParsedSlice, query: Query) -> bool:
@@ -66,6 +66,8 @@ def also_seen(watch: Watch, query: Query, answer: SearchAnswer) -> list[AlsoSeen
     was already fetched, so looking costs no searches."""
     if answer.kind is not AnswerKind.ANSWER or answer.parsed is None or answer.parsed.site_error:
         return []
+    if watch.flight.is_any:  # it's already watching all of these
+        return []
     found: dict[str, AlsoSeen] = {}
     for item in answer.parsed.slices:
         if not is_single_flight(item, query) or item.legs[0].code == watch.flight.code:
@@ -76,6 +78,44 @@ def also_seen(watch: Watch, query: Query, answer: SearchAnswer) -> list[AlsoSeen
         if result.status is CheckStatus.AVAILABLE and first.code not in found:
             found[first.code] = AlsoSeen(first.code, first.departs_at, result.miles)
     return sorted(found.values(), key=lambda option: option.departs)
+
+
+def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
+    """Judge each nonstop flight on the route by the same rules as a watch on that flight. Someone
+    chose this in the review, and a connection still never counts."""
+    parsed = answer.parsed
+    assert parsed is not None
+    query = Query(watch.origin, watch.destination, day, watch.pax, watch.program)
+    results: dict[str, CheckResult] = {}
+    for item in parsed.slices:
+        if is_single_flight(item, query) and len(item.legs) == 1:
+            leg = item.legs[0]
+            exact = replace(watch, flight=Flight(leg.carrier, leg.number))
+            results.setdefault(leg.code, evaluate(exact, day, answer))
+
+    available = {
+        code: result for code, result in results.items() if result.status is CheckStatus.AVAILABLE
+    }
+    if available:
+        code = min(available, key=lambda c: available[c].miles or 0)
+        return replace(available[code], flight=code, flights=tuple(sorted(available)))
+    # A slice that couldn't be read might be a nonstop with seats, so "no seats" can't be claimed.
+    if parsed.unreadable:
+        reason = parsed.unreadable[0].reason
+        return CheckResult(
+            CheckStatus.UNKNOWN,
+            detail=f"unreadable result that may be a nonstop: {reason}",
+            suspect_parser=True,
+        )
+    unclear = [r for r in results.values() if r.status is CheckStatus.UNKNOWN]
+    if unclear:
+        return unclear[0]
+    if not results:
+        return CheckResult(CheckStatus.NOT_LISTED, detail="no nonstop flights in results")
+    over = [r for r in results.values() if r.miles]
+    if over:
+        return min(over, key=lambda r: r.miles or 0)
+    return CheckResult(CheckStatus.NOT_OFFERED, detail=f"no {watch.cabin.value} seats")
 
 
 def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
@@ -89,6 +129,8 @@ def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     parsed = answer.parsed
     if parsed.site_error:
         return CheckResult(CheckStatus.UNKNOWN, detail=f"site error code {parsed.site_error!r}")
+    if watch.flight.is_any:
+        return _evaluate_any(watch, day, answer)
 
     # A slice we couldn't read might be the watched flight, so "no seats" can't be claimed.
     for broken in parsed.unreadable:

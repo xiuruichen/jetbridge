@@ -6,7 +6,7 @@ import asyncio
 import random
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from jetbridge import updater
 from jetbridge.acquire.fetcher import Fetcher
@@ -38,6 +38,7 @@ from jetbridge.scheduler import (
     is_expired,
     next_visit_at,
     normal_gap_s,
+    opens_on,
     plan_searches,
     search_starts,
     searchable_dates,
@@ -63,6 +64,19 @@ def watching_since(watch: Watch, day: date) -> float:
     """When jetbridge could first have searched for this date on this watch."""
     opened = datetime.combine(search_starts(day, watch.program), datetime.min.time()).timestamp()
     return max(watch.created_at, opened)
+
+
+def never_seen_note(watch: Watch, domain: str, prefix: str = "") -> str:
+    if watch.flight.is_any:
+        return (
+            f"{prefix}No nonstop flight has appeared in {domain}'s results for this route. The "
+            f"airports may be wrong, or {domain} may not sell a nonstop here with these miles."
+        )
+    return (
+        f"{prefix}{watch.flight.code} has never appeared in {domain}'s results for this route. The "
+        f"flight number or route may be wrong, {domain} may not sell this flight with these miles, "
+        "or it may just hide flights with no award space."
+    )
 
 
 def seen_history(store: Store, watch_id: int, day: date) -> list[Seen]:
@@ -154,6 +168,7 @@ class Runner:
             await self.fetcher.close()
 
         self._health_alerts()
+        self._booking_reminders()
         self._digest()
         report.alerts_sent += flush_outbox(self.store, self.sender, self.clock())
         self.store.set("last_tick_at", str(self.clock()))
@@ -374,8 +389,7 @@ class Runner:
                 self.store.enqueue(
                     NewAlert(
                         "blind",
-                        f"jetbridge can't see {watch.flight.code}: no clear answer in "
-                        f"{hours:.0f} hours",
+                        f"jetbridge can't see {watch.name}: no clear answer in {hours:.0f} hours",
                         f"{watch.label} has had no conclusive check since "
                         f"{format_when(last_good)}.\n\nUntil this clears, silence does NOT "
                         "mean there are no seats. Run 'jetbridge doctor', or ask Claude, to see "
@@ -402,6 +416,36 @@ class Runner:
                     ),
                     now,
                 )
+
+    def _booking_reminders(self) -> None:
+        """Say the day before a date should become bookable. This doesn't take any searches."""
+        today = self._today()
+        for watch in self.store.list_watches("active"):
+            for day in upcoming_dates(watch, today):
+                opens = opens_on(day, watch.program)
+                if not opens - timedelta(days=1) <= today <= opens:
+                    continue
+                when = "today" if today == opens else "tomorrow"
+                site = get_site(watch.program)
+                subject = f"{day:%b %d, %Y} should open {when} on {site.label}: {watch.name}"
+                body = (
+                    f"{watch.label} on {day:%b %d, %Y} should become bookable {when} on "
+                    f"{site.label}. This goes by the program's usual booking window, which can be "
+                    "a day or so out, and seats aren't guaranteed.\n\n"
+                    f"Check and book:\n{site.search_url(query_for(watch, day))}\n\n"
+                    "jetbridge will check it again soon after it opens."
+                )
+                for recipient in watch.recipients or (None,):
+                    self.store.enqueue(
+                        NewAlert(
+                            "booking_opens",
+                            subject,
+                            body,
+                            dedupe_key=f"booking_opens:{watch.id}:{day}:{recipient}",
+                            recipient=recipient,
+                        ),
+                        self.clock(),
+                    )
 
     def _note_gap(self) -> None:
         now = self.clock()
@@ -483,12 +527,7 @@ class Runner:
                 if state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER:
                     all_never_seen = False
             if all_never_seen:
-                lines.append(
-                    f"  Note: {watch.flight.code} has never appeared in "
-                    f"{domain}'s results for this route. The flight number or route may be "
-                    f"wrong, {domain} may not sell this flight with these miles, or it may just "
-                    "hide flights with no award space."
-                )
+                lines.append(never_seen_note(watch, domain, "  Note: "))
             lines.append("")
 
         gap = float(self.store.get("longest_gap_s", "0") or 0)

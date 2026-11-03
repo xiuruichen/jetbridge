@@ -89,7 +89,10 @@ PAGE = r"""<!doctype html>
     const known = ["available", "not_offered", "not_listed"].includes(day.status);
     line.className = open ? "open" : known ? "closed" : "";
     line.append(el("span", "dot"));
-    if (open) line.append(el("b", "", "Seats open" + (day.miles ? ": " + miles(day.miles) : "")));
+    if (open) {
+      const where = day.open_flights ? " on " + day.open_flights.join(", ") : "";
+      line.append(el("b", "", "Seats open" + where + (day.miles ? ": " + miles(day.miles) : "")));
+    }
     else if (day.status === "not_offered") line.append("No seats");
     else if (day.status === "not_listed") line.append("Flight not listed");
     else if (day.searching_starts) line.append("Searching starts " + day.searching_starts);

@@ -115,6 +115,7 @@ class Store:
             ("outbox", "recipient", "TEXT"),
             ("observations", "reason", "TEXT"),
             ("watches", "high_priority", "INTEGER NOT NULL DEFAULT 0"),
+            ("date_state", "open_flights", "TEXT NOT NULL DEFAULT '[]'"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -229,6 +230,7 @@ class Store:
             last_conclusive_at=row["last_conclusive_at"],
             conclusive_count=row["conclusive_count"],
             ever_listed=bool(row["ever_listed"]),
+            open_flights=tuple(json.loads(row["open_flights"])),
         )
 
     def commit_check(
@@ -260,8 +262,8 @@ class Store:
             )
             c.execute(
                 "INSERT OR REPLACE INTO date_state (watch_id, day, status, miles, seats_exact,"
-                " last_alert_at, last_check_at, last_conclusive_at, conclusive_count, ever_listed)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                " last_alert_at, last_check_at, last_conclusive_at, conclusive_count, ever_listed,"
+                " open_flights) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     watch_id,
                     day.isoformat(),
@@ -273,6 +275,7 @@ class Store:
                     state.last_conclusive_at,
                     state.conclusive_count,
                     int(state.ever_listed),
+                    json.dumps(list(state.open_flights)),
                 ),
             )
             for alert in alerts:

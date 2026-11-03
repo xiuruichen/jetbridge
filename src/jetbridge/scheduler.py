@@ -126,6 +126,11 @@ def search_starts(day: date, program: str) -> date:
     return day - timedelta(days=get_site(program).booking_window_days + OPENS_EARLY_DAYS)
 
 
+def opens_on(day: date, program: str) -> date:
+    """The day this date should become bookable, going by the program's published window."""
+    return day - timedelta(days=get_site(program).booking_window_days)
+
+
 def is_searchable(day: date, program: str, today: date) -> bool:
     return search_starts(day, program) <= today <= day
 

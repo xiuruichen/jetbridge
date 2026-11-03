@@ -16,7 +16,7 @@ from typing import Any
 from jetbridge import service
 from jetbridge.acquire.governor import PLANNED_DAILY
 from jetbridge.acquire.sites import get_site
-from jetbridge.models import Cabin, Watch
+from jetbridge.models import ANY_FLIGHT, Cabin, Watch
 from jetbridge.scheduler import is_searchable, search_starts, searches_per_day
 from jetbridge.store import Store
 
@@ -301,8 +301,16 @@ def _format_day(day: date) -> str:
     return day.strftime("%a, %b %d, %Y")
 
 
-def review_text(draft: WatchDraft, owner: str, *, editing: bool = False) -> str:
-    """What's about to be saved, with what it costs in searches."""
+def review_text(
+    draft: WatchDraft,
+    owner: str,
+    *,
+    editing: bool = False,
+    flights: tuple[str, ...] = (),
+    cabins: tuple[Cabin, ...] = (),
+) -> str:
+    """What's about to be saved, with what it costs in searches. With several flights or cabins,
+    each combination is its own watch, and they share their searches."""
     days = service.parse_dates(draft.dates or "")
     limit = f"{draft.max_miles:,} miles per person" if draft.max_miles else "no limit"
     addresses = service.parse_recipients(draft.recipients)
@@ -311,9 +319,13 @@ def review_text(draft: WatchDraft, owner: str, *, editing: bool = False) -> str:
     pace = f"about {searches} {site.domain} searches a day" if searches else "none yet"
     if busiest != searches:
         pace += f", up to {busiest} a day close to departure"
+    is_any = draft.flight == ANY_FLIGHT.code
+    named = ", ".join(flights) if flights else ("any nonstop flight" if is_any else draft.flight)
+    cabin = ", ".join(c.value for c in cabins) if cabins else draft.cabin.value
     lines = [
-        f"Flight:      {draft.flight} from {draft.origin} to {draft.destination}",
-        f"Cabin:       {draft.cabin.value}",
+        f"Flight:      {named} from {draft.origin} to {draft.destination}",
+        *(["             Connections don't count."] if is_any else []),
+        f"Cabin:       {cabin}",
         f"Miles:       {site.label}",
         f"Passengers:  {draft.pax}",
         f"Dates:       {_format_day(days[0])}",
@@ -327,6 +339,9 @@ def review_text(draft: WatchDraft, owner: str, *, editing: bool = False) -> str:
         ),
         f"Searching:   {pace}",
     ]
+    if flights or cabins:
+        count = max(len(flights), 1) * max(len(cabins), 1)
+        lines.append(f"             That's {count} watches sharing these searches.")
     today = date.today()
     unopened = [d for d in days if d >= today and not is_searchable(d, draft.program, today)]
     if unopened:

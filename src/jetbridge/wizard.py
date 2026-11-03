@@ -113,7 +113,7 @@ def _ask_typed_flight() -> str | None:
 def _choose_flight(query: Query, cabin: Cabin) -> str | None:
     """A flight number the person typed or picked. None means they stopped."""
     text = typer.prompt(
-        "Flight number if you know it, or press Enter and I'll look up the flights",
+        "Flight number if you know it, 'any' for any nonstop, or press Enter and I'll look them up",
         default="",
         show_default=False,
     ).strip()

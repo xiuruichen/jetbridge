@@ -44,7 +44,8 @@ def launcher_bytes() -> bytes:
     python = environment_python()
     if IS_MAC:
         return f'#!/bin/sh\nexec "{python}" -m jetbridge "$@"\n'.encode()
-    return f'@"{python}" -m jetbridge %*\r\n'.encode("oem", "replace")  # how cmd.exe reads it
+    encoding = "oem" if sys.platform == "win32" else "utf-8"  # oem is how cmd.exe reads it
+    return f'@"{python}" -m jetbridge %*\r\n'.encode(encoding, "replace")
 
 
 def terminal_script(command: str) -> str:

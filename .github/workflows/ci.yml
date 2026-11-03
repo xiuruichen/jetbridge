@@ -18,7 +18,10 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest
+      - run: uv run pytest --junitxml=results.xml
+      - name: Show failed tests without needing to sign in
+        if: failure()
+        run: uv run python tools/ci_failures.py results.xml
 
   # What can be learned about a Mac without airline sites or a person. It never contacts an airline.
   mac-smoke:

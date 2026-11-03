@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="needs Windows PowerShell")
 
 SCRIPT = Path(__file__).parent.parent / "install.ps1"
 

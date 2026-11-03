@@ -8,6 +8,7 @@ It never contacts an airline, and it leaves nothing installed. A real desktop ma
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 from jetbridge import autorun, power, service
@@ -56,14 +57,19 @@ async def chrome_window() -> str:
     return f"window at {x},{y} on a {width}x{height} screen: {'off' if off else 'ON'} screen"
 
 
+def show(text: str) -> None:
+    # As an annotation on GitHub, which can be read without signing in.
+    print(f"::notice title=Mac smoke test::{text}" if os.environ.get("GITHUB_ACTIONS") else text)
+
+
 def main() -> None:
-    print(f"platform: {sys.platform}")
-    print(f"background task: {background_task()}")
-    print(f"keep awake: {keep_awake()}")
+    show(f"platform: {sys.platform}")
+    show(f"background task: {background_task()}")
+    show(f"keep awake: {keep_awake()}")
     try:
-        print(f"chrome: {asyncio.run(chrome_window())}")
+        show(f"chrome: {asyncio.run(chrome_window())}")
     except Exception as exc:  # the point is to report what happens here, whatever that is
-        print(f"chrome: couldn't run here: {type(exc).__name__}: {exc}")
+        show(f"chrome: couldn't run here: {type(exc).__name__}: {exc}")
 
 
 if __name__ == "__main__":

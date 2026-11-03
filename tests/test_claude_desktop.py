@@ -26,6 +26,7 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(local))
     monkeypatch.setenv("APPDATA", str(roaming))
     monkeypatch.delenv("JETBRIDGE_HOME", raising=False)
+    monkeypatch.setattr(desktop.platforms, "IS_MAC", False)  # test_mac.py covers a Mac
     monkeypatch.setattr(desktop, "server_program", lambda: program)
     return tmp_path
 

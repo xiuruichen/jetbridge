@@ -19,6 +19,12 @@ DAY = date(2027, 5, 21)
 START = datetime(2027, 1, 10, 9, 0).timestamp()
 
 
+class _NothingLoaded:
+    """What launchctl says in tests: nothing is installed, and nothing can be."""
+
+    returncode, stdout, stderr = 1, "", "launchctl isn't available in tests"
+
+
 @pytest.fixture(autouse=True)
 def nothing_real(monkeypatch, tmp_path):
     """Tests run offline: none can open Chrome, send anything, change this computer's settings or
@@ -37,7 +43,7 @@ def nothing_real(monkeypatch, tmp_path):
     monkeypatch.setattr("smtplib.SMTP_SSL", refuse)
     monkeypatch.setattr(power, "_powercfg", no_powercfg)
     monkeypatch.setattr(push, "_post", refuse)
-    monkeypatch.setattr(launchd, "_launchctl", refuse)
+    monkeypatch.setattr(launchd, "_launchctl", lambda *_: _NothingLoaded())
     monkeypatch.setattr(power, "_pmset", no_powercfg)
     monkeypatch.setattr(platforms, "open_private_window", refuse)
     monkeypatch.setattr(updater, "_fetch_latest", lambda: None)

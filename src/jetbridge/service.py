@@ -285,16 +285,31 @@ def welcome_body(watch: Watch) -> str:
     )
 
 
-def welcome_new_recipients(store: Store, watch: Watch, owner: str | None, now: float) -> list[str]:
+def _known_recipients(store: Store, leaving_out: int | None = None) -> set[str]:
+    """Everyone already getting alerts or already welcomed. Someone on a watch from before welcome
+    notes existed is known too, so they don't get told they've just been added."""
+    welcomed = {
+        row["recipient"]
+        for row in store.conn.execute("SELECT recipient FROM outbox WHERE kind='welcome'")
+    }
+    current = {
+        address
+        for watch in store.list_watches()
+        if watch.id != leaving_out
+        for address in watch.recipients
+    }
+    return welcomed | current
+
+
+def welcome_new_recipients(
+    store: Store, watch: Watch, owner: str | None, now: float, known: set[str] | None = None
+) -> list[str]:
     """Queue one note for each person new to jetbridge's alerts, and return who they are.
 
     A person only ever gets one, however many watches they're added to. It also shows up a bad
     address before a real alert goes missing.
     """
-    already = {
-        row["recipient"]
-        for row in store.conn.execute("SELECT recipient FROM outbox WHERE kind='welcome'")
-    }
+    already = known if known is not None else _known_recipients(store, leaving_out=watch.id)
     new = [a for a in watch.recipients if a != owner and a not in already]
     for address in new:
         store.enqueue(
@@ -324,10 +339,11 @@ def set_recipients(
     store: Store, watch: Watch, recipients: tuple[str, ...]
 ) -> tuple[Watch, list[str]]:
     """Change who a watch alerts. Returns the watch and who'll get a welcome note."""
+    known = _known_recipients(store)  # before the change, so this watch's own list counts
     store.set_recipients(watch.id, recipients)
     updated = store.get_watch(watch.id)
     assert updated is not None
-    return updated, welcome_new_recipients(store, updated, _owner_address(), time.time())
+    return updated, welcome_new_recipients(store, updated, _owner_address(), time.time(), known)
 
 
 @dataclass(frozen=True)

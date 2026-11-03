@@ -792,7 +792,7 @@ def review_watch_change(
     return {
         "changed": False,
         "change_id": change_id,
-        "review": drafts.review_text(draft, _owner_address() or "you"),
+        "review": drafts.review_text(draft, _owner_address() or "you", editing=True),
         "note": "Its history is kept.",
     }
 

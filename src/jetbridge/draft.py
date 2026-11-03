@@ -301,7 +301,7 @@ def _format_day(day: date) -> str:
     return day.strftime("%a, %b %d, %Y")
 
 
-def review_text(draft: WatchDraft, owner: str) -> str:
+def review_text(draft: WatchDraft, owner: str, *, editing: bool = False) -> str:
     """What's about to be saved, with what it costs in searches."""
     days = service.parse_dates(draft.dates or "")
     limit = f"{draft.max_miles:,} miles per person" if draft.max_miles else "no limit"
@@ -322,7 +322,7 @@ def review_text(draft: WatchDraft, owner: str) -> str:
         f"Alerts go to: {', '.join(addresses) if addresses else owner}",
         *(
             ["             Anyone new gets one short note saying they were added."]
-            if any(address != owner for address in addresses)
+            if not editing and any(address != owner for address in addresses)
             else []
         ),
         f"Searching:   {pace}",

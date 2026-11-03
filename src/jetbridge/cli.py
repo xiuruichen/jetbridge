@@ -221,7 +221,9 @@ def watch_edit(
         if not yes:
             owner = mail.load_config()
             typer.echo("\nHere's how it will look. Its history is kept:")
-            typer.echo(drafts.review_text(draft, owner.to_address if owner else "you"))
+            typer.echo(
+                drafts.review_text(draft, owner.to_address if owner else "you", editing=True)
+            )
             try:
                 if not typer.confirm("\nSave this change?", default=False):
                     typer.echo("OK, nothing was changed.")

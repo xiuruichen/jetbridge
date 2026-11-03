@@ -253,6 +253,52 @@ class _Accepts:
         pass
 
 
+# ---- people already on a watch before welcome notes existed ----------------------------
+def test_people_already_on_the_watch_get_no_note_when_someone_joins(store, clock, monkeypatch):
+    monkeypatch.setattr(service, "_owner_address", lambda: "me@z.com")
+    watch = add_cx(store, clock, recipients=("old1@x.com", "old2@x.com"))  # never welcomed
+    _, welcomed = service.set_recipients(store, watch, ("old1@x.com", "old2@x.com", "new@y.com"))
+    assert welcomed == ["new@y.com"]
+    assert [item.recipient for item in _pending(store)] == ["new@y.com"]
+
+
+def test_someone_already_on_another_watch_counts_as_known(store, clock, monkeypatch):
+    monkeypatch.setattr(service, "_owner_address", lambda: "me@z.com")
+    add_cx(store, clock, recipients=("old@x.com",))
+    second = add_cx(store, clock)
+    _, welcomed = service.set_recipients(store, second, ("old@x.com",))
+    assert welcomed == []
+
+
+def test_saving_a_new_watch_only_notes_people_new_to_all_watches(store, monkeypatch, clock):
+    monkeypatch.setattr(service, "_owner_address", lambda: "me@z.com")
+    add_cx(store, clock, recipients=("old@x.com",))
+    service.create_watch(
+        store,
+        flight="CX805",
+        origin="JFK",
+        destination="HKG",
+        dates=(date.today() + timedelta(days=30)).isoformat(),
+        cabin="business",
+        recipients="old@x.com,new@y.com",
+    )
+    assert [item.recipient for item in _pending(store)] == ["new@y.com"]
+
+
+def test_editing_a_watch_sends_no_notes(store, clock, monkeypatch):
+    monkeypatch.setattr(service, "_owner_address", lambda: "me@z.com")
+    day = date.today() + timedelta(days=30)
+    watch = add_cx(store, clock, dates=(day,), recipients=("old@x.com",))
+    service.change_watch(store, watch, dates=day.isoformat(), checks_per_day=4, max_miles=90_000)
+    assert _pending(store) == []
+
+
+def test_an_edit_review_does_not_promise_a_note():
+    day = (date.today() + timedelta(days=30)).isoformat()
+    others = draft.WatchDraft("JFK", "HKG", day, "CX805", recipients="ann@x.com")
+    assert "one short note" not in draft.review_text(others, "me@z.com", editing=True)
+
+
 # ---- sleep ----------------------------------------------------------------------------
 QUERY_ENGLISH = """Power Setting GUID: 29f6c1db-86da-48c5-9fdb-f2b67b1f44da  (Sleep after)
   Possible Settings units: Seconds

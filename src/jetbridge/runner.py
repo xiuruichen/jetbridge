@@ -21,6 +21,7 @@ from jetbridge.alerts import (
     query_for,
     render_availability,
 )
+from jetbridge.insights import Coverage, coverage
 from jetbridge.matcher import evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
 from jetbridge.notify.email import Sender, flush_outbox
@@ -30,6 +31,8 @@ from jetbridge.scheduler import (
     is_expired,
     longest_gap_s,
     next_check_at,
+    search_starts,
+    searchable_dates,
     upcoming_dates,
 )
 from jetbridge.store import NewAlert, Store
@@ -43,6 +46,30 @@ DRIFT_ALERT_AFTER = 2  # consecutive suspicious checks
 NEVER_SEEN_AFTER = 6  # conclusive checks with the flight never listed
 OFFLINE_NOTE_AFTER_S = 6 * 3600
 DIGEST_HOUR = 8
+COVERAGE_PERIOD_S = 24 * 3600
+
+
+def watching_since(watch: Watch, day: date) -> float:
+    """When jetbridge could first have searched for this date on this watch."""
+    opened = datetime.combine(search_starts(day, watch.program), datetime.min.time()).timestamp()
+    return max(watch.created_at, opened)
+
+
+def watch_coverage(store: Store, watch: Watch, now: float) -> Coverage | None:
+    """The last 24 hours of the least-watched date, so a good date can't hide a bad one."""
+    worst: Coverage | None = None
+    today = datetime.fromtimestamp(now).date()
+    for day in searchable_dates(watch, today):
+        start = max(now - COVERAGE_PERIOD_S, watching_since(watch, day))
+        found = coverage(
+            store.clear_answers(watch.id, day, start),
+            start,
+            now,
+            longest_gap_s(watch.checks_per_day),
+        )
+        if found and (worst is None or found.share < worst.share):
+            worst = found
+    return worst
 
 
 @dataclass
@@ -232,11 +259,11 @@ class Runner:
         now = self.clock()
         today = self._today()
         for watch in self.store.list_watches("active"):
-            days = upcoming_dates(watch, today)
+            days = searchable_dates(watch, today)
             if not days:
                 continue
             last_good = max(
-                self.store.date_state(watch.id, d).last_conclusive_at or watch.created_at
+                self.store.date_state(watch.id, d).last_conclusive_at or watching_since(watch, d)
                 for d in days
             )
             # A slow watch is normally quiet for longer, and that alone isn't a problem.
@@ -318,8 +345,17 @@ class Runner:
             lines.append(f"{watch.label} via {get_site(watch.program).label} (watch {watch.id})")
             lines.append(f"  Seat alerts go to: {', '.join(watch.recipients) or 'you'}")
             lines.append(f"  Last 24 hours: {good} clear answers, {unknown} inconclusive")
+            watched = watch_coverage(self.store, watch, now)
+            if watched is not None:
+                lines.append(f"  Proof of watching: {watched.text}")
             all_never_seen = True
+            searchable = searchable_dates(watch, today)
             for day in upcoming_dates(watch, today):
+                if day not in searchable:
+                    starts = search_starts(day, watch.program)
+                    lines.append(f"  {day:%b %d}: searching starts {starts:%b %d, %Y}")
+                    all_never_seen = False
+                    continue
                 state = self.store.date_state(watch.id, day)
                 if state.status is CheckStatus.AVAILABLE:
                     open_count += 1

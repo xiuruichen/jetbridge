@@ -11,7 +11,7 @@ from datetime import date, datetime
 import typer
 import typer.core
 
-from jetbridge import claude_desktop, headlines, service, winsched, wizard
+from jetbridge import claude_desktop, headlines, power, service, winsched, wizard
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
 from jetbridge import uninstall as removal
@@ -205,10 +205,13 @@ def watch_recipients(
     watch = _require(store, watch_id)
     if addresses is not None:
         try:
-            store.set_recipients(watch_id, service.parse_recipients(addresses))
+            watch, welcomed = service.set_recipients(
+                store, watch, service.parse_recipients(addresses)
+            )
         except ValueError as exc:
             raise _fail(str(exc)) from exc
-        watch = _require(store, watch_id)
+        for address in welcomed:
+            typer.echo(f"{address} will get one short note saying they were added.")
     typer.echo(f"Seat alerts for watch {watch_id} go to: {_recipients_text(watch)}")
 
 
@@ -532,6 +535,28 @@ def start() -> None:
             "\n'A clear answer from an airline' can say FAIL until the first check finishes, which "
             "is normal."
         )
+    if added:
+        _first_checks(store, added)
+
+
+def _first_checks(store: Store, watches: list[Watch]) -> None:
+    """Check each new watch now, so a wrong flight or route shows up today rather than days on."""
+    typer.echo("\nChecking now that the site can see your flight. This takes a minute or two...")
+    for watch in watches:
+        try:
+            report = service.live_tick(store, only_watch=watch.id)
+        except service.TickBusy:
+            typer.echo(f"{watch.flight.code}: a check is already running, so this one runs soon.")
+            continue
+        except Exception as exc:  # the watch is saved, and scheduled checks will still try
+            typer.echo(f"{watch.flight.code}: couldn't check it just now ({exc}). It'll try again.")
+            continue
+        latest = {line.day: line.result for line in report.checks}
+        if not latest:
+            typer.echo(f"{watch.flight.code}: its dates can't be searched yet.")
+        for day, result in latest.items():
+            means = service.first_check_means(watch, result)
+            typer.echo(f"{watch.flight.code} {day:%b %d}: {means}")
 
 
 # ---- claude ---------------------------------------------------------------------------
@@ -620,6 +645,24 @@ def uninstall_command(
 def claude_status() -> None:
     """Show whether Claude Desktop is connected to jetbridge."""
     typer.echo(f"Claude Desktop: {claude_desktop.status().value}")
+
+
+@app.command("keep-awake")
+def keep_awake(state: str = typer.Argument(..., help="on or off")) -> None:
+    """Stop this PC sleeping while it's plugged in, so checks keep running. Off puts it back."""
+    if state not in ("on", "off"):
+        raise _fail("say on or off")
+    store = service.open_store()
+    try:
+        if state == "on":
+            power.keep_awake(store)
+            typer.echo("This PC now stays awake while plugged in. It can still sleep on battery.")
+        elif power.restore(store):
+            typer.echo("Your PC's sleep settings are back as they were.")
+        else:
+            typer.echo("jetbridge hasn't changed your sleep settings, so there's nothing to undo.")
+    except OSError as exc:
+        raise _fail(str(exc)) from exc
 
 
 # ---- schedule -------------------------------------------------------------------------

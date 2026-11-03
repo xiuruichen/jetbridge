@@ -11,7 +11,7 @@ import winreg
 
 import keyring
 
-from jetbridge import claude_desktop, winsched
+from jetbridge import claude_desktop, power, service, winsched
 from jetbridge.notify import email as mail
 from jetbridge.paths import home
 
@@ -43,6 +43,16 @@ def remove_everything() -> list[str]:
             report.append("Stopped automatic checks.")
         except RuntimeError as exc:
             report.append(f"Couldn't remove the scheduled task, so remove 'jetbridge-tick': {exc}")
+
+    try:
+        store = service.open_store()
+        try:
+            if power.restore(store):
+                report.append("Put your PC's sleep settings back as they were.")
+        finally:
+            store.close()
+    except OSError as exc:
+        report.append(f"Couldn't put your PC's sleep settings back: {exc}")
 
     try:
         if claude_desktop.disconnect():

@@ -16,6 +16,7 @@ from typing import Any
 from jetbridge import service
 from jetbridge.acquire.sites import get_site
 from jetbridge.models import Cabin, Watch
+from jetbridge.scheduler import is_searchable, search_starts
 from jetbridge.store import Store
 
 DEFAULT_CHECKS_PER_DAY = 6
@@ -156,7 +157,8 @@ class WatchDraft:
     @property
     def searches_per_day(self) -> int:
         days = service.parse_dates(self.dates or "")
-        return sum(day >= date.today() for day in days) * self.checks_per_day
+        today = date.today()
+        return sum(is_searchable(day, self.program, today) for day in days) * self.checks_per_day
 
 
 def resolve_airport(text: str) -> tuple[str, ...]:
@@ -310,8 +312,21 @@ def review_text(draft: WatchDraft, owner: str) -> str:
         *(f"             {_format_day(day)}" for day in days[1:]),
         f"Price limit: {limit}",
         f"Alerts go to: {', '.join(addresses) if addresses else owner}",
+        *(
+            ["             Anyone new gets one short note saying they were added."]
+            if any(address != owner for address in addresses)
+            else []
+        ),
         f"Searching:   about {searches} {site.domain} searches a day",
     ]
+    today = date.today()
+    unopened = [d for d in days if d >= today and not is_searchable(d, draft.program, today)]
+    if unopened:
+        starts = search_starts(unopened[0], draft.program)
+        lines.append(
+            f"             {site.domain} doesn't show {_format_day(unopened[0])} yet, so searching "
+            f"for it starts {starts:%b %d, %Y}."
+        )
     if searches > HIGH_VOLUME_SEARCHES:
         lines.append(
             f"             That's a lot, and more searching makes a {site.domain} block more "

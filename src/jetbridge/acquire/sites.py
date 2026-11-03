@@ -22,6 +22,7 @@ class Site:
     fetch: Callable[[Any, Query, Gate], Awaitable[RawResponse]]
     parse: Callable[[str], ParsedResponse]
     search_url: Callable[[Query], str]
+    booking_window_days: int  # how far ahead this program shows flights
     # A second way to get the answer when the first returned an unexpected page.
     fallback: Callable[[Any, Query], Awaitable[RawResponse]] | None = None
 
@@ -38,6 +39,7 @@ SITES: dict[str, Site] = {
             fetch=american.fetch,
             parse=american.parse,
             search_url=american.search_url,
+            booking_window_days=331,
             fallback=american.fetch_navigate,
         ),
         Site(
@@ -49,6 +51,7 @@ SITES: dict[str, Site] = {
             fetch=delta.fetch,
             parse=delta.parse,
             search_url=delta.search_url,
+            booking_window_days=331,
         ),
         Site(
             id=united.SITE,
@@ -59,6 +62,7 @@ SITES: dict[str, Site] = {
             fetch=united.fetch,
             parse=united.parse,
             search_url=united.search_url,
+            booking_window_days=337,
         ),
     )
 }

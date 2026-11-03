@@ -10,8 +10,9 @@ from typer.testing import CliRunner
 
 from jetbridge import cli, draft, service, winsched
 from jetbridge.cli import app
-from jetbridge.models import AnswerKind, Cabin, CheckStatus, Query, SearchAnswer
+from jetbridge.models import AnswerKind, Cabin, CheckResult, CheckStatus, Query, SearchAnswer
 from jetbridge.notify import email as mail
+from jetbridge.runner import CheckLine, TickReport
 from jetbridge.service import FlightOption, FlightSearch, TickBusy, open_store
 
 TODAY = date(2026, 11, 1)
@@ -44,6 +45,7 @@ def ready(tmp_path, monkeypatch):
     monkeypatch.setattr(mail.keyring, "get_password", lambda *a: "secret")
     monkeypatch.setattr(winsched, "is_installed", lambda: True)
     monkeypatch.setattr(cli, "date", type("D", (), {"today": staticmethod(lambda: TODAY)}))
+    monkeypatch.setattr(service, "live_tick", lambda *_, **__: TickReport())
     open_store().set("risk_accepted", "1")
 
 
@@ -432,3 +434,32 @@ def test_search_count_leaves_out_dates_that_have_passed(monkeypatch):
         checks_per_day=6,
     )
     assert watch.searches_per_day == 12
+
+
+def test_start_checks_a_new_watch_and_says_what_it_means(monkeypatch):
+    def tick(store, only_watch=None):
+        watch = store.get_watch(only_watch)
+        result = CheckResult(CheckStatus.NOT_LISTED)
+        return TickReport(checks=[CheckLine(watch.id, watch.label, watch.dates[0], result)])
+
+    monkeypatch.setattr(service, "live_tick", tick)
+    picker(monkeypatch, FlightSearch())
+    result = cli_runner.invoke(app, ["start"], input=lines(*ROUTE, "CX845", "", "", "y", "n"))
+    assert "wasn't in its results" in result.output
+
+
+def test_a_failed_first_check_keeps_the_watch(monkeypatch):
+    def tick(*_, **__):
+        raise RuntimeError("Chrome wouldn't start")
+
+    monkeypatch.setattr(service, "live_tick", tick)
+    picker(monkeypatch, FlightSearch())
+    result = cli_runner.invoke(app, ["start"], input=lines(*ROUTE, "CX845", "", "", "y", "n"))
+    assert result.exit_code == 0 and "It'll try again" in result.output
+    assert len(open_store().list_watches()) == 1
+
+
+def test_no_first_check_when_nothing_was_saved(monkeypatch):
+    monkeypatch.setattr(service, "live_tick", lambda *_, **__: pytest.fail("searched"))
+    picker(monkeypatch, FlightSearch())
+    cli_runner.invoke(app, ["start"], input=lines(*ROUTE, "CX845", "", "", "n", "n"))

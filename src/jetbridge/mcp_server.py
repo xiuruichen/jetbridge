@@ -23,14 +23,15 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from jetbridge import doctor, headlines, service, winsched, wizard
+from jetbridge import doctor, headlines, power, service, winsched, wizard
 from jetbridge import draft as drafts
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES, parse_program
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
 from jetbridge.notify import email as mail
-from jetbridge.runner import NEVER_SEEN_AFTER
+from jetbridge.runner import NEVER_SEEN_AFTER, watch_coverage
+from jetbridge.scheduler import is_searchable, search_starts
 
 server = MCPServer(
     "jetbridge",
@@ -50,7 +51,8 @@ server = MCPServer(
         "City names are fine; if a city has several airports, ask which. If they don't know the "
         "flight number, offer find_flights, then let them choose. Call review_watch, show the "
         "review word for word, and call confirm_watch only after they say yes to it. If they want "
-        "a change, call review_watch again.\n\n"
+        "a change, call review_watch again. Right after saving, call check_now and tell them what "
+        "its means says, so a wrong flight or route shows up straight away.\n\n"
         "Changing a watch's flight, dates, cabin, program, party size, price limit or checks per "
         "day: review and confirm the new version, then offer to remove the old one. Only "
         "recipients can be changed in place. To add or remove someone from alerts, use "
@@ -58,7 +60,9 @@ server = MCPServer(
         "Removing a watch takes two steps too: review_watch_removal, show what it says, and "
         "confirm_watch_removal only after a yes. Before turning off automatic checks, say that no "
         "watch will be checked until they're turned back on, and wait for a yes. Read addresses "
-        "back before adding someone to alerts or sending them a test email.\n\n"
+        "back before adding someone to alerts or sending them a test email. Say that anyone new "
+        "gets one short note saying they were added. Only change the PC's sleep setting after they "
+        "say yes to it.\n\n"
         "A live check or flight lookup can take a few minutes: if an answer says finished false, "
         "tell them it's still going and call check_result with its check_id until it finishes. A "
         "check can email everyone on that watch if seats have opened, so say so if they're "
@@ -118,7 +122,10 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
     never_seen = True
     for day in watch.dates:
         state = store.date_state(watch.id, day)
-        if day >= today and (state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER):
+        unopened = day >= today and not is_searchable(day, watch.program, today)
+        if day >= today and (
+            unopened or state.ever_listed or state.conclusive_count < NEVER_SEEN_AFTER
+        ):
             never_seen = False
         view: dict[str, Any] = {
             "date": day.isoformat(),
@@ -130,10 +137,16 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
             "clear_answers_so_far": state.conclusive_count,
             "date_has_passed": day < today,
         }
+        if unopened:
+            view["status"] = "not searched yet"
+            view["searching_starts"] = search_starts(day, watch.program).strftime("%b %d, %Y")
         if state.status is CheckStatus.AVAILABLE and day >= today:
             view.update(_booking(_watch_query(watch, day)))
         days.append(view)
     extra: dict[str, Any] = {}
+    watched = watch_coverage(store, watch, time.time()) if watch.status == "active" else None
+    if watched is not None:
+        extra["proof_of_watching"] = watched.text
     if never_seen and any(day >= today for day in watch.dates):
         domain = SITES[watch.program].domain
         extra["note"] = (
@@ -441,12 +454,22 @@ def _check_results(watch: Watch) -> dict[str, Any]:
             "miles": line.result.miles,
             "seats": line.result.seats_text,
             "detail": line.result.detail,
+            "means": service.first_check_means(watch, line.result),
         }
         if line.result.status is CheckStatus.AVAILABLE:
             row.update(_booking(_watch_query(watch, line.day)))
         results.append(row)
+    today = date.today()
     return {
         "results": results,
+        "not_searched_yet": [
+            {
+                "date": day.isoformat(),
+                "searching_starts": search_starts(day, watch.program).strftime("%b %d, %Y"),
+            }
+            for day in watch.dates
+            if day >= today and not is_searchable(day, watch.program, today)
+        ],
         "emails_sent": report.alerts_sent,
         "stopped_early": report.stopped_early,
     }
@@ -571,8 +594,8 @@ def set_recipients(watch_id: int, notify: str, action: str = "replace") -> dict[
         raise ToolError("action must be add, remove or replace")
     # A list of just the owner is stored as empty, which is how a watch says "the owner".
     recipients = () if wanted == [owner] else service.parse_recipients(",".join(wanted))
-    service.open_store().set_recipients(watch_id, recipients)
-    return _watch_view(_require_watch(watch_id))
+    updated, welcomed = service.set_recipients(service.open_store(), watch, recipients)
+    return {**_watch_view(updated), "will_get_a_short_note": welcomed}
 
 
 @_tool()
@@ -696,6 +719,22 @@ def set_automatic_checks(on: bool) -> dict[str, Any]:
 
 # ---- health ---------------------------------------------------------------------------
 OVERDUE_S = 3600  # the scheduled task runs every 15 minutes
+
+
+@_tool()
+def set_keep_awake(on: bool) -> dict[str, Any]:
+    """Stop this PC sleeping while it's plugged in, so checks keep running, or put its sleep
+    settings back. Battery settings never change. Call this only after the person says yes."""
+    store = service.open_store()
+    try:
+        if on:
+            power.keep_awake(store)
+        else:
+            power.restore(store)
+    except OSError as exc:
+        raise ToolError(f"Windows wouldn't change that: {exc}") from exc
+    timers = power.plugged_in_timers()
+    return {"stays_awake_while_plugged_in": bool(timers and timers.stays_awake)}
 
 
 @_tool(read_only=True)

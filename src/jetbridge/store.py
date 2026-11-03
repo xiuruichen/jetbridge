@@ -263,6 +263,21 @@ class Store:
             )
         )
 
+    def clear_answers(self, watch_id: int, day: date, since: float) -> list[float]:
+        """When this date got a clear answer since then, plus the last one before that."""
+        where = "watch_id=? AND day=? AND status!=?"
+        args = (watch_id, day.isoformat(), CheckStatus.UNKNOWN.value)
+        before = self.conn.execute(
+            f"SELECT MAX(observed_at) AS t FROM observations WHERE {where} AND observed_at<?",
+            (*args, since),
+        ).fetchone()["t"]
+        rows = self.conn.execute(
+            f"SELECT observed_at FROM observations WHERE {where} AND observed_at>=?"
+            " ORDER BY observed_at",
+            (*args, since),
+        )
+        return [*([before] if before is not None else []), *(r["observed_at"] for r in rows)]
+
     def count_recent(self, watch_id: int, status: CheckStatus, since: float) -> int:
         row = self.conn.execute(
             "SELECT COUNT(*) AS n FROM observations WHERE watch_id=? AND status=?"

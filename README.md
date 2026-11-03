@@ -142,8 +142,8 @@ numbers. Some examples:
 - **Making changes:** "Pause my AA100 watch", "Start it again", "Delete it", "Also alert
   ann@example.com" or "Stop alerting Ann." To change dates or a cabin, just ask: Claude adds the new version and offers to
   remove the old one, whose history goes with it.
-- **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND" or
-  "Turn off automatic checks."
+- **Settings:** "Turn off the daily summary", "Make the seats-open headline say DEAL FOUND", "Turn
+  off automatic checks" or "Keep this PC awake while it's plugged in."
 - **When something seems wrong:** "Is my watcher healthy?" or "Why aren't I getting alerts?"
 
 ### What to expect
@@ -154,6 +154,8 @@ numbers. Some examples:
 - **Your Gmail password never goes in the chat.** Claude opens a small private window on your PC, and
   the password goes straight to Windows Credential Manager. Never paste it into a chat.
 - **Automatic checks turn on by themselves** when you save your first flight.
+- **You find out straight away if a watch looks wrong.** Claude checks a new watch right after saving
+  it, and tells you if the site can't see that flight.
 - **Live checks take a while.** A check can take a few minutes, because Chrome has to start and load
   the airline's site. Claude will say when it's still going, and may ask permission again to collect
   the answer. When seats are open, it gives you the booking link.
@@ -356,6 +358,9 @@ your own address to the list.
 
 A few things to know:
 
+- **Welcome note:** the first time you add someone, they get one short email saying what it's for
+  and asking them to mark it "not spam". If Gmail refuses the address, you find out before a real
+  alert goes missing.
 - **Privacy:** each person gets a separate email and can't see who else is on the list. Your Gmail
   address is the sender, and replies come to you.
 - **Footer:** emails to other people say that someone added them to a flight watch, and to reply if
@@ -404,6 +409,9 @@ date as closed.
 | **jetbridge daily** | A summary, on the first run after 8 AM |
 
 If seats appear but are gone by the re-check, it's logged in `history` and no email is sent.
+
+The daily summary also shows proof of watching for each flight: how many of the last 24 hours it
+stayed on schedule, and the longest gap between clear answers.
 
 **If the daily email stops arriving, the watcher isn't running.** The PC can't send anything
 while it's off, so that missing email is your warning. To turn the summary off, run
@@ -464,8 +472,9 @@ After sleep or downtime it runs one catch-up check, never a burst of missed ones
 ## Limitations
 
 - **It only runs while this PC is on, awake and logged in.** Chrome needs a desktop session, so
-  checks stop while the PC sleeps or is signed out. To catch seats overnight, set Windows sleep
-  to **Never** in *Settings > System > Power*.
+  checks stop while the PC sleeps or is signed out. To catch seats overnight, run `jetbridge
+  keep-awake on`, which stops it sleeping while plugged in. `jetbridge keep-awake off` puts your old
+  settings back, and battery settings never change. `doctor` tells you if sleep would stop checks.
 - **Short-lived seats can be missed.** Checks are hours apart, so seats that open and close between
   them are never seen. More checks per day narrows that gap but raises the risk of a block.
 - **A flight that's `not_listed` isn't necessarily wrong.** Sites may leave out flights with no
@@ -479,8 +488,9 @@ After sleep or downtime it runs one catch-up check, never a burst of missed ones
   shows a fare jetbridge can't place in a cabin, seats it can read still alert you, and the rest
   show as `unknown` with the fare named. On Delta, a partner's top cabin is read from Delta's
   business column, so a partner's first class would show as `business`.
-- **Dates too far ahead.** Airlines only open their schedules so far in advance. united.com has
-  answered far-off dates with an empty reply, which shows as `unknown` until the date comes into range.
+- **Dates too far ahead.** Programs only show flights so far in advance: about 331 days for American
+  and Delta, and 337 for United. jetbridge doesn't search a date until 3 days before it should open,
+  and the review tells you when that is.
 - **Sites can change without notice.** If a site's pages change, its checks turn `unknown`, and you
   get an email saying so, but that program won't work again until its parser is updated. Other
   programs keep working.
@@ -530,6 +540,7 @@ folder. Add `--help` to any command for details.
 | `history ID [--limit N]` | Past results for a watch |
 | `check ID` | Check one active watch now, still within the rate limit |
 | `doctor` | Find out what's wrong |
+| `keep-awake on` / `off` | Stop this PC sleeping while plugged in, or put its settings back |
 | `uninstall` | Remove jetbridge's checks, watches, settings and saved password |
 | `--version` | Show the version |
 | `notify setup` | Save Gmail details and send a test email |
@@ -630,7 +641,8 @@ uv run ruff format .
 |---|---|
 | `src/jetbridge/matcher.py` | Turns a site's answer into a result for one flight (pure) |
 | `src/jetbridge/alerts.py` | Alert rules and email text (pure) |
-| `src/jetbridge/scheduler.py` | What's due, timing and shared searches (pure) |
+| `src/jetbridge/scheduler.py` | What's due, booking windows, timing and shared searches (pure) |
+| `src/jetbridge/insights.py` | What a watch's own record shows (pure) |
 | `src/jetbridge/runner.py` | One full run: check, confirm, alert, report health |
 | `src/jetbridge/store.py` | SQLite storage and the email queue |
 | `src/jetbridge/acquire/american.py`, `delta.py`, `united.py` | Each site's requests and response parsing |
@@ -641,7 +653,7 @@ uv run ruff format .
 | `src/jetbridge/notify/email.py` | Gmail sending and queue flushing |
 | `src/jetbridge/winsched.py` | The Windows scheduled task |
 | `src/jetbridge/cli.py`, `mcp_server.py`, `service.py` | Commands, Claude tools and shared wiring |
-| `src/jetbridge/claude_desktop.py`, `doctor.py`, `uninstall.py` | Connecting Claude, health checks, removal |
+| `src/jetbridge/claude_desktop.py`, `doctor.py`, `power.py`, `uninstall.py` | Connecting Claude, health checks, sleep settings, removal |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to get involved, and [SECURITY.md](SECURITY.md) for how
 your details are handled and how to report a problem.

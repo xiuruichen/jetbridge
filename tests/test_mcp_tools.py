@@ -75,6 +75,7 @@ async def test_every_command_has_a_way_in_from_chat():
         names = {tool.name for tool in (await client.list_tools()).tools}
     assert names == {
         "get_started",
+        "set_keep_awake",
         "accept_notice",
         "open_email_setup",
         "send_test_email",

@@ -19,7 +19,8 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 (Chrome), `fetcher.py` · `notify/email.py` Gmail and outbox · `winsched.py` scheduled task ·
 `draft.py` a watch being entered, friendly input · `wizard.py` `jetbridge start` questions ·
 `headlines.py` custom alert wording · `service.py` shared wiring · `cli.py`, `mcp_server.py` ·
-`claude_desktop.py` connects Claude Desktop · `doctor.py` health checks · `uninstall.py` removal.
+`claude_desktop.py` connects Claude Desktop · `doctor.py` health checks · `uninstall.py` removal ·
+`insights.py` what a watch's record shows (pure) · `power.py` sleep settings.
 
 ## Invariants (do not break)
 - Only a positively recognized answer can mean "no seats". Blocks, errors, site error codes,
@@ -60,5 +61,12 @@ an optional layer through the `jetbridge` MCP server and is never needed for a c
 - Claude Desktop can run two copies of the MCP server and restart them, so anything a later tool
   call needs, such as a review waiting for a yes, is saved in the store, not in memory.
 - Adding someone to a watch's alerts never drops anyone: `set_recipients` adds, removes or replaces.
+- Tests never reach anything real. `conftest.py` makes opening Chrome, sending email and running
+  powercfg fail, so anything new that calls `service.live_tick` needs a fake in its tests.
+- A date isn't searched until `scheduler.is_searchable`, and an unopened date never counts toward
+  the "no clear answer" warning. Insights report what was seen and never predict.
+- Sleep settings only change after a yes, only the plugged-in ones, and are restored on undo or
+  uninstall.
+- Someone added to alerts gets one welcome note ever, through the outbox, naming nobody else.
 - Personal details (addresses, watches, passwords) stay in the state folder, never in this repo.
 - The Gmail app password stays in Windows Credential Manager, never in files or logs.

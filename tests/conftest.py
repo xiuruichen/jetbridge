@@ -19,6 +19,23 @@ DAY = date(2027, 5, 21)
 START = datetime(2027, 1, 10, 9, 0).timestamp()
 
 
+@pytest.fixture(autouse=True)
+def nothing_real(monkeypatch):
+    """Tests run offline: none can open Chrome, send an email or change this PC's settings."""
+    from jetbridge import power
+    from jetbridge.acquire import broker
+
+    def refuse(*_, **__):
+        raise AssertionError("a test tried to reach something real. Use a fake")
+
+    def no_powercfg(*_):
+        raise OSError("powercfg isn't available in tests")
+
+    monkeypatch.setattr(broker, "async_playwright", refuse)
+    monkeypatch.setattr("smtplib.SMTP_SSL", refuse)
+    monkeypatch.setattr(power, "_powercfg", no_powercfg)
+
+
 def to_html(state: dict) -> str:
     return (
         f'<html><script id="ng-state" type="application/json">{json.dumps(state)}</script></html>'

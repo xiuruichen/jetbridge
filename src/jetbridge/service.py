@@ -18,6 +18,7 @@ from jetbridge.models import (
     AnswerKind,
     Cabin,
     CheckResult,
+    CheckStatus,
     Flight,
     ParsedSlice,
     Query,
@@ -25,7 +26,7 @@ from jetbridge.models import (
     Watch,
 )
 from jetbridge.paths import db_path, lock_path
-from jetbridge.store import Store
+from jetbridge.store import NewAlert, Store
 
 _AIRPORT = re.compile(r"^[A-Z]{3}$")
 _EMAIL = re.compile(r"[^@ ,;]+@[^@ ,;.]+(\.[^@ ,;.]+)+")
@@ -66,8 +67,8 @@ RISK_NOTICE = """Before you start, please read this:
   goes against their terms of use. You accept that risk by running it. It never logs in, so your
   frequent flyer accounts aren't involved, and it searches at low volume, but a site can still
   block its searches.
-- It only checks while this PC is on, awake and logged in. To catch seats overnight, set Windows
-  sleep to Never while plugged in.
+- It only checks while this PC is on, awake and logged in. To catch seats overnight, keep it awake
+  while plugged in. jetbridge can set that for you if you ask.
 - Checks are hours apart, so seats that open and close between them are missed. Don't rely on it
   as your only way of finding seats.
 - It never books anything or moves your miles. You do that yourself.
@@ -201,7 +202,7 @@ def create_watch(
         recipients=recipients,
         now=now,
     )
-    return store.add_watch(
+    watch = store.add_watch(
         valid.flight,
         valid.origin,
         valid.destination,
@@ -214,6 +215,84 @@ def create_watch(
         max_miles=max_miles,
         recipients=valid.recipients,
     )
+    welcome_new_recipients(store, watch, _owner_address(), valid.now)
+    return watch
+
+
+def first_check_means(watch: Watch, result: CheckResult) -> str:
+    """What a result says about whether this watch was set up correctly, in plain words."""
+    domain = get_site(watch.program).domain
+    if result.status is CheckStatus.AVAILABLE:
+        price = f", at {result.miles:,} miles" if result.miles else ""
+        return f"Seats are open now{price}."
+    if result.status is CheckStatus.NOT_OFFERED:
+        return f"{domain} lists this flight, but has no qualifying seats yet. That's working."
+    if result.status is CheckStatus.NOT_LISTED:
+        return (
+            f"{domain} answered, but this flight wasn't in its results. Check the flight number "
+            f"and airports on a flight tracker. {domain} may also not sell this flight with these "
+            "miles, or may hide it while it has no award seats."
+        )
+    return f"jetbridge couldn't tell this time ({result.detail}). It'll keep trying."
+
+
+def welcome_body(watch: Watch) -> str:
+    days = ", ".join(f"{day:%b %d, %Y}" for day in watch.dates)
+    site = get_site(watch.program)
+    return (
+        "The person sending this email added you to their jetbridge flight watch, so you'll get "
+        "an email if award seats open on:\n\n"
+        f"  {watch.flight.code} {watch.origin} to {watch.destination}, {watch.cabin.value}\n"
+        f"  {days}\n"
+        f"  Using {site.label} miles\n\n"
+        "You don't need to do or install anything. So you don't miss an alert, please mark this "
+        'email as "not spam" if it landed there, and add the sender to your contacts.'
+    )
+
+
+def welcome_new_recipients(store: Store, watch: Watch, owner: str | None, now: float) -> list[str]:
+    """Queue one note for each person new to jetbridge's alerts, and return who they are.
+
+    A person only ever gets one, however many watches they're added to. It also shows up a bad
+    address before a real alert goes missing.
+    """
+    already = {
+        row["recipient"]
+        for row in store.conn.execute("SELECT recipient FROM outbox WHERE kind='welcome'")
+    }
+    new = [a for a in watch.recipients if a != owner and a not in already]
+    for address in new:
+        store.enqueue(
+            NewAlert(
+                "welcome",
+                f"You've been added to a flight alert for {watch.flight.code}",
+                welcome_body(watch),
+                dedupe_key=f"welcome:{address}",
+                recipient=address,
+            ),
+            now,
+        )
+    return new
+
+
+def _owner_address() -> str | None:
+    from jetbridge.notify.email import load_config
+
+    try:
+        config = load_config()
+    except ValueError:
+        return None
+    return config.to_address if config else None
+
+
+def set_recipients(
+    store: Store, watch: Watch, recipients: tuple[str, ...]
+) -> tuple[Watch, list[str]]:
+    """Change who a watch alerts. Returns the watch and who'll get a welcome note."""
+    store.set_recipients(watch.id, recipients)
+    updated = store.get_watch(watch.id)
+    assert updated is not None
+    return updated, welcome_new_recipients(store, updated, _owner_address(), time.time())
 
 
 @dataclass(frozen=True)

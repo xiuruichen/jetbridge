@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="220" viewBox="0 0 860 220" role="img" aria-labelledby="title desc">
+  <title id="title">jetbridge</title>
+  <desc id="desc">Award seat alerts for the exact flight you want.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14233f"/>
+      <stop offset="1" stop-color="#0f4a5f"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6fd3c7"/>
+      <stop offset="1" stop-color="#4a9bff"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .name { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 52px; font-weight: 700; fill: #ffffff; letter-spacing: -1px; }
+    .line { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 20px; fill: #c7dbe6; }
+  </style>
+  <rect width="860" height="220" rx="16" fill="url(#sky)"/>
+  <!-- a flight path across the sky -->
+  <path d="M500 196 C 620 150, 700 96, 836 28" fill="none" stroke="#6fd3c7" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="3 9" stroke-linecap="round"/>
+  <g transform="translate(770 56) rotate(-28)" fill="#6fd3c7" fill-opacity="0.9">
+    <path d="M-26 -3 L10 -3 C18 -3 26 -2 26 0 C26 2 18 3 10 3 L-26 3 Z"/>
+    <path d="M-4 -3 L-16 -24 L-8 -24 L10 -3 Z"/>
+    <path d="M-4 3 L-16 24 L-8 24 L10 3 Z"/>
+    <path d="M-26 -3 L-32 -13 L-26 -13 L-16 -3 Z"/>
+    <path d="M-26 3 L-32 13 L-26 13 L-16 3 Z"/>
+  </g>
+  <!-- the mark: a walkway leading to a door -->
+  <g transform="translate(48 58)">
+    <rect width="104" height="104" rx="24" fill="url(#mark)"/>
+    <path d="M18 72 L58 46 L58 72 Z" fill="#14233f" fill-opacity="0.85"/>
+    <rect x="58" y="26" width="28" height="46" rx="6" fill="#14233f"/>
+    <circle cx="79" cy="50" r="3" fill="#6fd3c7"/>
+  </g>
+  <text x="176" y="116" class="name">jetbridge</text>
+  <text x="178" y="152" class="line">Award seat alerts for the exact flight you want.</text>
+</svg>

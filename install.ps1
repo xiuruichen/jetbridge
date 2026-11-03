@@ -119,7 +119,7 @@ function Set-EnvironmentOutsideSyncedFolder {
     $full = [IO.Path]::GetFullPath($Target).TrimEnd('\') + '\'
     foreach ($synced in @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial)) {
         if ($synced -and $full.StartsWith($synced.TrimEnd('\') + '\', 'OrdinalIgnoreCase')) {
-            # Python environments don't belong in a synced folder. This matches the README.
+            # Python environments don't belong in a synced folder. This matches the guide.
             $venv = "$env:LOCALAPPDATA\jetbridge\venv"
             Write-Host "$Target is in OneDrive, so its Python packages will go in $venv instead."
             [Environment]::SetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', $venv, 'User')

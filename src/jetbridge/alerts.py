@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
 
+from jetbridge.acquire.sites import get_site
 from jetbridge.models import CheckResult, CheckStatus, Query, Watch
 
 REMINDER_INTERVAL_S = 24 * 3600
@@ -201,7 +202,7 @@ def render_availability(
         f"Cabin:    {watch.cabin.value}",
         f"Price:    {_price(result)}",
         f"Seats:    {result.seats_text} (searched for {watch.pax})",
-        f"Program:  {watch.program}",
+        f"Program:  {get_site(watch.program).label}",
         f"Observed: {format_when(now)}",
     ]
     if kind is AlertKind.PRICE_DROP and prev.miles:

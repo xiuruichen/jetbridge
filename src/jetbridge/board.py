@@ -133,12 +133,13 @@ PAGE = r"""<!doctype html>
       const card = el("section", "watch");
       const top = el("div", "top");
       const title = el("div");
-      title.append(el("h2", "", watch.flight + " " + watch.route));
+      const name = watch.flight === "any nonstop" ? "Any nonstop" : watch.flight;
+      title.append(el("h2", "", name + " · " + watch.route.replace("-", " → ")));
       title.append(el("div", "sub", watch.cabin + " · " + watch.miles_program + " · " +
         watch.pax + (watch.pax === 1 ? " passenger" : " passengers")));
       top.append(title);
       top.append(el("div", "state", watch.status === "active"
-        ? (watch.next_check ? "Next check " + watch.next_check : "") : watch.status));
+        ? (watch.next_check_short ? "Next check " + watch.next_check_short : "") : watch.status));
       card.append(top);
       if (watch.proof_of_watching) {
         const proof = watch.proof_of_watching;

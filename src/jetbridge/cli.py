@@ -87,7 +87,7 @@ def _describe(watch: Watch) -> str:
     days = ", ".join(d.strftime("%b %d %Y") for d in watch.dates)
     limit = f", max {watch.max_miles:,} miles" if watch.max_miles else ""
     return (
-        f"[{watch.id}] {watch.label} via {watch.program}, {watch.pax} pax, "
+        f"[{watch.id}] {watch.label} via {SITES[watch.program].label}, {watch.pax} pax, "
         f"{watch.checks_per_day}/day{limit} ({watch.status})\n    Dates: {days}\n"
         f"    Seat alerts to: {_recipients_text(watch)}"
     )

@@ -147,6 +147,12 @@ def _watch_query(watch: Watch, day: date) -> Query:
     return Query(watch.origin, watch.destination, day, watch.pax, watch.program)
 
 
+def _short_time(epoch: float) -> str:
+    moment = datetime.fromtimestamp(epoch)
+    day = "today" if moment.date() == date.today() else moment.strftime("%b %d")
+    return f"{day}, {moment.strftime('%I:%M %p').lstrip('0')}"
+
+
 def _watch_view(watch: Watch) -> dict[str, Any]:
     store = service.open_store()
     today = date.today()
@@ -220,6 +226,7 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
         "next_check": format_when(watch.next_check_at) if watch.status == "active" else None,
+        "next_check_short": _short_time(watch.next_check_at) if watch.status == "active" else None,
         "last_24_hours": {
             "clear_answers": sum(
                 store.count_recent(watch.id, status, day_ago)

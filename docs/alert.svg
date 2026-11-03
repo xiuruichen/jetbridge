@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="470" viewBox="0 0 620 470" role="img" aria-labelledby="title desc">
+  <title id="title">A jetbridge alert email</title>
+  <desc id="desc">An example email saying seats opened on AA100 in business at 57,500 miles, with a booking link at the top, the seats, the time it was seen, and a line about past openings.</desc>
+  <style>
+    .h { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 600; fill: #f2f1ec; }
+    .s { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; fill: #a8a49a; }
+    .m { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 15px; fill: #ece9e2; }
+    .l { fill: #a8a49a; }
+    .a { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 15px; fill: #6db3ff; text-decoration: underline; }
+  </style>
+  <rect width="620" height="470" rx="14" fill="#1b1b1a"/>
+  <text x="28" y="44" class="h">SEATS OPEN: AA100 business on Jun 14, 2027 - 57,500 mi</text>
+  <text x="28" y="70" class="s">From your own Gmail · just now</text>
+  <line x1="28" y1="88" x2="592" y2="88" stroke="#3a3a37"/>
+  <text x="28" y="118" class="m">Check and book:</text>
+  <text x="28" y="142" class="a">www.aa.com/booking/search?...</text>
+  <text x="28" y="186" class="m" xml:space="preserve"><tspan class="l">Flight:   </tspan>AA100 JFK to LHR</text>
+  <text x="28" y="212" class="m" xml:space="preserve"><tspan class="l">Date:     </tspan>Jun 14, 2027</text>
+  <text x="28" y="238" class="m" xml:space="preserve"><tspan class="l">Cabin:    </tspan>business</text>
+  <text x="28" y="264" class="m" xml:space="preserve"><tspan class="l">Price:    </tspan>57,500 miles + USD 5.60 per person</text>
+  <text x="28" y="290" class="m" xml:space="preserve"><tspan class="l">Seats:    </tspan>2 (searched for 1)</text>
+  <text x="28" y="316" class="m" xml:space="preserve"><tspan class="l">Observed: </tspan>Jan 10, 2027 09:42 AM</text>
+  <text x="28" y="342" class="m" xml:space="preserve"><tspan class="l">History:  </tspan>Seen open once before on this date,</text>
+  <text x="28" y="364" class="m" xml:space="preserve">          open for between 2 and 6 hours.</text>
+  <text x="28" y="404" class="s">Award seats can vanish quickly. Confirm on the site before moving any points.</text>
+  <text x="310" y="450" class="s" text-anchor="middle">An illustration with a made-up flight and price.</text>
+</svg>

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- A clearer front page, with the full reference moved to [the guide](docs/guide.md).
+- Name the miles program properly in alerts and `watch list`.
+- A tidier board in chat, with a shorter next check time and an arrow in the route.
+- Fix the setup window crashing on a Mac, and minimize Chrome there, because macOS moves off-screen
+  windows back onto the screen.
+
 ## 0.5.0
 
 - Move searches to where the signals point, within the same limits. Seats vanishing, a price change,

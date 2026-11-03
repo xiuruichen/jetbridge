@@ -85,7 +85,7 @@ versions · `notify/push.py` phone alerts · `board.py` the in-chat page.
 - The in-chat board only shows things. It has no outside scripts, puts everything on the page as
   plain text, and anywhere that can't draw it still gets the same facts as data.
 - The Mac version is experimental. Don't claim anything about it that hasn't been seen on a real
-  Mac, and keep the notice in the README, the installer and `doctor` until `docs/mac-testing.md` has
+  Mac, and keep the notice in the README, the guide's requirements, the installer and `doctor` until `docs/mac-testing.md` has
   been done. Anything that differs by system goes through `platforms.py`, `autorun.py` or `power.py`.
 - A problem report sends nothing, and holds only the version, check names and results, and reply
   structure with every value removed. Never add watches, addresses or error text to it.

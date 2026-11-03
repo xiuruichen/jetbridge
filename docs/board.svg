@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="470" viewBox="0 0 620 470" role="img" aria-labelledby="title desc">
+  <title id="title">The board jetbridge draws in a Claude Desktop chat</title>
+  <desc id="desc">An example watch on any nonstop from Seattle to Seoul, showing proof of watching, one date with seats open, a near miss above a price limit, and a past opening.</desc>
+  <style>
+    .h { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 20px; font-weight: 600; fill: #f2f1ec; }
+    .t { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; fill: #ece9e2; }
+    .s { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; fill: #a8a49a; }
+    .b { font-weight: 600; fill: #4fce87; }
+    .n { fill: #e0a83f; }
+  </style>
+  <rect width="620" height="470" rx="14" fill="#1b1b1a"/>
+  <rect x="16" y="16" width="588" height="402" rx="12" fill="#232321" stroke="#3a3a37"/>
+  <text x="36" y="52" class="h">Any nonstop · SEA → ICN</text>
+  <text x="36" y="76" class="s">business · Delta SkyMiles · 2 passengers</text>
+  <text x="36" y="100" class="s">Watched 24 of the last 24 hours, longest gap 5.2 hours</text>
+  <text x="584" y="52" class="s" text-anchor="end">Next check today, 4:15 PM</text>
+
+  <line x1="36" y1="118" x2="584" y2="118" stroke="#3a3a37"/>
+  <text x="36" y="148" class="t">Fri, May 21</text>
+  <circle cx="162" cy="143" r="5" fill="#4fce87"/>
+  <text x="178" y="148" class="t"><tspan class="b">Seats open on DL197: 95,000 miles</tspan></text>
+  <rect x="178" y="162" width="124" height="28" rx="7" fill="none" stroke="#55554f"/>
+  <text x="240" y="181" class="s" text-anchor="middle">Check and book</text>
+
+  <line x1="36" y1="204" x2="584" y2="204" stroke="#3a3a37"/>
+  <text x="36" y="234" class="t">Sat, May 22</text>
+  <circle cx="162" cy="229" r="4.5" fill="none" stroke="#a8a49a" stroke-width="1.5"/>
+  <text x="178" y="234" class="t">No seats · <tspan class="n">seats at 140,000 miles, above your limit</tspan></text>
+
+  <line x1="36" y1="256" x2="584" y2="256" stroke="#3a3a37"/>
+  <text x="36" y="286" class="t">Sun, May 23</text>
+  <circle cx="162" cy="281" r="4.5" fill="none" stroke="#a8a49a" stroke-width="1.5"/>
+  <text x="178" y="286" class="t">No seats</text>
+  <text x="178" y="310" class="s">Seen 3 days ago: open for between 2 hours and 6 hours,</text>
+  <text x="178" y="330" class="s">95,000 miles</text>
+
+  <line x1="36" y1="350" x2="584" y2="350" stroke="#3a3a37"/>
+  <text x="36" y="380" class="t">Mon, May 24</text>
+  <circle cx="162" cy="375" r="4.5" fill="#8a8a8a"/>
+  <text x="178" y="380" class="t">Couldn't tell at the last check</text>
+  <text x="178" y="402" class="s">That never counts as no seats.</text>
+  <text x="310" y="450" class="s" text-anchor="middle">An illustration with made-up flights and prices.</text>
+</svg>

@@ -86,6 +86,10 @@ def _require(store: Store, watch_id: int) -> Watch:
 def _describe(watch: Watch) -> str:
     days = ", ".join(d.strftime("%b %d %Y") for d in watch.dates)
     limit = f", max {watch.max_miles:,} miles" if watch.max_miles else ""
+    if watch.booked_miles:
+        limit = f", booked at {watch.booked_miles:,} miles"
+    if watch.whole_party:
+        limit += f", splitting {watch.whole_party} people"
     return (
         f"[{watch.id}] {watch.label} via {SITES[watch.program].label}, {watch.pax} pax, "
         f"{watch.checks_per_day}/day{limit} ({watch.status})\n    Dates: {days}\n"
@@ -130,6 +134,12 @@ def watch_add(
         6, help="Checks per day, per date. Lower far out, higher in the last two weeks"
     ),
     max_miles: int | None = typer.Option(None, help="Only alert at or below this price"),
+    booked_miles: int | None = typer.Option(
+        None, help="Already booked at this price per person: only alert below it"
+    ),
+    whole_party: int | None = typer.Option(
+        None, help="With 'any': everyone travelling, split into separate bookings of --pax"
+    ),
     notify: str | None = typer.Option(
         None, help="Who gets seat alerts: a@x.com,b@y.com or 'me'. Prompts if left out"
     ),
@@ -152,6 +162,8 @@ def watch_add(
             checks_per_day=checks_per_day,
             max_miles=max_miles,
             recipients=notify,
+            booked_miles=booked_miles,
+            whole_party=whole_party,
         )
         draft = drafts.WatchDraft(
             origin=valid.origin,
@@ -164,6 +176,8 @@ def watch_add(
             checks_per_day=checks_per_day,
             max_miles=max_miles,
             recipients=notify,
+            booked_miles=booked_miles,
+            whole_party=whole_party,
         )
         if not yes:
             owner = mail.load_config()
@@ -187,6 +201,8 @@ def watch_add(
             checks_per_day=checks_per_day,
             max_miles=max_miles,
             recipients=notify,
+            booked_miles=booked_miles,
+            whole_party=whole_party,
         )
     except ValueError as exc:
         raise _fail(str(exc)) from exc

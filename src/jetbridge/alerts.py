@@ -162,6 +162,16 @@ DEFAULT_HEADLINES = {
 }
 
 
+# A booked watch's alert means something different, so it says so whatever the usual headline is.
+BOOKED_HEADLINES = {
+    AlertKind.SEATS_OPEN: "CHEAPER THAN YOU PAID",
+    AlertKind.SEATS_OPEN_UNCONFIRMED: "MAY BE CHEAPER THAN YOU PAID (unconfirmed)",
+    AlertKind.PRICE_DROP: "EVEN CHEAPER THAN YOU PAID",
+    AlertKind.REMINDER: "STILL CHEAPER THAN YOU PAID",
+    AlertKind.SEATS_GONE: "Cheaper seats gone",
+}
+
+
 def render_availability(
     kind: AlertKind,
     watch: Watch,
@@ -175,6 +185,8 @@ def render_availability(
 ) -> tuple[str, str]:
     day_text = day.strftime("%b %d, %Y")
     headline = (headlines or {}).get(kind, DEFAULT_HEADLINES[kind])
+    if watch.booked_miles:
+        headline = BOOKED_HEADLINES.get(kind, headline)
     shown_flight = result.flight or watch.name
     head = f"{headline}: {shown_flight} {watch.cabin.value} on {day_text}"
     if kind is AlertKind.SEATS_GONE:
@@ -184,7 +196,10 @@ def render_availability(
             *([f"Reason: {result.detail}"] if result.detail else []),
             f"Checked: {format_when(now)}",
             "",
-            "jetbridge keeps watching and will email you if seats come back.",
+            "Your booking isn't affected."
+            if watch.booked_miles
+            else "jetbridge keeps watching and will email you if seats come back.",
+            *(["jetbridge keeps watching for a lower price."] if watch.booked_miles else []),
         ]
         return head, "\n".join(lines)
 
@@ -206,6 +221,9 @@ def render_availability(
         f"Program:  {get_site(watch.program).label}",
         f"Observed: {format_when(now)}",
     ]
+    if watch.booked_miles:
+        saved = f", so this saves {watch.booked_miles - result.miles:,}" if result.miles else ""
+        lines.append(f"You paid: {watch.booked_miles:,} miles per person{saved}")
     if kind is AlertKind.PRICE_DROP and prev.miles:
         lines.append(f"Was:      {prev.miles:,} miles")
     if kind is AlertKind.MORE_SEATS and prev.seats_exact:
@@ -213,8 +231,22 @@ def render_availability(
     lines.extend(f"Note:     {note}" for note in result.notes)
     if history_note:
         lines.append(f"History:  {history_note}")
+    if watch.whole_party:
+        lines += [
+            "",
+            f"Your party of {watch.whole_party} would be on separate bookings, possibly on "
+            "different flights and at different prices. The price above is the cheapest. Confirm "
+            "every flight you need before booking any, because cancelling one booking doesn't "
+            "change another.",
+        ]
     if kind is AlertKind.SEATS_OPEN_UNCONFIRMED:
         lines += ["", "The follow-up check was inconclusive, so this may already be gone."]
+    if watch.booked_miles:
+        lines += [
+            "",
+            "To use this, book the cheaper seat before cancelling your old booking, in case it "
+            "goes. Check what the airline charges and what it refunds first.",
+        ]
     lines += [
         "",
         "Award seats can vanish quickly. "

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Split a party across any nonstops, alerting only when enough are open to seat everyone.
+- Watch a flight you've already booked, and get alerted only when it costs less than you paid.
 - Say in every seat alert what to do if plans change, stating a program's rule only once it's been
   confirmed on the airline's own page.
 - Lead the front page with the live re-check, and add a dated comparison with seats.aero.

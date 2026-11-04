@@ -150,6 +150,8 @@ class WatchDraft:
     checks_per_day: int = DEFAULT_CHECKS_PER_DAY
     max_miles: int | None = None
     recipients: str | None = None  # None means the owner
+    booked_miles: int | None = None
+    whole_party: int | None = None
 
     def missing(self) -> list[str]:
         fields = ("origin", "destination", "dates", "flight")
@@ -313,6 +315,8 @@ def review_text(
     each combination is its own watch, and they share their searches."""
     days = service.parse_dates(draft.dates or "")
     limit = f"{draft.max_miles:,} miles per person" if draft.max_miles else "no limit"
+    if draft.booked_miles:
+        limit = f"you paid {draft.booked_miles:,} miles per person, so only alert below that"
     addresses = service.parse_recipients(draft.recipients)
     searches, busiest = draft.search_plan
     site = get_site(draft.program)
@@ -327,7 +331,9 @@ def review_text(
         *(["             Connections don't count."] if is_any else []),
         f"Cabin:       {cabin}",
         f"Miles:       {site.label}",
-        f"Passengers:  {draft.pax}",
+        f"Passengers:  {draft.pax}"
+        if not draft.whole_party
+        else f"Passengers:  {draft.whole_party}, on separate bookings of {draft.pax}",
         f"Dates:       {_format_day(days[0])}",
         *(f"             {_format_day(day)}" for day in days[1:]),
         f"Price limit: {limit}",
@@ -379,6 +385,8 @@ def _fields(draft: WatchDraft) -> dict[str, Any]:
         "checks_per_day": draft.checks_per_day,
         "max_miles": draft.max_miles,
         "recipients": draft.recipients,
+        "booked_miles": draft.booked_miles,
+        "whole_party": draft.whole_party,
     }
 
 
@@ -395,6 +403,8 @@ def from_watch(watch: Watch, dates: str, checks_per_day: int, max_miles: int | N
         checks_per_day=checks_per_day,
         max_miles=max_miles,
         recipients=",".join(watch.recipients),
+        booked_miles=watch.booked_miles,
+        whole_party=watch.whole_party,
     )
 
 

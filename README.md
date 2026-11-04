@@ -101,6 +101,8 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 | "Watch AA100 from New York to London in business on June 14-16 2027 using American miles" | Claude asks about anything missing, shows a review, then saves it and runs the first check |
 | "Tell me about any nonstop business seats from Seattle to Seoul on Delta miles" | Watches every nonstop on that route, with its own alert for each flight that opens |
 | "Watch CX805 or CX889, business or first" | One review covers them all, and they share their searches |
+| "I booked DL197 on May 21 for 95k, tell me if it gets cheaper" | Alerts only below what you paid, without asking for your confirmation code |
+| "We're four and can split into two and two on any nonstop" | Alerts only when enough nonstops are open to seat everyone |
 | "Show me my flights" | Draws a board in the chat |
 | "How has that flight been doing? Has it ever opened?" | Shows past openings, how long they lasted and their prices |
 | "Lower the limit to 90k and add June 20" | Changes the watch and keeps its history |

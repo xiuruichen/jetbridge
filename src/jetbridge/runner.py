@@ -524,7 +524,10 @@ class Runner:
                 text = state.status.value.replace("_", " ") if state.status else "not checked yet"
                 price = f", {state.miles:,} miles" if state.miles else ""
                 over = above_limit_miles(self.store, watch, day)
-                if over and watch.max_miles:
+                if over and watch.booked_miles:
+                    paid = f"{watch.booked_miles:,}"
+                    price = f", seats at {over:,} miles, not below the {paid} paid"
+                elif over and watch.max_miles:
                     whose = "your" if for_owner else "the"
                     price = f", seats at {over:,} miles, above {whose} {watch.max_miles:,} limit"
                 lines.append(f"  {day:%b %d}: {text}{price}")

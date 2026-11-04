@@ -92,6 +92,8 @@ def _watch(row: sqlite3.Row) -> Watch:
         pax=row["pax"],
         checks_per_day=row["checks_per_day"],
         max_miles=row["max_miles"],
+        booked_miles=row["booked_miles"],
+        whole_party=row["whole_party"],
         recipients=tuple(json.loads(row["recipients"])),
         high_priority=bool(row["high_priority"]),
         status=row["status"],
@@ -116,6 +118,8 @@ class Store:
             ("observations", "reason", "TEXT"),
             ("watches", "high_priority", "INTEGER NOT NULL DEFAULT 0"),
             ("date_state", "open_flights", "TEXT NOT NULL DEFAULT '[]'"),
+            ("watches", "booked_miles", "INTEGER"),
+            ("watches", "whole_party", "INTEGER"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -149,11 +153,13 @@ class Store:
         checks_per_day: int = 6,
         max_miles: int | None = None,
         recipients: tuple[str, ...] = (),
+        booked_miles: int | None = None,
+        whole_party: int | None = None,
     ) -> Watch:
         cur = self.conn.execute(
             "INSERT INTO watches (carrier, number, origin, destination, dates, cabin, program,"
-            " pax, checks_per_day, max_miles, status, created_at, next_check_at, recipients)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " pax, checks_per_day, max_miles, status, created_at, next_check_at, recipients,"
+            " booked_miles, whole_party) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 flight.carrier,
                 flight.number,
@@ -169,6 +175,8 @@ class Store:
                 now,
                 now,
                 json.dumps(list(recipients)),
+                booked_miles,
+                whole_party,
             ),
         )
         return self.get_watch(int(cur.lastrowid))  # type: ignore[arg-type,return-value]

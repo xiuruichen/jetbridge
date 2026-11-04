@@ -161,6 +161,8 @@ def validate_watch(
     max_miles: int | None = None,
     recipients: str | None = None,
     now: float | None = None,
+    booked_miles: int | None = None,
+    whole_party: int | None = None,
 ) -> ValidWatch:
     """Raise ``ValueError`` unless these fields make a watch. Saves nothing."""
     parsed = Flight.parse(flight)
@@ -179,6 +181,22 @@ def validate_watch(
     if max_miles is not None and max_miles <= 0:
         raise ValueError("max miles must be positive")
     days = parse_dates(dates)
+    if booked_miles is not None:
+        if booked_miles <= 1:
+            raise ValueError("the miles you paid must be positive")
+        if parsed.is_any:
+            raise ValueError("a booked award is one exact flight, not any nonstop")
+        if len(days) != 1:
+            raise ValueError("a booked award is on one date")
+        if max_miles is not None:
+            raise ValueError("a booked award already alerts only below what you paid")
+    if whole_party is not None:
+        if not parsed.is_any:
+            raise ValueError(
+                "splitting a party needs any nonstop, so there are flights to split on"
+            )
+        if not pax < whole_party <= 9:
+            raise ValueError("the whole party must be more than one group, and at most 9")
     addresses = parse_recipients(recipients)
     current = now if now is not None else time.time()
     today = datetime.fromtimestamp(current).date()
@@ -203,6 +221,8 @@ def create_watch(
     max_miles: int | None = None,
     recipients: str | None = None,
     now: float | None = None,
+    booked_miles: int | None = None,
+    whole_party: int | None = None,
 ) -> Watch:
     """Validate and create a watch. The one way a watch gets saved."""
     valid = validate_watch(
@@ -217,6 +237,8 @@ def create_watch(
         max_miles=max_miles,
         recipients=recipients,
         now=now,
+        booked_miles=booked_miles,
+        whole_party=whole_party,
     )
     watch = store.add_watch(
         valid.flight,
@@ -230,6 +252,8 @@ def create_watch(
         checks_per_day=checks_per_day,
         max_miles=max_miles,
         recipients=valid.recipients,
+        booked_miles=booked_miles,
+        whole_party=whole_party,
     )
     welcome_new_recipients(store, watch, _owner_address(), valid.now)
     return watch
@@ -258,6 +282,8 @@ def change_watch(
         max_miles=max_miles,
         recipients=",".join(watch.recipients),
         now=now,
+        booked_miles=watch.booked_miles,
+        whole_party=watch.whole_party,
     )
     store.update_watch(watch.id, valid.days, checks_per_day, max_miles)
     if set(valid.days) - set(watch.dates):
@@ -277,6 +303,8 @@ def first_check_means(watch: Watch, result: CheckResult) -> str:
         where = f" on {', '.join(result.flights)}" if result.flights else ""
         return f"Seats are open now{where}{price}."
     if watch.flight.is_any:
+        if watch.whole_party and result.status is CheckStatus.NOT_OFFERED and result.detail:
+            return f"{domain} lists nonstops here: {result.detail}. That's working."
         if result.status is CheckStatus.NOT_LISTED:
             return (
                 f"{domain} answered, but listed no nonstop flights on this route and date. Check "

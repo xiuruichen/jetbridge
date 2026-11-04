@@ -96,7 +96,8 @@ def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     available = {
         code: result for code, result in results.items() if result.status is CheckStatus.AVAILABLE
     }
-    if available:
+    seats = sum(r.seats_exact or r.seats_at_least or watch.pax for r in available.values())
+    if available and (not watch.whole_party or seats >= watch.whole_party):
         code = min(available, key=lambda c: available[c].miles or 0)
         return replace(available[code], flight=code, flights=tuple(sorted(available)))
     # A slice that couldn't be read might be a nonstop with seats, so "no seats" can't be claimed.
@@ -110,6 +111,12 @@ def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     unclear = [r for r in results.values() if r.status is CheckStatus.UNKNOWN]
     if unclear:
         return unclear[0]
+    if available:  # open, but not enough of it to seat everyone, so it doesn't count yet
+        names = ", ".join(sorted(available))
+        return CheckResult(
+            CheckStatus.NOT_OFFERED,
+            detail=f"seats for {seats} of your {watch.whole_party} so far, on {names}",
+        )
     if not results:
         return CheckResult(CheckStatus.NOT_LISTED, detail="no nonstop flights in results")
     over = [r for r in results.values() if r.miles]
@@ -167,14 +174,20 @@ def evaluate(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
         return CheckResult(CheckStatus.NOT_OFFERED, detail=f"no {watch.cabin.value} seats")
 
     best = min(qualifying, key=lambda o: o.miles)
-    if watch.max_miles is not None and best.miles > watch.max_miles:
+    limit = watch.price_limit
+    if limit is not None and best.miles > limit:
+        detail = (
+            f"cheapest is {best.miles:,} miles, not below the {watch.booked_miles:,} you paid"
+            if watch.booked_miles
+            else f"cheapest is {best.miles:,} miles, above your limit of {limit:,}"
+        )
         return CheckResult(
             CheckStatus.NOT_OFFERED,
             # The price is kept for the record. These seats still don't count as open.
             miles=best.miles,
             taxes=best.taxes,
             currency=best.currency,
-            detail=f"cheapest is {best.miles:,} miles, above your limit of {watch.max_miles:,}",
+            detail=detail,
         )
 
     # The search was for this party, so the site is offering at least that many seats.

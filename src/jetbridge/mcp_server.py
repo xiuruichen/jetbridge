@@ -182,7 +182,7 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
             if burst is not None and burst.next_at is not None:
                 view["checking_sooner_because"] = burst.reason
         over = above_limit_miles(store, watch, day) if day >= today else None
-        if over:
+        if over and not watch.booked_miles:
             view["seats_above_price_limit_at_miles"] = over
         others = store.get_also_seen(watch.id, day) if day >= today else None
         if others and state.status is not CheckStatus.AVAILABLE:
@@ -223,6 +223,8 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "pace_note": _PACE_NOTE,
         "high_priority": watch.high_priority,
         "max_miles": watch.max_miles,
+        "booked_at_miles": watch.booked_miles,
+        "whole_party": watch.whole_party,
         "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
         "next_check": format_when(watch.next_check_at) if watch.status == "active" else None,
@@ -453,6 +455,8 @@ def review_watch(
     checks_per_day: int = drafts.DEFAULT_CHECKS_PER_DAY,
     max_miles: int | None = None,
     notify: str | None = None,
+    booked_miles: int | None = None,
+    whole_party: int | None = None,
 ) -> dict[str, Any]:
     """Check the details of a new watch and return a review. This saves nothing.
 
@@ -460,9 +464,17 @@ def review_watch(
     are cities or airport codes. program is american, delta or united. dates is like May 21-23 2027
     or 2027-06-14..2027-06-16. notify is who gets seat alerts, comma-separated; leave it out to
     alert only the owner. flight can be a flight number, several like CX805 or CX889, or any for any
-    nonstop on the route. cabin can be several too, like business or first."""
+    nonstop on the route. cabin can be several too, like business or first. booked_miles is for
+    someone who has already booked this exact flight and date and wants to know if it gets cheaper:
+    the miles they paid per person, which replaces a price limit. jetbridge never needs their
+    confirmation code. whole_party is for a group willing to split across separate bookings, such as
+    a family of 4 taking 2 and 2 on any nonstop: pax is one group (2), whole_party is everyone (4),
+    and it alerts only when enough nonstops are open to seat everyone. Offer it only if they say
+    they'd split up."""
     codes = tuple(Flight.parse(part).code for part in _several(flight))
     cabins = tuple(drafts.parse_cabin(part) for part in _several(cabin))
+    if booked_miles is not None and len(codes) * len(cabins) > 1:
+        raise ToolError("a booked award is one flight in one cabin, so review just that one")
     if len(codes) * len(cabins) > MAX_WATCHES_AT_ONCE:
         raise ToolError(f"that's over {MAX_WATCHES_AT_ONCE} watches at once. Ask them to narrow it")
     shared = {
@@ -474,6 +486,8 @@ def review_watch(
         "checks_per_day": checks_per_day,
         "max_miles": max_miles,
         "recipients": notify,
+        "booked_miles": booked_miles,
+        "whole_party": whole_party,
     }
     all_drafts = [
         drafts.WatchDraft(flight=code, cabin=each, **shared) for code in codes for each in cabins

@@ -266,6 +266,32 @@ jetbridge watch add any --from SEA --to ICN --dates 2027-05-21..2027-05-23 --cab
 In chat, you can also ask for several at once: "Watch CX805 or CX889, business or first." One review
 covers them all. Each search already returns every flight on the route, so none of this adds searches.
 
+### Already booked? Watch for a lower price
+
+If award prices fall after you book, you may be able to rebook and get miles back. Tell jetbridge what
+you paid per person, and it only alerts when that exact flight and date gets cheaper:
+
+```powershell
+jetbridge watch add DL197 --from SEA --to ICN --dates 2027-05-21 --program delta --booked-miles 95000
+```
+
+In chat, say "I booked DL197 on May 21 for 95k, tell me if it gets cheaper". It doesn't ask for your
+confirmation code or name, and it can't change your booking. It uses searches like any other watch.
+Book the cheaper seat before cancelling the old one, and check what the airline charges and refunds.
+
+### A family willing to split up
+
+A search for four hides flights that only have two seats each. If you'd split across flights, watch any
+nonstop as groups of two, and it alerts only when enough flights are open to seat everyone:
+
+```powershell
+jetbridge watch add any --from SEA --to ICN --dates 2027-05-21 --program delta --pax 2 --whole-party 4
+```
+
+In chat, say "We're four and can split into two and two on any nonstop". These are separate bookings,
+possibly at different prices, and cancelling one doesn't change another. Confirm every flight you need
+before booking any.
+
 ### Getting these right
 
 - **Program:** this is whose miles you'd use, not who flies the plane. Partner flights can appear:

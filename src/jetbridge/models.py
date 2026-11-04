@@ -75,6 +75,8 @@ class Watch:
     pax: int = 1
     checks_per_day: int = 6
     max_miles: int | None = None
+    booked_miles: int | None = None  # already booked at this price: alert only below it
+    whole_party: int | None = None  # any-flight only: pax is one group, and this is everyone
     recipients: tuple[str, ...] = ()  # seat alerts go here; empty means the owner's address
     high_priority: bool = False  # goes first, and is checked more often, within the same limits
     status: str = "active"  # active | paused | finished
@@ -88,6 +90,11 @@ class Watch:
     @property
     def label(self) -> str:
         return f"{self.name} {self.origin}-{self.destination} {self.cabin.value}"
+
+    @property
+    def price_limit(self) -> int | None:
+        """The most an alert may cost. On a booked flight, that's anything cheaper than it was."""
+        return self.booked_miles - 1 if self.booked_miles else self.max_miles
 
 
 @dataclass(frozen=True)

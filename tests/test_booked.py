@@ -8,7 +8,7 @@ import pytest
 from conftest import DAY, add_cx, answer_from, cx_slice, make_runner, response
 from mcp import Client
 
-from jetbridge import draft, mcp_server, service
+from jetbridge import board, draft, mcp_server, service
 from jetbridge.alerts import AlertKind, DateState, render_availability
 from jetbridge.matcher import evaluate
 from jetbridge.models import (
@@ -202,3 +202,15 @@ async def test_chat_review_keeps_it_and_refuses_several(chat):
 def test_a_normal_watch_is_unchanged():
     plain = Watch(1, Flight("CX", "805"), "JFK", "HKG", (DAY,), Cabin.BUSINESS, max_miles=90_000)
     assert plain.price_limit == 90_000
+
+
+async def test_the_summary_says_what_was_paid(store, clock):
+    add_cx(store, clock, booked_miles=100_000)
+    runner, _, _, _ = make_runner(store, clock, [priced(120_000)])
+    await runner.tick()
+    _, body = runner.build_digest(store.list_watches("active"))
+    assert "Booked at: 100,000 miles per person" in body
+
+
+def test_the_board_shows_what_was_paid():
+    assert "you paid" in board.PAGE and "watch.booked_at_miles" in board.PAGE

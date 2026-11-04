@@ -23,7 +23,7 @@ from jetbridge.alerts import (
     render_availability,
 )
 from jetbridge.insights import Coverage, Seen, alert_note, coverage
-from jetbridge.matcher import also_seen, evaluate
+from jetbridge.matcher import SO_FAR, also_seen, evaluate
 from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
 from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox, owner_address
@@ -92,6 +92,18 @@ def above_limit_miles(store: Store, watch: Watch, day: date) -> int | None:
         if row["status"] != CheckStatus.UNKNOWN.value:
             over = row["status"] == CheckStatus.NOT_OFFERED.value and row["miles"]
             return row["miles"] if over else None
+    return None
+
+
+def split_so_far(store: Store, watch: Watch, day: date) -> str | None:
+    """How much of a split party the latest clear answer could seat, if some but not all."""
+    if not watch.whole_party:
+        return None
+    for row in reversed(store.observations(watch.id, day)):
+        if row["status"] != CheckStatus.UNKNOWN.value:
+            detail = row["detail"] or ""
+            short = row["status"] == CheckStatus.NOT_OFFERED.value and detail.startswith(SO_FAR)
+            return detail if short else None
     return None
 
 
@@ -506,7 +518,12 @@ class Runner:
             lines.append(f"{title} (watch {watch.id})" if for_owner else title)
             if for_owner:
                 lines.append(f"  Seat alerts go to: {', '.join(watch.recipients) or 'you'}")
-            lines.append(f"  Last 24 hours: {good} clear answers, {unknown} inconclusive")
+            if watch.booked_miles:
+                lines.append(f"  Booked at: {watch.booked_miles:,} miles per person")
+            if watch.whole_party:
+                lines.append(f"  Party: {watch.whole_party}, on separate bookings of {watch.pax}")
+            answers = "clear answer" if good == 1 else "clear answers"
+            lines.append(f"  Last 24 hours: {good} {answers}, {unknown} inconclusive")
             watched = watch_coverage(self.store, watch, now)
             if watched is not None:
                 lines.append(f"  Proof of watching: {watched.text}")
@@ -530,6 +547,9 @@ class Runner:
                 elif over and watch.max_miles:
                     whose = "your" if for_owner else "the"
                     price = f", seats at {over:,} miles, above {whose} {watch.max_miles:,} limit"
+                so_far = split_so_far(self.store, watch, day)
+                if so_far:
+                    price = f", {so_far}"
                 lines.append(f"  {day:%b %d}: {text}{price}")
                 others = self.store.get_also_seen(watch.id, day)
                 if others and state.status is not CheckStatus.AVAILABLE:

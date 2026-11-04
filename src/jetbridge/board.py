@@ -93,6 +93,9 @@ PAGE = r"""<!doctype html>
       const where = day.open_flights ? " on " + day.open_flights.join(", ") : "";
       line.append(el("b", "", "Seats open" + where + (day.miles ? ": " + miles(day.miles) : "")));
     }
+    else if (day.split_so_far) {
+      line.append(day.split_so_far[0].toUpperCase() + day.split_so_far.slice(1));
+    }
     else if (day.status === "not_offered") line.append("No seats");
     else if (day.status === "not_listed") line.append("Flight not listed");
     else if (day.searching_starts) line.append("Searching starts " + day.searching_starts);
@@ -135,8 +138,12 @@ PAGE = r"""<!doctype html>
       const title = el("div");
       const name = watch.flight === "any nonstop" ? "Any nonstop" : watch.flight;
       title.append(el("h2", "", name + " · " + watch.route.replace("-", " → ")));
+      const party = watch.whole_party
+        ? watch.whole_party + " people, on separate bookings of " + watch.pax
+        : watch.pax + (watch.pax === 1 ? " passenger" : " passengers");
+      const paid = watch.booked_at_miles ? " · you paid " + miles(watch.booked_at_miles) : "";
       title.append(el("div", "sub", watch.cabin + " · " + watch.miles_program + " · " +
-        watch.pax + (watch.pax === 1 ? " passenger" : " passengers")));
+        party + paid));
       top.append(title);
       top.append(el("div", "state", watch.status === "active"
         ? (watch.next_check_short ? "Next check " + watch.next_check_short : "") : watch.status));

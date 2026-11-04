@@ -1,6 +1,6 @@
 [project]
 name = "jetbridge"
-version = "0.5.1"
+version = "0.5.2"
 description = "Get an email when award seats open on the exact flight you want. Works with Claude Desktop."
 readme = "README.md"
 authors = [{ name = "xiuruichen" }]

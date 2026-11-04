@@ -20,6 +20,8 @@ from jetbridge.models import (
     Watch,
 )
 
+SO_FAR = "seats for "  # starts the answer when a split party is only partly seated
+
 
 def _is_watched_itinerary(legs: tuple[Leg, ...], watch: Watch, day: date) -> bool:
     """True only for the exact flight between the watched airports, on the watched date.
@@ -115,7 +117,7 @@ def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
         names = ", ".join(sorted(available))
         return CheckResult(
             CheckStatus.NOT_OFFERED,
-            detail=f"seats for {seats} of your {watch.whole_party} so far, on {names}",
+            detail=f"{SO_FAR}{seats} of your {watch.whole_party} so far, on {names}",
         )
     if not results:
         return CheckResult(CheckStatus.NOT_LISTED, detail="no nonstop flights in results")

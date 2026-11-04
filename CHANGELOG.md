@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
+- Show what you paid and how a party splits on the board and in the daily summary, along with how
+  many of a split party have seats so far.
+- Fix "1 clear answers" in the daily summary.
 - Split a party across any nonstops, alerting only when enough are open to seat everyone.
 - Watch a flight you've already booked, and get alerted only when it costs less than you paid.
 - Say in every seat alert what to do if plans change, stating a program's rule only once it's been

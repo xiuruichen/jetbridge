@@ -7,10 +7,11 @@ from datetime import date, timedelta
 import pytest
 from conftest import DAY, answer_from, cx_slice, make_runner, response
 
-from jetbridge import draft, service
+from jetbridge import board, draft, service
 from jetbridge.alerts import AlertKind, DateState, render_availability
 from jetbridge.matcher import evaluate
 from jetbridge.models import ANY_FLIGHT, Cabin, CheckResult, CheckStatus, Watch
+from jetbridge.runner import split_so_far
 
 FUTURE = (date.today() + timedelta(days=60)).isoformat()
 WATCH = Watch(1, ANY_FLIGHT, "JFK", "HKG", (DAY,), Cabin.BUSINESS, pax=2, whole_party=4)
@@ -114,6 +115,51 @@ def test_it_is_saved_and_survives_an_edit(store):
     )
     changed = service.change_watch(store, watch, dates=FUTURE, checks_per_day=4, max_miles=None)
     assert changed.whole_party == 4
+
+
+async def _short_split(store, clock):
+    store.add_watch(
+        ANY_FLIGHT, "JFK", "HKG", (DAY,), Cabin.BUSINESS, now=clock(), pax=2, whole_party=4
+    )
+    runner, _, _, _ = make_runner(store, clock, [flights("805")])
+    await runner.tick()
+    return runner, store.list_watches("active")[0]
+
+
+async def test_the_summary_says_how_far_along_a_split_is(store, clock):
+    runner, watch = await _short_split(store, clock)
+    _, body = runner.build_digest([watch])
+    assert "Party: 4, on separate bookings of 2" in body
+    assert "not offered, seats for 2 of your 4 so far, on CX805" in body
+    assert "1 clear answer," in body
+
+
+async def test_chat_says_how_far_along_a_split_is(store, clock):
+    _, watch = await _short_split(store, clock)
+    assert split_so_far(store, watch, DAY) == "seats for 2 of your 4 so far, on CX805"
+
+
+async def test_so_far_goes_once_the_answer_changes(store, clock):
+    _, watch = await _short_split(store, clock)
+    state = store.date_state(watch.id, DAY)
+    store.commit_check(watch.id, DAY, CheckResult(CheckStatus.NOT_OFFERED), state, [], clock() + 1)
+    assert split_so_far(store, watch, DAY) is None
+
+
+async def test_an_unclear_answer_keeps_the_last_clear_so_far(store, clock):
+    _, watch = await _short_split(store, clock)
+    state = store.date_state(watch.id, DAY)
+    store.commit_check(watch.id, DAY, CheckResult(CheckStatus.UNKNOWN), state, [], clock() + 1)
+    assert split_so_far(store, watch, DAY) is not None
+
+
+def test_a_plain_watch_has_no_so_far(store, clock):
+    watch = store.add_watch(ANY_FLIGHT, "JFK", "HKG", (DAY,), Cabin.BUSINESS, now=clock())
+    assert split_so_far(store, watch, DAY) is None
+
+
+def test_the_board_shows_the_split():
+    assert "watch.whole_party" in board.PAGE and "day.split_so_far" in board.PAGE
 
 
 def test_the_review_says_how_it_splits():

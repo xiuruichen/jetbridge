@@ -36,6 +36,7 @@ from jetbridge.runner import (
     above_limit_miles,
     never_seen_note,
     seen_history,
+    split_so_far,
     watch_coverage,
 )
 from jetbridge.scheduler import WHY, is_searchable, search_starts, watch_checks_per_day
@@ -184,6 +185,9 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         over = above_limit_miles(store, watch, day) if day >= today else None
         if over and not watch.booked_miles:
             view["seats_above_price_limit_at_miles"] = over
+        so_far = split_so_far(store, watch, day) if day >= today else None
+        if so_far:
+            view["split_so_far"] = so_far
         others = store.get_also_seen(watch.id, day) if day >= today else None
         if others and state.status is not CheckStatus.AVAILABLE:
             view["also_seen"] = {

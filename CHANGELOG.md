@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Say in every seat alert what to do if plans change, stating a program's rule only once it's been
+  confirmed on the airline's own page.
+- Lead the front page with the live re-check, and add a dated comparison with seats.aero.
 - Send the daily summary to everyone on a watch, not only the owner. Each person's copy covers only
   their own watches and doesn't show anyone else's address.
 

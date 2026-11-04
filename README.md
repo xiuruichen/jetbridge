@@ -14,13 +14,15 @@
   <a href="#get-started"><b>Get started</b></a> ·
   <a href="#what-you-can-ask">What you can ask</a> ·
   <a href="#how-it-works">How it works</a> ·
+  <a href="#how-it-compares">How it compares</a> ·
   <a href="#good-to-know">Good to know</a> ·
   <a href="docs/guide.md">Full guide</a>
 </p>
 
 Tell jetbridge the flight, cabin, dates and miles you want, in plain words. It searches the airline's
-website several times a day from your own computer, and emails you the price and a booking link when
-seats appear.
+own website several times a day from your computer. When seats appear for your whole party, it searches
+again live, then emails you the price and a booking link. If that second search can't tell, the email
+says it's unconfirmed.
 
 **It's free, with no account or subscription.** It works with American AAdvantage, Delta SkyMiles and
 United MileagePlus, including the partner flights they sell.
@@ -29,10 +31,10 @@ United MileagePlus, including the partner flights they sell.
 
 ## Why jetbridge
 
-- **It watches what you actually want.** One exact flight, or any nonstop on a route, in your cabin, for
-  your party size, under your price limit.
 - **It double-checks before alerting you.** Seats are searched again live a minute or two later, so you
   aren't sent after seats that were only there for a moment.
+- **It watches what you actually want.** One exact flight, or any nonstop on a route, in your cabin,
+  under your price limit. Searches use your real party size, so seats for one don't count for two.
 - **It proves it's watching.** You can see how many of the last 24 hours each flight stayed on schedule,
   and an unclear answer is never reported as "no seats".
 - **It builds a record of your flight.** Past openings, how long they lasted, their prices, seats just
@@ -120,12 +122,24 @@ More about [how checks are timed](docs/guide.md#how-checks-work), including why 
 machine learning yet: there's no good public data on when seats are released, and a single watch doesn't
 produce enough to learn from.
 
+## How it compares
+
+jetbridge is for when you already know the flight or route you want. If you're flexible, a search site
+covers far more, and the two work well together. Here's the best-known one, as checked on Nov 3, 2026.
+Its details can change, so check [seats.aero](https://seats.aero) itself.
+
+| | jetbridge | seats.aero |
+|---|---|---|
+| **Best for** | A flight or route you already know | Browsing many programs and routes |
+| **Programs** | American, Delta and United | [24 programs](https://awardwallet.com/travel/seats-aero-guide/) |
+| **Cost** | Free | [Free plan, or Pro at $12.99 a month from Nov 9, 2026](https://upgradedpoints.com/news/seats-aero-price-increase) |
+| **How far ahead** | As far as the airline shows | [60 days free, a year on Pro](https://awardwallet.com/travel/seats-aero-guide/) |
+| **Alerts** | One flight or any nonstop, re-checked live on the airline's site first | [Unlimited, for direct routes, by date, program and cabin](https://docs.seats.aero/article/43-creating-and-managing-alerts) |
+| **Where it runs** | Your computer, which has to be on | Its own service, so your computer can be off |
+| **In Claude** | Yes, on your computer | Yes, through its [official connector](https://seats.aero/mcp) |
+
 ## Good to know
 
-- **Is it for you?** jetbridge is for when you already know the flight or route you want. If you're
-  flexible and want to browse many programs and routes, a search site such as
-  [seats.aero](https://seats.aero) or [point.me](https://point.me) covers far more. They work well
-  together.
 - **Your computer has to be on, awake and logged in.** `jetbridge keep-awake on` stops it sleeping while
   plugged in, and you can undo that.
 - **Sending alerts needs a Gmail account** with 2-Step Verification. Alerts can go to any address.

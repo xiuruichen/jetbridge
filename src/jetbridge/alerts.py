@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
 
+from jetbridge.acquire.rules import cancel_note
 from jetbridge.acquire.sites import get_site
 from jetbridge.models import CheckResult, CheckStatus, Query, Watch
 
@@ -218,6 +219,8 @@ def render_availability(
         "",
         "Award seats can vanish quickly. "
         "Confirm on the site before moving any points, because transfers can't be undone.",
+        "",
+        cancel_note(watch.program, datetime.fromtimestamp(now).date()),
     ]
     return subject, "\n".join(lines)
 

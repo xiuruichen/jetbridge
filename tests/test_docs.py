@@ -59,3 +59,16 @@ def test_the_front_page_is_honest_about_the_big_limits():
     assert "likely goes against the airlines' terms" in text
     assert "hasn't been tried on a real Mac" in text
     assert "Don't rely on it as your only way" in text
+    assert "says it's unconfirmed" in text
+
+
+def test_the_comparison_is_dated_and_links_its_claims():
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    section = text.split("## How it compares")[1].split("## Good to know")[0]
+    assert "as checked on Nov 3, 2026" in section
+    rows = [line for line in section.splitlines() if line.startswith("| **")]
+    for row in rows:
+        if row.startswith(
+            ("| **Programs", "| **Cost", "| **How far", "| **Alerts", "| **In Claude")
+        ):
+            assert "](https://" in row

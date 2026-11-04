@@ -471,7 +471,8 @@ it would no longer be useful, and the email still arrives.
    United asks you to sign in before it shows prices in miles.
 2. **Find your flight** and check the price, cabin and taxes. Award seats can disappear in minutes.
 3. **Book it yourself.** If you need to transfer points first, confirm the seats are still there,
-   because transfers generally can't be undone.
+   because transfers generally can't be undone. The alert also shows the program's cancel rules where
+   they've been confirmed on the airline's own page, and otherwise points you there.
 
 A few details in the email:
 

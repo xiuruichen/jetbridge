@@ -44,7 +44,7 @@ def watch_on(*days: date, base: int = 6, program: str = "american") -> Watch:
 @pytest.mark.parametrize(
     ("days_out", "base", "rate"),
     [
-        (0, 6, 9),  # departure day
+        (0, 6, 12),  # departure day
         (14, 6, 9),
         (15, 6, 6),
         (60, 6, 6),
@@ -102,12 +102,12 @@ def test_normal_gap_allows_for_waiting_on_the_next_visit():
 
 def test_search_counts_now_and_at_the_busiest():
     days = (out(200), out(201), out(202))
-    assert searches_per_day(days, "american", 6, TODAY) == (15, 27)
+    assert searches_per_day(days, "american", 6, TODAY) == (15, 36)
 
 
 def test_search_counts_leave_out_passed_and_unopened_dates():
-    assert searches_per_day((out(-1), out(20)), "american", 6, TODAY) == (6, 9)
-    assert searches_per_day((out(340),), "american", 6, TODAY) == (0, 9)
+    assert searches_per_day((out(-1), out(20)), "american", 6, TODAY) == (6, 12)
+    assert searches_per_day((out(340),), "american", 6, TODAY) == (0, 12)
 
 
 # ---- through a real tick --------------------------------------------------------------
@@ -251,12 +251,12 @@ def _review(days_out: int, count: int = 3, base: int = 6) -> str:
 
 
 def test_review_shows_searches_now_and_at_the_busiest():
-    assert "about 15 aa.com searches a day, up to 27 a day close to departure" in _review(200)
+    assert "about 15 aa.com searches a day, up to 36 a day close to departure" in _review(200)
 
 
 def test_review_warns_when_the_busiest_is_a_lot():
-    assert "block more likely" in _review(200, count=5)
-    assert "block more likely" not in _review(200, count=4)
+    assert "block more likely" in _review(200, count=4)
+    assert "block more likely" not in _review(200, count=3)
 
 
 def test_review_warns_about_going_over_the_daily_limit():

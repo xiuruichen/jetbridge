@@ -147,7 +147,7 @@ def test_cabin_names():
 
 def test_review_shows_the_cost_and_warns_when_high():
     small = draft.WatchDraft("JFK", "HKG", "2027-05-21..2027-05-23", "CX845")
-    assert "about 15 aa.com searches a day, up to 27" in draft.review_text(small, "owner@x.com")
+    assert "about 15 aa.com searches a day, up to 36" in draft.review_text(small, "owner@x.com")
     assert "owner@x.com" in draft.review_text(small, "owner@x.com")
     assert "block more likely" not in draft.review_text(small, "owner@x.com")
 
@@ -443,7 +443,7 @@ def test_search_count_leaves_out_dates_that_have_passed(monkeypatch):
         flight="AA100",
         checks_per_day=6,
     )
-    assert watch.searches_per_day == 18  # two dates left, each in its last two weeks
+    assert watch.searches_per_day == 24  # two dates left, each in its last three days
 
 
 def test_start_checks_a_new_watch_and_says_what_it_means(monkeypatch):

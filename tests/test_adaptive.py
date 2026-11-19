@@ -500,3 +500,14 @@ def test_past_the_budget_only_overdue_dates_still_search(watches):
     used, after_budget = _plan_a_day(_busy_watches(watches))
     assert after_budget and all(after_budget)
     assert used <= PLANNED_DAILY + 2 * 2 * 14 * watches  # one overdue round past the budget
+
+
+def test_the_last_days_before_departure_are_checked_fastest():
+    from jetbridge.scheduler import LAST_DAYS, checks_per_day_on
+
+    today = DAY - timedelta(days=30)
+    assert checks_per_day_on(today, "american", 6, today) == 12.0  # departure day: twice the base
+    assert checks_per_day_on(today, "american", 20, today) == 24.0  # the cap still holds
+    assert checks_per_day_on(today + timedelta(days=LAST_DAYS), "american", 6, today) == 12.0
+    assert checks_per_day_on(today + timedelta(days=LAST_DAYS + 1), "american", 6, today) == 9.0
+    assert checks_per_day_on(today - timedelta(days=1), "american", 6, today) == 9.0  # passed

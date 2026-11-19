@@ -47,7 +47,9 @@ def test_links_and_pictures_on_this_site_lead_somewhere(page):
     assert broken == []
 
 
-@pytest.mark.parametrize("name", ["banner.svg", "board.svg", "alert.svg", "chat-demo.svg", "scope.svg"])
+@pytest.mark.parametrize(
+    "name", ["banner.svg", "board.svg", "alert.svg", "chat-demo.svg", "scope.svg"]
+)
 def test_pictures_are_labeled_and_have_only_made_up_details(name):
     text = (ROOT / "docs" / name).read_text(encoding="utf-8")
     assert "<title" in text and "<desc" in text

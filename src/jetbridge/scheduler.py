@@ -23,6 +23,10 @@ OPENS_EARLY_DAYS = 3
 CLOSE_IN_DAYS = 14
 FAR_OUT_DAYS = 60
 BUSY_PACE = 1.5
+# In the last days before departure, seats come back as bookings are cancelled and little else can
+# change, so searches go there. This says nothing about any airline's cancellation rules.
+LAST_DAYS = 3
+LAST_PACE = 2.0
 FAR_OUT_PACE = 5 / 6
 MAX_CHECKS_PER_DAY = 24
 MIN_FAR_OUT_CHECKS_PER_DAY = 2
@@ -154,6 +158,8 @@ def checks_per_day_on(day: date, program: str, base: int, today: date) -> float:
     """How often to check this date today, given the watch's own setting."""
     days_out = (day - today).days
     just_opened = days_out >= get_site(program).booking_window_days - OPENS_EARLY_DAYS
+    if 0 <= days_out <= LAST_DAYS:
+        return min(base * LAST_PACE, float(MAX_CHECKS_PER_DAY))
     if days_out <= CLOSE_IN_DAYS or just_opened:
         return min(base * BUSY_PACE, float(MAX_CHECKS_PER_DAY))
     if days_out > FAR_OUT_DAYS:
@@ -204,7 +210,16 @@ def searches_per_day(
         for day in upcoming
         if is_searchable(day, program, today)
     )
-    return round(now), round(len(upcoming) * min(base * BUSY_PACE, MAX_CHECKS_PER_DAY))
+    # At the busiest, the dates that can share the last few days get the fastest pace, and the
+    # rest the close-in one.
+    ordered = sorted(upcoming)
+    together = max(
+        (sum(1 for other in ordered if 0 <= (other - day).days <= LAST_DAYS) for day in ordered),
+        default=0,
+    )
+    fastest = min(base * LAST_PACE, MAX_CHECKS_PER_DAY)
+    close = min(base * BUSY_PACE, MAX_CHECKS_PER_DAY)
+    return round(now), round(together * fastest + (len(upcoming) - together) * close)
 
 
 @dataclass(frozen=True)

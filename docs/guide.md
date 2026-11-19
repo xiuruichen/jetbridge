@@ -292,6 +292,35 @@ In chat, say "We're four and can split into two and two on any nonstop". These a
 possibly at different prices, and cancelling one doesn't change another. Confirm every flight you need
 before booking any.
 
+### Similar flights, nearby dates and other airports
+
+Two things catch a good deal that isn't quite the flight you named.
+
+**Other flights on the same route and date** need nothing from you. If one opens that fits your rules
+(cabin, price limit, or below what you paid), you get a `SIMILAR FLIGHT OPEN` alert, after the same
+live re-check as any opening. Flights that were already open the first time a date was checked aren't
+announced.
+
+**A flexible scope** also scouts nearby dates and other airports. Say you booked YYZ to HKG and any
+North American airport would do:
+
+```powershell
+jetbridge watch flex 1 --origins north-america --days 1
+jetbridge watch flex 1 --destinations HND,NRT
+jetbridge watch flex 1                      # no options: turn the extra scouting off
+```
+
+In chat, say "any North American airport to Hong Kong is fine too". The scope can be airport codes or
+a region (`north-america`, `us-east-coast`, `us-west-coast`, `canada`, `new-york-area`, `london-area`,
+`tokyo-area`, `paris-area`, `bay-area`, `los-angeles-area`), and up to 3 days either side.
+
+- Any **nonstop** that fits the watch's cabin and price rules counts. Connections never do.
+- Scouting only uses searches left over after your own dates, so it never slows them down, and it's
+  capped at the 30 places closest to your plan. Each place is looked at about every 6 hours, or 3 for a
+  high priority watch.
+- A scouted opening is announced once while it stays open, and again if it goes and comes back.
+- The alert says why it counts, such as "1 day earlier, from EWR instead of JFK".
+
 ### Getting these right
 
 - **Program:** this is whose miles you'd use, not who flies the plane. Partner flights can appear:
@@ -436,6 +465,7 @@ Over time, each watch builds up a record of what happened on your flight:
 | **MORE SEATS** | An open date gained seats (only when the site states a count) |
 | **STILL OPEN** | One reminder a day while seats stay open |
 | **Seats gone** | An open date closed |
+| **SIMILAR FLIGHT OPEN** | Another flight, nearby date or nearby airport that fits the watch's rules opened, and a live re-check confirmed it |
 | **jetbridge can't see...** | No clear answer on any date for 24 hours |
 | **A site's page format may have changed** | Two checks in a row couldn't be read, so the parser may need fixing |
 | **... should open tomorrow** | The day before a date should become bookable. Takes no searches |
@@ -615,6 +645,7 @@ folder. Add `--help` to any command for details.
 | `watch list` | List every watch |
 | `watch edit ID ...` | Change dates, price limit or pace, keeping the history |
 | `watch priority ID high` / `normal` | Put a watch first, within the same daily limits |
+| `watch flex ID [--days N] [--origins X] [--destinations Y]` | Also scout nearby dates and other airports. No options turns it off |
 | `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |
 | `watch pause ID` / `watch resume ID` | Stop or restart checking |
 | `watch rm ID` | Delete a watch and its history |

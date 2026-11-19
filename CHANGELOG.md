@@ -6,6 +6,10 @@
   seats that fit your rules (cabin, price limit, or below what you paid). It costs one extra live
   re-check, like any opening, and goes to your phone too if phone alerts are on. Flights already open
   when a date is first checked aren't announced.
+- Scout nearby dates and other airports for a watch with `jetbridge watch flex`, or by asking Claude
+  ("any North American airport to Hong Kong is fine"). Any nonstop that fits the watch's rules sends
+  the same urgent alert, saying why it counts. Scouting uses only searches left over after your own
+  dates, covers at most 30 places, and looks at each about every 6 hours.
 
 ## 0.5.2
 

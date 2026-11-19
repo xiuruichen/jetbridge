@@ -29,7 +29,7 @@ from jetbridge import insights as record
 from jetbridge import report as problem_report
 from jetbridge import uninstall as removal
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
-from jetbridge.acquire.sites import SITES
+from jetbridge.acquire.sites import SITES, parse_programs
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when, query_for
 from jetbridge.models import CheckStatus, Watch
 from jetbridge.notify import email as mail
@@ -140,10 +140,20 @@ def watch_add(
     destination: str = typer.Option(..., "--to", help="Arrival airport of this flight"),
     dates: str = typer.Option(..., help="2027-06-14..2027-06-16 or 2027-06-14,2027-06-16"),
     cabin: str = typer.Option("business", help="economy, premium, business or first"),
-    program: str = typer.Option("american", help="Miles to search: american, delta or united"),
+    program: str = typer.Option(
+        "american",
+        help="Miles to search: american, delta, united, several like american,delta, or all",
+    ),
     pax: int = typer.Option(1, help="Party size; searched at this real size"),
     checks_per_day: int = typer.Option(
         6, help="Checks per day, per date. Lower far out, higher in the last two weeks"
+    ),
+    flex_days: int = typer.Option(0, "--flex-days", help="Also scout this many days either side"),
+    origins: str | None = typer.Option(
+        None, "--origins", help="Also scout these airports or a region, like north-america"
+    ),
+    destinations: str | None = typer.Option(
+        None, "--destinations", help="Also scout these arrival airports or a region"
     ),
     max_miles: int | None = typer.Option(None, help="Only alert at or below this price"),
     booked_miles: int | None = typer.Option(
@@ -163,13 +173,16 @@ def watch_add(
         service.parse_dates(dates)  # catch a bad date before asking anything else
         if notify is None:
             notify = _ask_recipients()
+        programs = parse_programs(program)
+        if booked_miles is not None and len(programs) > 1:
+            raise ValueError("a booked award is one flight on one program, so choose just one")
         valid = service.validate_watch(
             flight=flight,
             origin=origin,
             destination=destination,
             dates=dates,
             cabin=cabin,
-            program=program,
+            program=programs[0],
             pax=pax,
             checks_per_day=checks_per_day,
             max_miles=max_miles,
@@ -177,48 +190,50 @@ def watch_add(
             booked_miles=booked_miles,
             whole_party=whole_party,
         )
-        draft = drafts.WatchDraft(
-            origin=valid.origin,
-            destination=valid.destination,
-            dates=dates,
-            flight=valid.flight.code,
-            cabin=valid.cabin,
-            program=program,
-            pax=pax,
-            checks_per_day=checks_per_day,
-            max_miles=max_miles,
-            recipients=notify,
-            booked_miles=booked_miles,
-            whole_party=whole_party,
-        )
+        all_drafts = [
+            drafts.WatchDraft(
+                origin=valid.origin,
+                destination=valid.destination,
+                dates=dates,
+                flight=valid.flight.code,
+                cabin=valid.cabin,
+                program=each,
+                pax=pax,
+                checks_per_day=checks_per_day,
+                max_miles=max_miles,
+                recipients=notify,
+                booked_miles=booked_miles,
+                whole_party=whole_party,
+                flex_days=flex_days,
+                flex_origins=origins,
+                flex_destinations=destinations,
+            )
+            for each in programs
+        ]
+        for each_draft in all_drafts:
+            drafts.validate(each_draft)
         if not yes:
             owner = mail.load_config()
             typer.echo("\nHere's what I'll watch:")
-            typer.echo(drafts.review_text(draft, owner.to_address if owner else "you"))
+            typer.echo(
+                drafts.review_text(
+                    all_drafts[0],
+                    owner.to_address if owner else "you",
+                    programs=programs if len(programs) > 1 else (),
+                )
+            )
             try:
                 if not typer.confirm("\nStart watching this flight?", default=False):
                     typer.echo("OK, nothing was saved.")
                     return
             except typer.Abort as exc:
                 raise _fail("nothing was saved. Add --yes to save without asking") from exc
-        watch = service.create_watch(
-            store,
-            flight=flight,
-            origin=origin,
-            destination=destination,
-            dates=dates,
-            cabin=cabin,
-            program=program,
-            pax=pax,
-            checks_per_day=checks_per_day,
-            max_miles=max_miles,
-            recipients=notify,
-            booked_miles=booked_miles,
-            whole_party=whole_party,
-        )
+        watches = drafts.save_all(store, all_drafts)
+        watch = watches[0]
     except ValueError as exc:
         raise _fail(str(exc)) from exc
-    typer.echo(_describe(watch))
+    for saved in watches:
+        typer.echo(_describe(saved))
     if autorun.is_installed():
         typer.echo("The first check runs within about 15 minutes.")
     else:

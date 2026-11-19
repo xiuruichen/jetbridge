@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from jetbridge import service
+from jetbridge import flex, service
 from jetbridge.acquire.governor import PLANNED_DAILY
 from jetbridge.acquire.sites import get_site
-from jetbridge.models import ANY_FLIGHT, Cabin, Watch
+from jetbridge.models import ANY_FLIGHT, Cabin, Flight, Watch
 from jetbridge.scheduler import is_searchable, search_starts, searches_per_day
 from jetbridge.store import Store
 
@@ -152,6 +152,9 @@ class WatchDraft:
     recipients: str | None = None  # None means the owner
     booked_miles: int | None = None
     whole_party: int | None = None
+    flex_days: int = 0  # also scout this many days either side
+    flex_origins: str | None = None  # other airports or a region to leave from
+    flex_destinations: str | None = None  # other airports or a region to arrive at
 
     def missing(self) -> list[str]:
         fields = ("origin", "destination", "dates", "flight")
@@ -310,9 +313,10 @@ def review_text(
     editing: bool = False,
     flights: tuple[str, ...] = (),
     cabins: tuple[Cabin, ...] = (),
+    programs: tuple[str, ...] = (),
 ) -> str:
-    """What's about to be saved, with what it costs in searches. With several flights or cabins,
-    each combination is its own watch, and they share their searches."""
+    """What's about to be saved, with what it costs in searches. With several flights, cabins or
+    programs, each combination is its own watch, and watches on the same program share searches."""
     days = service.parse_dates(draft.dates or "")
     limit = f"{draft.max_miles:,} miles per person" if draft.max_miles else "no limit"
     if draft.booked_miles:
@@ -320,7 +324,8 @@ def review_text(
     addresses = service.parse_recipients(draft.recipients)
     searches, busiest = draft.search_plan
     site = get_site(draft.program)
-    pace = f"about {searches} {site.domain} searches a day" if searches else "none yet"
+    where = "each site" if len(programs) > 1 else site.domain
+    pace = f"about {searches} {where} searches a day" if searches else "none yet"
     if busiest != searches:
         pace += f", up to {busiest} a day close to departure"
     is_any = draft.flight == ANY_FLIGHT.code
@@ -330,7 +335,7 @@ def review_text(
         f"Flight:      {named} from {draft.origin} to {draft.destination}",
         *(["             Connections don't count."] if is_any else []),
         f"Cabin:       {cabin}",
-        f"Miles:       {site.label}",
+        f"Miles:       {_program_names(programs) if len(programs) > 1 else site.label}",
         f"Passengers:  {draft.pax}"
         if not draft.whole_party
         else f"Passengers:  {draft.whole_party}, on separate bookings of {draft.pax}",
@@ -345,9 +350,20 @@ def review_text(
         ),
         f"Searching:   {pace}",
     ]
-    if flights or cabins:
-        count = max(len(flights), 1) * max(len(cabins), 1)
-        lines.append(f"             That's {count} watches sharing these searches.")
+    if flights or cabins or len(programs) > 1:
+        count = max(len(flights), 1) * max(len(cabins), 1) * max(len(programs), 1)
+        if len(programs) > 1:
+            lines.append(f"             That's {count} watches, and alerts say what else is open.")
+        else:
+            lines.append(f"             That's {count} watches sharing these searches.")
+    if draft.flex_days or draft.flex_origins or draft.flex_destinations:
+        scoped = flex.scoped(
+            _stand_in(draft),
+            days=draft.flex_days,
+            origins=draft.flex_origins,
+            destinations=draft.flex_destinations,
+        )
+        lines += [f"             {line.strip()}" for line in flex.review_text(scoped).splitlines()]
     today = date.today()
     unopened = [d for d in days if d >= today and not is_searchable(d, draft.program, today)]
     if unopened:
@@ -368,6 +384,26 @@ def review_text(
             "likely. Fewer dates would help."
         )
     return "\n".join(lines)
+
+
+def _program_names(programs: tuple[str, ...]) -> str:
+    labels = [get_site(program).label for program in programs]
+    return f"{', '.join(labels[:-1])} and {labels[-1]}"
+
+
+def _stand_in(draft: WatchDraft) -> Watch:
+    """A watch that isn't saved, only so a scope can be worded and counted."""
+    days = service.parse_dates(draft.dates or "")
+    return Watch(
+        0,
+        ANY_FLIGHT if draft.flight == ANY_FLIGHT.code else Flight.parse(draft.flight or "any"),
+        draft.origin or "",
+        draft.destination or "",
+        days,
+        draft.cabin,
+        draft.program,
+        draft.pax,
+    )
 
 
 def _fields(draft: WatchDraft) -> dict[str, Any]:
@@ -411,11 +447,32 @@ def from_watch(watch: Watch, dates: str, checks_per_day: int, max_miles: int | N
 def validate(draft: WatchDraft) -> None:
     """Raise ``ValueError`` if saving this draft would be refused, so a review can't mislead."""
     service.validate_watch(**_fields(draft))
+    flex.check(draft.flex_days, draft.flex_origins, draft.flex_destinations)
 
 
 def save(store: Store, draft: WatchDraft) -> Watch:
     """Save a finished draft through the one validated way of creating a watch."""
-    return service.create_watch(store, **_fields(draft))
+    watch = service.create_watch(store, **_fields(draft))
+    if draft.flex_days or draft.flex_origins or draft.flex_destinations:
+        scoped = flex.scoped(
+            watch,
+            days=draft.flex_days,
+            origins=draft.flex_origins,
+            destinations=draft.flex_destinations,
+        )
+        store.set_flex(watch.id, scoped.flex_days, scoped.flex_origins, scoped.flex_destinations)
+        watch = store.get_watch(watch.id) or watch
+    return watch
+
+
+def save_all(store: Store, all_drafts: list[WatchDraft]) -> list[Watch]:
+    """Save several drafts, and tie them together if there's more than one, so an alert can say
+    what else is open across them."""
+    watches = [save(store, draft) for draft in all_drafts]
+    if len(watches) > 1:
+        store.set_group([w.id for w in watches], watches[0].id)
+        watches = [store.get_watch(w.id) or w for w in watches]
+    return watches
 
 
 def first_upcoming_day(dates: str, today: date) -> date:

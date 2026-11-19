@@ -10,7 +10,6 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import date, timedelta
 
-from jetbridge.draft import resolve_airport
 from jetbridge.models import Query, Watch
 
 MAX_FLEX_DAYS = 3
@@ -54,6 +53,8 @@ def expand(text: str) -> tuple[str, ...]:
     """Turn 'north-america', 'JFK, EWR' or 'new york area' into airport codes, without repeats.
 
     Raises ValueError for a name it doesn't know, so nothing is saved on a guess."""
+    from jetbridge.draft import resolve_airport  # draft imports this module too
+
     found: dict[str, None] = {}
     for part in text.split(","):
         name = "-".join(part.strip().lower().split())
@@ -97,6 +98,15 @@ def scout_queries(watch: Watch, today: date, searchable: Callable[[date], bool])
                     seen[query] = min(rank, seen.get(query, rank))
     ordered = sorted(seen, key=lambda q: (seen[q], q.date, q.origin, q.destination))
     return ordered[:MAX_SCOUT_QUERIES]
+
+
+def check(days: int, origins: str | None, destinations: str | None) -> None:
+    """Raise ValueError if a scope would be refused, so a review never promises more than saves."""
+    if not 0 <= days <= MAX_FLEX_DAYS:
+        raise ValueError(f"days either side must be from 0 to {MAX_FLEX_DAYS}")
+    for names in (origins, destinations):
+        if names:
+            expand(names)
 
 
 def scoped(watch: Watch, *, days: int, origins: str | None, destinations: str | None) -> Watch:

@@ -37,7 +37,7 @@ from jetbridge import (
 from jetbridge import draft as drafts
 from jetbridge import report as problem_report
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
-from jetbridge.acquire.sites import SITES, parse_program
+from jetbridge.acquire.sites import SITES, parse_program, parse_programs
 from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
 from jetbridge.insights import TOO_FEW_ANSWERS, clear_answers, openings
 from jetbridge.models import Cabin, CheckStatus, Flight, Query, Watch
@@ -456,6 +456,9 @@ def _recall(prefix: str, token: str) -> dict[str, Any] | None:
 MAX_WATCHES_AT_ONCE = 6
 
 
+_programs = parse_programs
+
+
 def _several(text: str) -> list[str]:
     return [part for part in re.split(r"\s*(?:,|/|&|\bor\b|\band\b)\s*", text.strip()) if part]
 
@@ -474,6 +477,9 @@ def review_watch(
     notify: str | None = None,
     booked_miles: int | None = None,
     whole_party: int | None = None,
+    flex_days: int = 0,
+    other_origins: str | None = None,
+    other_destinations: str | None = None,
 ) -> dict[str, Any]:
     """Check the details of a new watch and return a review. This saves nothing.
 
@@ -487,33 +493,45 @@ def review_watch(
     confirmation code. whole_party is for a group willing to split across separate bookings, such as
     a family of 4 taking 2 and 2 on any nonstop: pax is one group (2), whole_party is everyone (4),
     and it alerts only when enough nonstops are open to seat everyone. Offer it only if they say
-    they'd split up."""
+    they'd split up. program can be several, like american, delta, or all for every program:
+    the person who wants any airline on a route should get flight any with program all, because
+    each program's results include its alliance partners, and alerts then say what else is open on
+    the other programs. flex_days (0 to 3), other_origins and other_destinations also scout
+    nearby dates and other airports or a region such as north-america, for any nonstop that fits
+    the same rules: say it in the review, and never promise a catch rate."""
     codes = tuple(Flight.parse(part).code for part in _several(flight))
     cabins = tuple(drafts.parse_cabin(part) for part in _several(cabin))
-    if booked_miles is not None and len(codes) * len(cabins) > 1:
+    programs = _programs(program)
+    if booked_miles is not None and len(codes) * len(cabins) * len(programs) > 1:
         raise ToolError("a booked award is one flight in one cabin, so review just that one")
-    if len(codes) * len(cabins) > MAX_WATCHES_AT_ONCE:
+    if len(codes) * len(cabins) * len(programs) > MAX_WATCHES_AT_ONCE:
         raise ToolError(f"that's over {MAX_WATCHES_AT_ONCE} watches at once. Ask them to narrow it")
     shared = {
         "origin": _airport(origin),
         "destination": _airport(destination),
         "dates": drafts.parse_dates(dates, date.today()),
-        "program": parse_program(program),
         "pax": pax,
         "checks_per_day": checks_per_day,
         "max_miles": max_miles,
         "recipients": notify,
         "booked_miles": booked_miles,
         "whole_party": whole_party,
+        "flex_days": flex_days,
+        "flex_origins": other_origins,
+        "flex_destinations": other_destinations,
     }
     all_drafts = [
-        drafts.WatchDraft(flight=code, cabin=each, **shared) for code in codes for each in cabins
+        drafts.WatchDraft(flight=code, cabin=each, program=each_program, **shared)
+        for code in codes
+        for each in cabins
+        for each_program in programs
     ]
     for draft in all_drafts:
         drafts.validate(draft)
     fields = [{**asdict(draft), "cabin": draft.cabin.value} for draft in all_drafts]
     review_id = _remember(_REVIEW, {"drafts": fields})
     several = len(all_drafts) > 1
+    many_programs = programs if len(programs) > 1 else ()
     return {
         "saved": False,
         "review_id": review_id,
@@ -522,6 +540,7 @@ def review_watch(
             _owner_address() or "you",
             flights=codes if len(codes) > 1 else (),
             cabins=cabins if len(cabins) > 1 else (),
+            programs=many_programs,
         )
         if several
         else drafts.review_text(all_drafts[0], _owner_address() or "you"),
@@ -547,7 +566,7 @@ def confirm_watch(review_id: str) -> dict[str, Any]:
         for draft in all_drafts:
             drafts.validate(draft)
         store = service.open_store()
-        watches = [drafts.save(store, draft) for draft in all_drafts]
+        watches = drafts.save_all(store, all_drafts)
     except ValueError as exc:
         raise ToolError(f"{exc}. Nothing was saved. Call review_watch again") from exc
     watch = watches[0]

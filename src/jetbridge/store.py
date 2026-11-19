@@ -107,6 +107,7 @@ def _watch(row: sqlite3.Row) -> Watch:
         flex_days=row["flex_days"],
         flex_origins=tuple(json.loads(row["flex_origins"])),
         flex_destinations=tuple(json.loads(row["flex_destinations"])),
+        group_id=row["group_id"],
     )
 
 
@@ -131,6 +132,7 @@ class Store:
             ("watches", "flex_days", "INTEGER NOT NULL DEFAULT 0"),
             ("watches", "flex_origins", "TEXT NOT NULL DEFAULT '[]'"),
             ("watches", "flex_destinations", "TEXT NOT NULL DEFAULT '[]'"),
+            ("watches", "group_id", "INTEGER"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -218,6 +220,20 @@ class Store:
             "UPDATE watches SET dates=?, checks_per_day=?, max_miles=? WHERE id=?",
             (json.dumps([d.isoformat() for d in dates]), checks_per_day, max_miles, watch_id),
         )
+
+    def set_group(self, watch_ids: list[int], group_id: int) -> None:
+        for watch_id in watch_ids:
+            self.conn.execute("UPDATE watches SET group_id=? WHERE id=?", (group_id, watch_id))
+
+    def group_siblings(self, watch: Watch) -> list[Watch]:
+        """Active watches saved together with this one, so a deal can be compared across them."""
+        if watch.group_id is None:
+            return []
+        rows = self.conn.execute(
+            "SELECT * FROM watches WHERE group_id=? AND id!=? AND status='active' ORDER BY id",
+            (watch.group_id, watch.id),
+        )
+        return [_watch(r) for r in rows]
 
     def set_flex(
         self, watch_id: int, days: int, origins: tuple[str, ...], destinations: tuple[str, ...]

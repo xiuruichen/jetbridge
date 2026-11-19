@@ -87,6 +87,7 @@ class Watch:
     flex_days: int = 0
     flex_origins: tuple[str, ...] = ()
     flex_destinations: tuple[str, ...] = ()
+    group_id: int | None = None  # watches saved together across programs, flights or cabins
 
     @property
     def is_flexible(self) -> bool:

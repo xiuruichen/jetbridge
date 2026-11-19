@@ -401,3 +401,42 @@ async def test_a_paused_watch_gets_no_reminder(store, clock):
     runner, _, sender, _ = make_runner(store, clock, [])
     await runner.tick()
     assert _reminders(sender) == []
+
+
+async def test_any_airline_on_every_program_is_one_grouped_review(chat):
+    review, saved = await _review_and_save(
+        flight="any", cabin="business", program="all", flex_days=1, other_origins="north-america"
+    )
+    text = review["review"]
+    assert "American AAdvantage, Delta SkyMiles and United MileagePlus" in text
+    assert "That's 3 watches, and alerts say what else is open." in text
+    assert "leaving from" in text and "YYZ" in text
+    watches = service.open_store().list_watches()
+    assert {w.program for w in watches} == {"american", "delta", "united"}
+    assert len({w.group_id for w in watches}) == 1 and watches[0].group_id == watches[0].id
+    assert all(w.flex_days == 1 and "YYZ" in w.flex_origins for w in watches)
+    assert len(saved["also_saved"]) == 2
+
+
+async def test_one_program_is_still_not_grouped(chat):
+    await _review_and_save(flight="CX805", cabin="business", program="delta")
+    [watch] = service.open_store().list_watches()
+    assert watch.group_id is None and not watch.is_flexible
+
+
+async def _refusal(**fields) -> str:
+    async with Client(mcp_server.server) as client:
+        result = await client.call_tool(
+            "review_watch", {**DETAILS, "flight": "CX805", "cabin": "business", **fields}
+        )
+    assert result.is_error
+    return result.content[0].text
+
+
+async def test_a_booked_award_cannot_span_programs(chat):
+    assert "one flight in one cabin" in await _refusal(program="all", booked_miles=90_000)
+
+
+async def test_a_scope_that_would_be_refused_is_refused_in_the_review(chat):
+    assert "0 to 3" in await _refusal(flex_days=9)
+    assert "I don't know" in await _refusal(other_origins="the moon")

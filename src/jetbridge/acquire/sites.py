@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -90,6 +91,14 @@ _ALIASES = {
 
 def get_site(program: str) -> Site:
     return SITES[program]
+
+
+def parse_programs(text: str) -> tuple[str, ...]:
+    """One program, several like 'american, delta', or 'all' for every program."""
+    if " ".join(text.lower().split()) in ("all", "every", "any", "all programs"):
+        return tuple(SITES)
+    parts = [p for p in re.split(r"\s*(?:,|/|&|\bor\b|\band\b)\s*", text.strip()) if p]
+    return tuple(dict.fromkeys(parse_program(part) for part in parts))
 
 
 def parse_program(text: str) -> str:

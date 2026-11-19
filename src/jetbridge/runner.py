@@ -418,6 +418,26 @@ class Runner:
                 pending.append((watch, result, decision.state))
         return pending, similar
 
+    def _also_open(self, watch: Watch, day: date) -> str | None:
+        """Other programs' watches saved together with this one that show seats on this date."""
+        found = []
+        for other in self.store.group_siblings(watch):
+            same = (other.origin, other.destination, other.cabin, other.pax) == (
+                watch.origin,
+                watch.destination,
+                watch.cabin,
+                watch.pax,
+            )
+            state = self.store.date_state(other.id, day)
+            if same and other.program != watch.program and state.status is CheckStatus.AVAILABLE:
+                found.append((state.miles or 0, get_site(other.program).label))
+        if not found:
+            return None
+        listed = ", ".join(
+            f"{label} {miles:,} miles" if miles else label for miles, label in sorted(found)
+        )
+        return f"{listed}, as of the last checks. Compare before you move any points."
+
     def _closing_soon(
         self, watch: Watch, day: date, result: CheckResult, prev: DateState, now: float
     ) -> None:
@@ -579,8 +599,15 @@ class Runner:
                 history = seen_history(self.store, watch.id, day)
                 note = " ".join(n for n in (alert_note(history, now), hold_note(history)) if n)
                 note = note or None
+            also_open = None
+            if kind in (
+                AlertKind.SEATS_OPEN,
+                AlertKind.SEATS_OPEN_UNCONFIRMED,
+                AlertKind.PRICE_DROP,
+            ):
+                also_open = self._also_open(watch, day)
             subject, body = render_availability(
-                kind, watch, day, shown or result, prev, now, url, self.headlines, note
+                kind, watch, day, shown or result, prev, now, url, self.headlines, note, also_open
             )
             # One email per person, so recipients never see each other's addresses.
             for recipient in watch.recipients or (None,):

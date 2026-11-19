@@ -188,6 +188,7 @@ def render_availability(
     booking_url: str,
     headlines: Mapping[AlertKind, str] | None = None,
     history_note: str | None = None,
+    also_open: str | None = None,
 ) -> tuple[str, str]:
     day_text = day.strftime("%b %d, %Y")
     headline = (headlines or {}).get(kind, DEFAULT_HEADLINES[kind])
@@ -237,6 +238,8 @@ def render_availability(
     lines.extend(f"Note:     {note}" for note in result.notes)
     if history_note:
         lines.append(f"History:  {history_note}")
+    if also_open:
+        lines.append(f"Also open: {also_open}")
     if watch.whole_party:
         lines += [
             "",

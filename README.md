@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" width="860" alt="jetbridge: award seat alerts for the exact flight you want.">
+  <img src="docs/banner.svg" width="900" alt="jetbridge. Award seats vanish at 3 AM, and jetbridge is awake: it watches your flight, sibling flights, nearby dates and nearby airports, and confirms seats live before it alerts you.">
 </p>
 
 <p align="center">
@@ -32,9 +32,13 @@ hiding.
 **Free. No account, no subscription, no data leaving your machine.** American AAdvantage, Delta
 SkyMiles and United MileagePlus, partner flights included.
 
-![An example conversation: someone asks Claude to watch a flight, Claude asks which New York airport, shows what it will watch, saves it after a yes, and reports the first check.](docs/chat-demo.svg)
+![An example conversation: someone asks Claude to watch a flight, Claude asks which New York airport, shows what it will watch, saves it after a yes, and reports the first check. They then ask for any North American airport and a day either side.](docs/chat-demo.svg)
 
 ## Why people get hooked
+
+<p align="center">
+  <img src="docs/scope.svg" width="900" alt="A watch on one flight, surrounded by what jetbridge also scouts: the day before and after, other flights that day, and nearby airports. Any nonstop that fits the same rules gets an urgent alert after a live re-check.">
+</p>
 
 - **It finds the deal you didn't ask for.** Another flight on your route opens, a day earlier, out of
   EWR instead of JFK: you get an urgent alert that says exactly why it counts. Booked YYZ to HKG and any
@@ -60,7 +64,7 @@ SkyMiles and United MileagePlus, partner flights included.
 <table>
   <tr>
     <td width="50%"><img src="docs/board.svg" alt="The board jetbridge draws in a Claude chat, with made-up flights: proof of watching, seats open on one date, a near miss above a price limit, and a past opening."></td>
-    <td width="50%"><img src="docs/alert.svg" alt="An example alert email with a made-up flight: seats open at 57,500 miles, with the booking link first, and a line about past openings."></td>
+    <td width="50%"><img src="docs/alert.svg" alt="An example urgent alert email with a made-up flight: a similar flight opened one airport over at 80,000 miles, with the booking link first, why it counts, and how fast past openings closed."></td>
   </tr>
   <tr>
     <td align="center"><b>See it all in chat</b></td>

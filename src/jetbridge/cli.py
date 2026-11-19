@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import re
 import time
+import webbrowser
 from datetime import date, datetime
 
 import typer
@@ -12,6 +13,7 @@ import typer.core
 
 from jetbridge import (
     autorun,
+    booking,
     claude_desktop,
     flex,
     headlines,
@@ -28,7 +30,7 @@ from jetbridge import report as problem_report
 from jetbridge import uninstall as removal
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
 from jetbridge.acquire.sites import SITES
-from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when
+from jetbridge.alerts import DEFAULT_HEADLINES, AlertKind, format_when, query_for
 from jetbridge.models import CheckStatus, Watch
 from jetbridge.notify import email as mail
 from jetbridge.notify import push
@@ -262,6 +264,33 @@ def watch_edit(
     except ValueError as exc:
         raise _fail(str(exc)) from exc
     typer.echo(_describe(updated))
+
+
+@app.command("book")
+def book(
+    watch_id: int,
+    day: str | None = typer.Argument(
+        None,
+        help="A date on the watch, like 2027-05-21. Default: one with seats open, else the first",
+    ),
+    show_only: bool = typer.Option(False, "--link-only", help="Print the link without opening it"),
+) -> None:
+    """Open the airline's own page for a watch's date. It never signs in, books or pays."""
+    store = service.open_store()
+    watch = _require(store, watch_id)
+    try:
+        asked = date.fromisoformat(day) if day else None
+        chosen = booking.pick_day(store, watch, date.today(), asked)
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
+    site = SITES[watch.program]
+    url = site.search_url(query_for(watch, chosen))
+    typer.echo(f"{watch.label} on {chosen:%b %d, %Y} on {site.label}")
+    typer.echo(booking.NOTES[watch.program])
+    typer.echo(url)
+    if not show_only:
+        webbrowser.open(url)
+        typer.echo("Opened in your browser. jetbridge stops here: you sign in and book yourself.")
 
 
 @watch_app.command("flex")

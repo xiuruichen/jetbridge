@@ -133,3 +133,47 @@ def test_the_flex_command_saves_a_scope(store, clock, monkeypatch):
     assert result.exit_code == 0, result.output
     saved = store.get_watch(watch.id)
     assert (saved.flex_days, saved.flex_origins) == (1, ("EWR",))
+
+
+# ---- opening the airline's page ----------------------------------------------------------
+def test_book_opens_the_date_with_seats_and_never_more(store, clock, monkeypatch):
+    from jetbridge import service
+    from jetbridge.alerts import DateState
+    from jetbridge.models import CheckResult, CheckStatus
+
+    watch = add_cx(store, clock, dates=(DAY, DAY + timedelta(days=1)))
+    store.commit_check(
+        watch.id,
+        DAY + timedelta(days=1),
+        CheckResult(CheckStatus.AVAILABLE, miles=80_000),
+        DateState(status=CheckStatus.AVAILABLE, miles=80_000),
+        [],
+        clock(),
+    )
+    opened: list[str] = []
+    monkeypatch.setattr(service, "open_store", lambda: store)
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    result = CliRunner().invoke(app, ["book", str(watch.id)])
+    assert result.exit_code == 0, result.output
+    assert len(opened) == 1 and "2027-05-22" in opened[0]
+    assert "you sign in and book yourself" in result.output
+
+
+def test_book_can_just_print_the_link(store, clock, monkeypatch):
+    from jetbridge import service
+
+    watch = add_cx(store, clock)
+    opened: list[str] = []
+    monkeypatch.setattr(service, "open_store", lambda: store)
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    result = CliRunner().invoke(app, ["book", str(watch.id), "--link-only"])
+    assert result.exit_code == 0 and not opened and "aa.com" in result.output
+
+
+def test_book_refuses_a_date_the_watch_does_not_have(store, clock, monkeypatch):
+    from jetbridge import service
+
+    watch = add_cx(store, clock)
+    monkeypatch.setattr(service, "open_store", lambda: store)
+    result = CliRunner().invoke(app, ["book", str(watch.id), "2027-06-01"])
+    assert result.exit_code != 0 and "isn't one of this watch's dates" in result.output

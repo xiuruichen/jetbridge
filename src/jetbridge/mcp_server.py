@@ -24,6 +24,7 @@ from mcp.types import ToolAnnotations
 from jetbridge import (
     autorun,
     board,
+    booking,
     doctor,
     flex,
     headlines,
@@ -144,11 +145,7 @@ _PACE_NOTE = (
     "it doesn't predict when seats will open."
 )
 
-_BOOKING_NOTES = {
-    "american": "The link goes straight to the results on aa.com.",
-    "delta": "The link opens a date grid on delta.com with this date selected: press Continue.",
-    "united": "united.com asks them to sign in before it shows prices in miles.",
-}
+_BOOKING_NOTES = booking.NOTES
 
 
 def _booking(query: Query) -> dict[str, str]:

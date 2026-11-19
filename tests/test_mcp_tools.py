@@ -89,6 +89,8 @@ async def test_every_command_has_a_way_in_from_chat():
         "confirm_watch_change",
         "review_flexible_scope",
         "confirm_flexible_scope",
+        "review_snipe_window",
+        "confirm_snipe_window",
         "accept_notice",
         "open_email_setup",
         "send_test_email",

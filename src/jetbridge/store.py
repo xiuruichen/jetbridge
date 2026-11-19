@@ -108,6 +108,7 @@ def _watch(row: sqlite3.Row) -> Watch:
         flex_origins=tuple(json.loads(row["flex_origins"])),
         flex_destinations=tuple(json.loads(row["flex_destinations"])),
         group_id=row["group_id"],
+        snipe_window=row["snipe_window"],
     )
 
 
@@ -133,6 +134,7 @@ class Store:
             ("watches", "flex_origins", "TEXT NOT NULL DEFAULT '[]'"),
             ("watches", "flex_destinations", "TEXT NOT NULL DEFAULT '[]'"),
             ("watches", "group_id", "INTEGER"),
+            ("watches", "snipe_window", "TEXT"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -221,6 +223,25 @@ class Store:
             (json.dumps([d.isoformat() for d in dates]), checks_per_day, max_miles, watch_id),
         )
 
+    def set_snipe(self, watch_id: int, window: str | None) -> None:
+        self.conn.execute("UPDATE watches SET snipe_window=? WHERE id=?", (window, watch_id))
+
+    def snipe_watch_count(self, leaving_out: int | None = None) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM watches WHERE snipe_window IS NOT NULL AND status='active'"
+            " AND id IS NOT ?",
+            (leaving_out,),
+        ).fetchone()
+        return int(row["n"])
+
+    def snipe_used(self, watch_id: int, day: date) -> int:
+        return int(self.get(f"snipe_used:{watch_id}:{day.isoformat()}", "0") or 0)
+
+    def add_snipe_used(self, watch_id: int, day: date) -> None:
+        self.set(
+            f"snipe_used:{watch_id}:{day.isoformat()}", str(self.snipe_used(watch_id, day) + 1)
+        )
+
     def set_group(self, watch_ids: list[int], group_id: int) -> None:
         for watch_id in watch_ids:
             self.conn.execute("UPDATE watches SET group_id=? WHERE id=?", (group_id, watch_id))
@@ -254,7 +275,7 @@ class Store:
             c.execute("DELETE FROM watches WHERE id=?", (watch_id,))
             c.execute("DELETE FROM date_state WHERE watch_id=?", (watch_id,))
             c.execute("DELETE FROM observations WHERE watch_id=?", (watch_id,))
-            for name in ("also_seen", "burst", "similar_sent", "scouted"):
+            for name in ("also_seen", "burst", "similar_sent", "scouted", "snipe_used"):
                 c.execute("DELETE FROM kv WHERE substr(key, 1, ?)=?", _scope(name, watch_id))
 
     # ---- check state ----------------------------------------------------------------

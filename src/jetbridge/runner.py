@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
-from jetbridge import updater
+from jetbridge import snipe, updater
 from jetbridge.acquire.fetcher import Fetcher
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES, get_site
@@ -38,7 +38,7 @@ from jetbridge.models import (
 )
 from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox, owner_address
-from jetbridge.predictor import Pattern, find_pattern, first_seen_times
+from jetbridge.predictor import WINDOW_HOURS, Pattern, find_pattern, first_seen_times
 from jetbridge.scheduler import (
     MANUAL,
     NEIGHBOUR_DAYS,
@@ -305,9 +305,7 @@ class Runner:
                     for day in searchable_dates(watch, today)
                     if (burst := self.store.get_burst(watch.id, day)) is not None
                 ]
-                pattern = self._pattern(watch.program)
-                wake = pattern.next_start(now) if pattern else None
-                at = next_visit_at(watch, now, today, bursts, self.rng, wake)
+                at = next_visit_at(watch, now, today, bursts, self.rng, self._wake_at(watch, now))
             self.store.set_next_check(watch.id, at)
 
     def _view(self, watch: Watch, day: date) -> DateView:
@@ -316,8 +314,47 @@ class Runner:
             state.last_conclusive_at,
             state.last_check_at,
             self.store.get_burst(watch.id, day),
-            self._pattern_due(watch, state),
+            pattern_due=self._pattern_due(watch, state),
+            snipe_due=self._snipe_due(watch, state),
         )
+
+    def _snipe_bounds(self, watch: Watch) -> tuple[int, int] | None:
+        if not watch.snipe_window:
+            return None
+        if watch.snipe_window == snipe.AUTO:
+            learned = self._pattern(watch.program)
+            if learned is None:
+                return None
+            return learned.start_hour * 60, ((learned.start_hour + WINDOW_HOURS) % 24) * 60
+        return snipe.minutes(watch.snipe_window)
+
+    def _snipe_due(self, watch: Watch, state: DateState) -> bool:
+        """Inside this watch's snipe window, this date not checked in the last 15 minutes, and the
+        watch's daily share of searches not spent."""
+        bounds = self._snipe_bounds(watch)
+        now = self.clock()
+        if bounds is None or not snipe.is_inside(bounds, now):
+            return False
+        if self.store.snipe_used(watch.id, snipe.window_day(bounds, now)) >= snipe.DAILY_CAP:
+            return False
+        return state.last_check_at is None or now - state.last_check_at >= snipe.SNIPE_GAP_S
+
+    def _wake_at(self, watch: Watch, now: float) -> float | None:
+        """The next time this watch should be looked at for timing reasons alone."""
+        times = []
+        pattern = self._pattern(watch.program)
+        if pattern is not None:
+            times.append(pattern.next_start(now))
+        bounds = self._snipe_bounds(watch)
+        if bounds is not None:
+            spent = (
+                self.store.snipe_used(watch.id, snipe.window_day(bounds, now)) >= snipe.DAILY_CAP
+            )
+            if snipe.is_inside(bounds, now) and not spent:
+                times.append(now + snipe.SNIPE_GAP_S)
+            else:
+                times.append(snipe.next_start(bounds, now))
+        return min(times, default=None)
 
     def _pattern(self, program: str) -> Pattern | None:
         saved = self.store.get(f"release_pattern:{program}")
@@ -374,6 +411,11 @@ class Runner:
             report.checks.append(CheckLine(watch.id, watch.label, query.date, result))
             prev = self.store.date_state(watch.id, query.date)
             decision = decide(prev, result, now)
+            bounds = self._snipe_bounds(watch)
+            if bounds is not None and self._snipe_due(
+                watch, self.store.date_state(watch.id, query.date)
+            ):
+                self.store.add_snipe_used(watch.id, snipe.window_day(bounds, now))
             self._spend_burst(watch, query.date)
             if answer.kind is AnswerKind.ANSWER:
                 before = self.store.get_also_seen(watch.id, query.date)

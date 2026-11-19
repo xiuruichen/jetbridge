@@ -50,6 +50,7 @@ MOVED = "moved"
 CLOSE_IN = "close_in"
 JUST_OPENED = "just_opened"
 PATTERN = "pattern"
+SNIPE = "snipe"
 SCHEDULE = "schedule"
 MANUAL = "manual"
 
@@ -61,12 +62,14 @@ WHY = {
     CLOSE_IN: "this date is within two weeks",
     JUST_OPENED: "this date only recently became bookable",
     PATTERN: "past openings on this computer's watches cluster around this time of day",
+    SNIPE: "this watch has a snipe window, and it is open now",
     SCHEDULE: "its regular schedule",
     MANUAL: "someone asked for a check",
 }
 _SCORES = {
     FIRST_LOOK: 50,
     FIRST_NIGHT: 60,
+    SNIPE: 5,  # below every ordinary reason, so a window only gets what the plan leaves
     MOVED: 40,
     PATTERN: 35,
     CLOSE_IN: 30,
@@ -229,6 +232,7 @@ class DateView:
     last_clear_at: float | None = None
     last_check_at: float | None = None
     burst: Burst | None = None
+    snipe_due: bool = False  # inside this watch's snipe window, with time and searches left
     pattern_due: bool = False  # inside the time of day seats have tended to appear, not yet checked
 
 
@@ -238,6 +242,8 @@ def why_due(watch: Watch, day: date, view: DateView, now: float, today: date) ->
         return FIRST_LOOK
     if first_night_is_due(day, watch.program, view.last_check_at, now):
         return FIRST_NIGHT
+    if view.snipe_due:
+        return SNIPE
     if burst_is_due(view.burst, now):
         return MOVED
     if view.pattern_due:

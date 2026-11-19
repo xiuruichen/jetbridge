@@ -20,6 +20,7 @@ from jetbridge import (
     platforms,
     power,
     service,
+    snipe,
     updater,
     wizard,
 )
@@ -335,6 +336,38 @@ def watch_flex(
         except typer.Abort as exc:
             raise _fail("nothing was changed. Add --yes to save without asking") from exc
     store.set_flex(watch_id, scoped.flex_days, scoped.flex_origins, scoped.flex_destinations)
+    typer.echo(f"Saved for watch {watch_id}.")
+
+
+@watch_app.command("snipe")
+def watch_snipe(
+    watch_id: int,
+    window: str | None = typer.Option(
+        None, "--window", help="Check often inside this time of day, like 02:00-05:00, or auto"
+    ),
+    off: bool = typer.Option(False, "--off", help="Turn the window off"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Save without asking, for use in scripts"),
+) -> None:
+    """Check a watch's dates about every 15 minutes inside a time of day. Opt-in and capped."""
+    store = service.open_store()
+    watch = _require(store, watch_id)
+    if window is None and not off:
+        raise _fail("give --window 02:00-05:00 (or auto), or --off")
+    if window is not None and off:
+        raise _fail("choose a window or --off, not both")
+    try:
+        chosen = snipe.check(store, watch, window)
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo(snipe.review_text(watch, chosen, snipe.learned_text(store, watch.program)))
+    if not yes and chosen is not None:
+        try:
+            if not typer.confirm("\nSave this?", default=False):
+                typer.echo("OK, nothing was changed.")
+                return
+        except typer.Abort as exc:
+            raise _fail("nothing was changed. Add --yes to save without asking") from exc
+    store.set_snipe(watch_id, chosen)
     typer.echo(f"Saved for watch {watch_id}.")
 
 

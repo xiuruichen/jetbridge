@@ -31,6 +31,7 @@ from jetbridge import (
     platforms,
     power,
     service,
+    snipe,
     updater,
     wizard,
 )
@@ -241,6 +242,7 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "booked_at_miles": watch.booked_miles,
         "whole_party": watch.whole_party,
         "also_looking_at": flex.review_text(watch) if watch.is_flexible else None,
+        "snipe_window": watch.snipe_window,
         "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
         "next_check": format_when(watch.next_check_at) if watch.status == "active" else None,
@@ -426,6 +428,7 @@ _REVIEW = "chat_review:"
 _REMOVAL = "chat_removal:"
 _CHANGE = "chat_change:"
 _FLEX = "chat_flex:"
+_SNIPE = "chat_snipe:"
 _REVIEW_LIFETIME_S = 86400
 
 
@@ -433,7 +436,12 @@ def _remember(prefix: str, payload: dict[str, Any]) -> str:
     store = service.open_store()
     now = time.time()
     pending = (*store.keys_with_prefix(_REVIEW), *store.keys_with_prefix(_REMOVAL))
-    for key in (*pending, *store.keys_with_prefix(_CHANGE), *store.keys_with_prefix(_FLEX)):
+    for key in (
+        *pending,
+        *store.keys_with_prefix(_CHANGE),
+        *store.keys_with_prefix(_FLEX),
+        *store.keys_with_prefix(_SNIPE),
+    ):
         saved = json.loads(store.get(key) or "{}")
         if now - saved.get("saved_at", 0) > _REVIEW_LIFETIME_S:
             store.delete(key)
@@ -990,6 +998,38 @@ def confirm_flexible_scope(flex_id: str) -> dict[str, Any]:
     service.open_store().set_flex(
         watch.id, saved["days"], tuple(saved["origins"]), tuple(saved["destinations"])
     )
+    return _watch_view(_require_watch(watch.id))
+
+
+@_tool()
+def review_snipe_window(watch_id: int, window: str | None = None) -> dict[str, Any]:
+    """Show what a snipe window would do for a watch. This changes nothing. Inside the window,
+    like 02:00-05:00 in the computer's local time, or auto for the time of day learned from the
+    person's own openings, the watch's dates are checked about every 15 minutes. Leave window out
+    to turn it off. It is the most likely thing to get a site to block, it is capped, and at most
+    3 watches can have one: say so, and never promise a seat. Show the review word for word and
+    ask them to confirm it."""
+    watch = _require_watch(watch_id)
+    store = service.open_store()
+    chosen = snipe.check(store, watch, window)
+    snipe_id = _remember(_SNIPE, {"watch_id": watch_id, "window": chosen})
+    return {
+        "changed": False,
+        "snipe_id": snipe_id,
+        "review": snipe.review_text(watch, chosen, snipe.learned_text(store, watch.program)),
+    }
+
+
+@_tool()
+def confirm_snipe_window(snipe_id: str) -> dict[str, Any]:
+    """Save a window from review_snipe_window. Call this only after the person has seen that
+    review and said yes to it. Each review can be saved once."""
+    saved = _recall(_SNIPE, snipe_id)
+    if saved is None:
+        raise ToolError("no review with that id, so nothing changed. Call review_snipe_window")
+    watch = _require_watch(saved["watch_id"])
+    store = service.open_store()
+    store.set_snipe(watch.id, snipe.check(store, watch, saved["window"]))
     return _watch_view(_require_watch(watch.id))
 
 

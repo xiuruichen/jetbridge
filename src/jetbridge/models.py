@@ -88,6 +88,7 @@ class Watch:
     flex_origins: tuple[str, ...] = ()
     flex_destinations: tuple[str, ...] = ()
     group_id: int | None = None  # watches saved together across programs, flights or cabins
+    snipe_window: str | None = None  # "02:00-05:00" or "auto": checked often inside it
 
     @property
     def is_flexible(self) -> bool:

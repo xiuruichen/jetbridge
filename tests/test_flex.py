@@ -177,3 +177,33 @@ def test_book_refuses_a_date_the_watch_does_not_have(store, clock, monkeypatch):
     monkeypatch.setattr(service, "open_store", lambda: store)
     result = CliRunner().invoke(app, ["book", str(watch.id), "2027-06-01"])
     assert result.exit_code != 0 and "isn't one of this watch's dates" in result.output
+
+
+async def test_an_unreadable_answer_does_not_make_announced_flights_fresh_again(store, clock):
+    from test_track_record import _other
+
+    add_cx(store, clock)
+    broken = answer_from(response(cx_slice(business_miles=None), _other(), error="309"))
+    answers = [_shut(), _other_open(), _other_open(), broken, _other_open()]
+    runner, _, sender, _ = make_runner(store, clock, answers)
+    await runner.tick()
+    for _ in range(2):
+        clock.now = store.get_watch(1).next_check_at + 1
+        await runner.tick()
+    assert sum(s.startswith("SIMILAR FLIGHT OPEN") for s in sender.subjects) == 1
+
+
+def _other_open():
+    from test_track_record import _with_other
+
+    return _with_other()
+
+
+async def test_a_failed_scout_search_is_retried_at_the_next_visit(store, clock):
+    from jetbridge.models import AnswerKind, SearchAnswer
+
+    watch = _flexible(store, clock, origins=("EWR",))
+    error = SearchAnswer(AnswerKind.ERROR, detail="x")
+    runner, _, _, _ = make_runner(store, clock, [_shut(), error])
+    await runner.tick()
+    assert store.get_scouted_at(watch.id, Query("EWR", "HKG", DAY, 1, "american")) is None

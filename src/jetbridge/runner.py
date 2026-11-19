@@ -283,8 +283,9 @@ class Runner:
                 if answer.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
                     stop_site(site, answer)
                     continue
-                for watch in watches:
-                    self.store.set_scouted_at(watch.id, query, self.clock())
+                if answer.kind is AnswerKind.ANSWER:  # an error is tried again at the next visit
+                    for watch in watches:
+                        self.store.set_scouted_at(watch.id, query, self.clock())
                 hits = self._scout_hits(query, watches, answer)
                 if hits:
                     await self.sleep(self.rng.uniform(*CONFIRM_DELAY_S))
@@ -390,7 +391,9 @@ class Runner:
                     self._note_movement(watch, query.date, "another flight opened on this route")
                 current = {o["flight"] for o in flights}
                 sent = self.store.get_similar_sent(watch.id, query.date)
-                if sent is None or prev.last_check_at is None:
+                if not result.status.conclusive:
+                    pass  # an unreadable answer can't say a flight is gone
+                elif sent is None or prev.last_check_at is None:
                     # The first look at a date is a baseline, so a new watch doesn't announce
                     # flights that were already open when it was made.
                     self.store.set_similar_sent(watch.id, query.date, current)

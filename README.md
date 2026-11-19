@@ -40,8 +40,8 @@ SkyMiles and United MileagePlus, partner flights included.
   EWR instead of JFK: you get an urgent alert that says exactly why it counts. Booked YYZ to HKG and any
   North American airport would do? Say so, and it watches all of them for you.
 - **No false alarms.** Every opening is searched again live a minute or two later. If the seats were
-  only there for a moment, you never hear about it. If that second search can't tell, the email says
-  it's unconfirmed.
+  only there for a moment, you never hear about it. If that second search can't tell,
+  the email says it's unconfirmed.
 - **It tells you how long you've got.** Each alert says how fast past openings on that date closed, and
   you get one follow-up when these seats have stayed open as long as past ones did. It reports what it
   has seen and doesn't guess.

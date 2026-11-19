@@ -1,95 +1,73 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-labelledby="title desc">
   <title id="title">How jetbridge widens a watch</title>
-  <desc id="desc">A diagram. A watch on one flight, JFK to Hong Kong on May 21, is surrounded by what jetbridge also scouts: the day before and after, other flights that day, and nearby airports such as EWR and YYZ. Any nonstop that fits the same cabin and price rules gets an urgent alert after a live re-check.</desc>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#090d15"/>
-      <stop offset="1" stop-color="#0f1a30"/>
-    </linearGradient>
-    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4ff0c0"/>
-      <stop offset="1" stop-color="#5b8cff"/>
-    </linearGradient>
-    <radialGradient id="core" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#5b8cff" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#5b8cff" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
+  <desc id="desc">A diagram. A watch on one flight, JFK to Hong Kong on May 21, is surrounded by what jetbridge also scouts: the day before and after, other flights that day, and nearby airports such as YYZ, BOS, ORD and LAX. One of them, EWR to Hong Kong at 80,000 miles, is highlighted as an opening. Any nonstop that fits the same cabin and price rules gets an urgent alert after a live re-check.</desc>
   <style>
     .sans { font-family: Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
-    .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
-    .k { font-size: 11px; font-weight: 700; letter-spacing: 1.6px; fill: #8b97ad; }
-    .t { font-size: 14px; font-weight: 600; fill: #e8edf7; }
-    .s { font-size: 12.5px; fill: #8b97ad; }
+    .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+    .k { font-size: 10.5px; letter-spacing: 1.6px; fill: #6b6b73; }
+    .t { font-size: 13px; font-weight: 500; fill: #d4d4d8; }
+    .s { font-size: 13px; fill: #86868e; }
+    .q { font-size: 14.5px; font-weight: 500; fill: #ededee; }
   </style>
-  <rect width="1000" height="360" rx="18" fill="url(#bg)"/>
-  <circle cx="500" cy="180" r="170" fill="url(#core)"/>
+  <rect x="0.5" y="0.5" width="999" height="359" rx="16" fill="#0a0a0b" stroke="#1d1d20"/>
 
-  <!-- rings -->
-  <circle cx="500" cy="180" r="76" fill="none" stroke="#5b8cff" stroke-opacity="0.3" stroke-dasharray="3 7"/>
-  <circle cx="500" cy="180" r="140" fill="none" stroke="#5b8cff" stroke-opacity="0.18" stroke-dasharray="3 7"/>
+  <circle cx="500" cy="178" r="138" fill="none" stroke="#1f1f23" stroke-dasharray="2 6"/>
 
-  <!-- links -->
-  <g stroke="#5b8cff" stroke-opacity="0.35" stroke-width="1.5">
-    <line x1="500" y1="180" x2="372" y2="180"/>
-    <line x1="500" y1="180" x2="628" y2="180"/>
-    <line x1="500" y1="180" x2="500" y2="76"/>
-    <line x1="500" y1="180" x2="388" y2="86"/>
-    <line x1="500" y1="180" x2="612" y2="86"/>
-    <line x1="500" y1="180" x2="388" y2="274"/>
-    <line x1="500" y1="180" x2="612" y2="274"/>
+  <g stroke="#26262b">
+    <line x1="500" y1="178" x2="368" y2="178"/>
+    <line x1="500" y1="178" x2="632" y2="178"/>
+    <line x1="500" y1="178" x2="500" y2="92"/>
+    <line x1="500" y1="178" x2="396" y2="104"/>
+    <line x1="500" y1="178" x2="604" y2="104"/>
+    <line x1="500" y1="178" x2="396" y2="252"/>
+    <line x1="500" y1="178" x2="604" y2="252"/>
   </g>
-  <line x1="500" y1="180" x2="500" y2="284" stroke="#4ff0c0" stroke-width="2"/>
+  <line x1="500" y1="178" x2="500" y2="268" stroke="#3ddc97" stroke-width="1.5"/>
 
   <!-- the watch -->
-  <circle cx="500" cy="180" r="48" fill="url(#mark)"/>
-  <text x="500" y="176" class="sans" font-size="12" font-weight="800" fill="#07101f" text-anchor="middle">YOUR WATCH</text>
-  <text x="500" y="194" class="mono" font-size="12" fill="#07101f" text-anchor="middle">JFK→HKG May 21</text>
+  <circle cx="500" cy="178" r="44" fill="#0a0a0b" stroke="#ededee"/>
+  <text x="500" y="174" class="sans" font-size="11" font-weight="600" letter-spacing="1.2" fill="#ededee" text-anchor="middle">YOUR WATCH</text>
+  <text x="500" y="192" class="mono" font-size="11" fill="#86868e" text-anchor="middle">JFK→HKG</text>
 
-  <!-- satellites: dates -->
-  <g class="sans">
-    <rect x="304" y="164" width="128" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="368" y="185" class="t" text-anchor="middle">May 20 · −1 day</text>
-    <rect x="568" y="164" width="128" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="632" y="185" class="t" text-anchor="middle">May 22 · +1 day</text>
-    <!-- other flights same day -->
-    <rect x="416" y="60" width="168" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="500" y="81" class="t" text-anchor="middle">Other flights, May 21</text>
-    <!-- airports -->
-    <rect x="316" y="70" width="96" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="364" y="91" class="t" text-anchor="middle">YYZ → HKG</text>
-    <rect x="588" y="70" width="96" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="636" y="91" class="t" text-anchor="middle">BOS → HKG</text>
-    <rect x="316" y="258" width="96" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="364" y="279" class="t" text-anchor="middle">ORD → HKG</text>
-    <rect x="588" y="258" width="96" height="32" rx="16" fill="#101626" stroke="#5b8cff" stroke-opacity="0.6"/>
-    <text x="636" y="279" class="t" text-anchor="middle">LAX → HKG</text>
-    <!-- the hit -->
-    <rect x="436" y="284" width="128" height="34" rx="17" fill="#4ff0c0" fill-opacity="0.14" stroke="#4ff0c0"/>
-    <text x="500" y="306" class="t" text-anchor="middle" fill="#4ff0c0">EWR → HKG  80k</text>
-    <circle cx="436" cy="301" r="4" fill="#4ff0c0">
-      <animate attributeName="opacity" values="1;0.25;1" dur="2s" repeatCount="indefinite"/>
-    </circle>
+  <g class="sans t" text-anchor="middle">
+    <rect x="304" y="162" width="128" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="368" y="182">May 20 · −1 day</text>
+    <rect x="568" y="162" width="128" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="632" y="182">May 22 · +1 day</text>
+    <rect x="420" y="76" width="160" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="500" y="96">Other flights, May 21</text>
+    <rect x="308" y="88" width="104" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="360" y="108" class="mono">YYZ → HKG</text>
+    <rect x="588" y="88" width="104" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="640" y="108" class="mono">BOS → HKG</text>
+    <rect x="320" y="236" width="104" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="372" y="256" class="mono">ORD → HKG</text>
+    <rect x="576" y="236" width="104" height="32" rx="8" fill="#101012" stroke="#26262b"/>
+    <text x="628" y="256" class="mono">LAX → HKG</text>
+    <rect x="422" y="268" width="156" height="34" rx="8" fill="#0d1a14" stroke="#3ddc97"/>
+    <text x="500" y="289" class="mono" fill="#3ddc97" font-weight="600">EWR → HKG · 80k</text>
   </g>
+  <circle cx="500" cy="268" r="3" fill="#3ddc97">
+    <animate attributeName="opacity" values="1;0.3;1" dur="2.6s" repeatCount="indefinite"/>
+  </circle>
 
-  <!-- left and right captions -->
   <g class="sans">
-    <text x="48" y="64" class="k">YOU SAY</text>
-    <text x="48" y="90" class="t">"Booked JFK to Hong Kong.</text>
-    <text x="48" y="110" class="t">Any North American airport is</text>
-    <text x="48" y="130" class="t">fine, and a day either side."</text>
-    <text x="48" y="178" class="s">Same cabin, same price rules.</text>
-    <text x="48" y="198" class="s">Nonstops only, never a connection.</text>
-    <text x="48" y="218" class="s">Uses only leftover searches,</text>
-    <text x="48" y="238" class="s">so your own dates never wait.</text>
+    <text x="48" y="66" class="k">YOU SAY</text>
+    <text x="48" y="92" class="q">"Booked JFK to Hong Kong.</text>
+    <text x="48" y="112" class="q">Any North American airport</text>
+    <text x="48" y="132" class="q">is fine, and a day either side."</text>
+    <text x="48" y="182" class="s">Same cabin, same price rules.</text>
+    <text x="48" y="202" class="s">Nonstops only, never a connection.</text>
+    <text x="48" y="222" class="s">Uses only leftover searches, so</text>
+    <text x="48" y="242" class="s">your own dates never wait.</text>
 
-    <text x="752" y="64" class="k">YOU GET</text>
-    <text x="752" y="90" class="t">An urgent alert, once, after</text>
-    <text x="752" y="110" class="t">a live re-check confirms it.</text>
-    <text x="752" y="158" class="s">"EWR instead of JFK, 80,000 mi,</text>
-    <text x="752" y="178" class="s">under your 90,000 limit."</text>
-    <text x="752" y="226" class="s">The link comes first. You book it</text>
-    <text x="752" y="246" class="s">yourself, on the airline's own site.</text>
+    <text x="752" y="66" class="k">YOU GET</text>
+    <text x="752" y="92" class="q">One urgent alert, after a</text>
+    <text x="752" y="112" class="q">live re-check confirms it.</text>
+    <text x="752" y="162" class="mono s" font-size="12">"EWR instead of JFK,</text>
+    <text x="752" y="180" class="mono s" font-size="12"> 80,000 mi, under your limit"</text>
+    <text x="752" y="230" class="s">The link comes first. You book</text>
+    <text x="752" y="250" class="s">it yourself, on the airline's site.</text>
   </g>
-  <text x="500" y="344" class="sans s" text-anchor="middle" font-size="12">An illustration with made-up flights and prices.</text>
+  <text x="500" y="338" class="sans s" text-anchor="middle" font-size="11.5" fill="#52525a">An illustration with made-up flights and prices.</text>
 </svg>

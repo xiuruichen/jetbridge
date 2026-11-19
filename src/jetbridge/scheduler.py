@@ -45,6 +45,7 @@ FIRST_NIGHT = "first_night"
 MOVED = "moved"
 CLOSE_IN = "close_in"
 JUST_OPENED = "just_opened"
+PATTERN = "pattern"
 SCHEDULE = "schedule"
 MANUAL = "manual"
 
@@ -55,10 +56,19 @@ WHY = {
     MOVED: "seats or prices moved recently",
     CLOSE_IN: "this date is within two weeks",
     JUST_OPENED: "this date only recently became bookable",
+    PATTERN: "past openings on this computer's watches cluster around this time of day",
     SCHEDULE: "its regular schedule",
     MANUAL: "someone asked for a check",
 }
-_SCORES = {FIRST_LOOK: 50, FIRST_NIGHT: 60, MOVED: 40, CLOSE_IN: 30, JUST_OPENED: 20, SCHEDULE: 10}
+_SCORES = {
+    FIRST_LOOK: 50,
+    FIRST_NIGHT: 60,
+    MOVED: 40,
+    PATTERN: 35,
+    CLOSE_IN: 30,
+    JUST_OPENED: 20,
+    SCHEDULE: 10,
+}
 
 
 @dataclass(frozen=True)
@@ -204,6 +214,7 @@ class DateView:
     last_clear_at: float | None = None
     last_check_at: float | None = None
     burst: Burst | None = None
+    pattern_due: bool = False  # inside the time of day seats have tended to appear, not yet checked
 
 
 def why_due(watch: Watch, day: date, view: DateView, now: float, today: date) -> str | None:
@@ -214,6 +225,8 @@ def why_due(watch: Watch, day: date, view: DateView, now: float, today: date) ->
         return FIRST_NIGHT
     if burst_is_due(view.burst, now):
         return MOVED
+    if view.pattern_due:
+        return PATTERN
     if not date_is_due(watch, day, view.last_clear_at, now, today):
         return None
     days_out = (day - today).days
@@ -326,11 +339,18 @@ def plan_scouts(
 
 
 def next_visit_at(
-    watch: Watch, now: float, today: date, bursts: list[Burst], rng: random.Random
+    watch: Watch,
+    now: float,
+    today: date,
+    bursts: list[Burst],
+    rng: random.Random,
+    wake_at: float | None = None,
 ) -> float:
     """When to look at this watch again: its pace, or sooner for a burst or a date's first night."""
     at = next_check_at(now, fastest_checks_per_day(watch, today), rng)
     soonest = [burst.next_at for burst in bursts if burst.next_at is not None]
+    if wake_at is not None and wake_at > now:
+        soonest.append(wake_at)
     for day in searchable_dates(watch, today):
         first_night = first_night_at(day, watch.program)
         if first_night > now:

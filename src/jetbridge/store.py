@@ -15,6 +15,7 @@ from datetime import date
 from pathlib import Path
 
 from jetbridge.alerts import DateState
+from jetbridge.insights import Seen
 from jetbridge.models import Cabin, CheckResult, CheckStatus, Flight, Query, Watch
 from jetbridge.scheduler import Burst
 
@@ -324,6 +325,21 @@ class Store:
                 (watch_id, day.isoformat()),
             )
         )
+
+    def release_histories(self, program: str) -> list[list[Seen]]:
+        """Every date's recorded answers on this program, for finding when seats tend to appear."""
+        rows = self.conn.execute(
+            "SELECT o.watch_id, o.day, o.observed_at, o.status, o.miles FROM observations o"
+            " JOIN watches w ON w.id=o.watch_id WHERE w.program=?"
+            " ORDER BY o.watch_id, o.day, o.observed_at, o.id",
+            (program,),
+        )
+        grouped: dict[tuple[int, str], list[Seen]] = {}
+        for row in rows:
+            grouped.setdefault((row["watch_id"], row["day"]), []).append(
+                Seen(row["observed_at"], row["status"], row["miles"])
+            )
+        return list(grouped.values())
 
     def get_burst(self, watch_id: int, day: date) -> Burst | None:
         saved = self.get(f"burst:{watch_id}:{day.isoformat()}")

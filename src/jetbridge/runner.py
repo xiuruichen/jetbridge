@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from jetbridge import updater
@@ -37,6 +38,7 @@ from jetbridge.models import (
 )
 from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox, owner_address
+from jetbridge.predictor import Pattern, find_pattern, first_seen_times
 from jetbridge.scheduler import (
     MANUAL,
     NEIGHBOUR_DAYS,
@@ -190,6 +192,7 @@ class Runner:
         finally:
             await self.fetcher.close()
 
+        self._learn_patterns()
         self._health_alerts()
         self._booking_reminders()
         self._digest()
@@ -301,14 +304,46 @@ class Runner:
                     for day in searchable_dates(watch, today)
                     if (burst := self.store.get_burst(watch.id, day)) is not None
                 ]
-                at = next_visit_at(watch, now, today, bursts, self.rng)
+                pattern = self._pattern(watch.program)
+                wake = pattern.next_start(now) if pattern else None
+                at = next_visit_at(watch, now, today, bursts, self.rng, wake)
             self.store.set_next_check(watch.id, at)
 
     def _view(self, watch: Watch, day: date) -> DateView:
         state = self.store.date_state(watch.id, day)
         return DateView(
-            state.last_conclusive_at, state.last_check_at, self.store.get_burst(watch.id, day)
+            state.last_conclusive_at,
+            state.last_check_at,
+            self.store.get_burst(watch.id, day),
+            self._pattern_due(watch, state),
         )
+
+    def _pattern(self, program: str) -> Pattern | None:
+        saved = self.store.get(f"release_pattern:{program}")
+        return Pattern(**json.loads(saved)) if saved else None
+
+    def _pattern_due(self, watch: Watch, state: DateState) -> bool:
+        """Inside the time of day seats have tended to appear on this computer's watches, and this
+        date hasn't been checked since the window opened. That's one extra check a day at most."""
+        pattern = self._pattern(watch.program)
+        now = self.clock()
+        if pattern is None or not pattern.is_inside(now):
+            return False
+        return state.last_check_at is None or state.last_check_at < pattern.window_start_today(now)
+
+    def _learn_patterns(self) -> None:
+        """Once a day, look again for a time of day that holds most of the openings seen so far."""
+        today = self._today().isoformat()
+        if self.store.get("pattern_learned") == today:
+            return
+        for site in SITES.values():
+            found = find_pattern(first_seen_times(self.store.release_histories(site.id)))
+            key = f"release_pattern:{site.id}"
+            if found is None:
+                self.store.delete(key)
+            else:
+                self.store.set(key, json.dumps(asdict(found)))
+        self.store.set("pattern_learned", today)
 
     def _note_movement(self, watch: Watch, day: date, reason: str) -> None:
         """Seats or prices moved, so the next checks on this date come sooner, within the budget."""
@@ -767,6 +802,14 @@ class Runner:
                 f"This computer was off or asleep for up to {gap / 3600:.0f} hours since the "
                 "last digest, so no checks ran during that time."
             )
+        for site in SITES.values():
+            pattern = self._pattern(site.id)
+            if pattern is not None:
+                lines.append(
+                    f"Seat timing on {site.label}: {pattern.text}. jetbridge adds one check a day "
+                    "in that window, within the same limits. A pattern from few openings can be "
+                    "chance."
+                )
         for site in SITES.values():
             until = self.governor.cooldown_until(site.id)
             if until > now:

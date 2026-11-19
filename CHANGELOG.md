@@ -13,6 +13,9 @@
 - Say in a seat alert how fast past openings on that date closed, and send one follow-up per opening
   once seats have stayed open about as long as past ones did. It reports the record and doesn't
   predict anything, and it needs at least one past opening to compare with.
+- Add opt-in snipe windows: `jetbridge watch snipe ID --window 02:00-05:00` (or `auto`) checks a
+  watch's dates about every 15 minutes inside that time of day. It uses only leftover searches, is
+  capped at 36 a day per watch and 3 watches, and stops at the first sign of a block.
 - Watch a route on every program at once: `jetbridge watch add any ... --program all`, or ask Claude
   for "any airline". Alerts say what else is open on the other programs. The same review can add the
   nearby-date and nearby-airport scope.

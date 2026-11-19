@@ -339,6 +339,26 @@ compare before moving any points.
 - Each program is searched on its own, so three programs use about three times the searches. The
   review says so, and the daily limits still apply.
 
+### Snipe windows (opt-in)
+
+Seats that open and close within hours are easy to miss at a few checks a day. A snipe window checks a
+watch's dates about every 15 minutes inside a time of day you choose:
+
+```powershell
+jetbridge watch snipe 1 --window 02:00-05:00     # your computer's local time
+jetbridge watch snipe 1 --window auto            # the time of day learned from your own openings
+jetbridge watch snipe 1 --off
+```
+
+In chat, say "check this one hard between 2 and 5 AM".
+
+- It only uses searches left over from the day's plan, stops at the first sign of a block, and is
+  capped at 36 searches a day per watch. At most 3 watches can have one.
+- **It's the most likely thing to get a site to block you**, and automated searching likely goes
+  against the airlines' terms (see below). It's off until you turn it on.
+- Checks only run while your computer is awake, and the watcher wakes about every 15 minutes, so that
+  is the fastest it can go. Nothing here can promise you a seat.
+
 ### Getting these right
 
 - **Program:** this is whose miles you'd use, not who flies the plane. Partner flights can appear:
@@ -672,6 +692,7 @@ folder. Add `--help` to any command for details.
 | `watch list` | List every watch |
 | `watch edit ID ...` | Change dates, price limit or pace, keeping the history |
 | `watch priority ID high` / `normal` | Put a watch first, within the same daily limits |
+| `watch snipe ID --window 02:00-05:00` / `auto` / `--off` | Check a watch about every 15 minutes inside a time of day. Opt-in, capped |
 | `watch flex ID [--days N] [--origins X] [--destinations Y]` | Also scout nearby dates and other airports. No options turns it off |
 | `book ID [DATE] [--link-only]` | Open the airline's own page for a date, one with seats open if you don't say. It never signs in, books or pays |
 | `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |

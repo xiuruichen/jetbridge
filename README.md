@@ -19,30 +19,43 @@
   <a href="docs/guide.md">Full guide</a>
 </p>
 
-Tell jetbridge the flight, cabin, dates and miles you want, in plain words. It searches the airline's
-own website several times a day from your computer. When seats appear for your whole party, it searches
-again live, then emails you the price and a booking link. If that second search can't tell, the email
-says it's unconfirmed.
+<h3 align="center">Business-class award seats show up at 3 AM and are gone by breakfast.<br>jetbridge is the one that's awake.</h3>
 
-**It's free, with no account or subscription.** It works with American AAdvantage, Delta SkyMiles and
-United MileagePlus, including the partner flights they sell.
+Tell it the flight you want in plain English. It sits on your computer, checks the airline's own
+website all day, and the moment seats open it **re-checks live to make sure they're real**, then sends
+you the price and a booking link, before the seats are gone.
+
+And it doesn't stop at the flight you named. It also catches the **sibling flight** that just opened,
+the **day before or after**, and the **airport next door**, because that's usually where the deal is
+hiding.
+
+**Free. No account, no subscription, no data leaving your machine.** American AAdvantage, Delta
+SkyMiles and United MileagePlus, partner flights included.
 
 ![An example conversation: someone asks Claude to watch a flight, Claude asks which New York airport, shows what it will watch, saves it after a yes, and reports the first check.](docs/chat-demo.svg)
 
-## Why jetbridge
+## Why people get hooked
 
-- **It double-checks before alerting you.** Seats are searched again live a minute or two later, so you
-  aren't sent after seats that were only there for a moment.
-- **It watches what you actually want.** One exact flight, or any nonstop on a route, in your cabin,
-  under your price limit. Searches use your real party size, so seats for one don't count for two.
-- **It proves it's watching.** You can see how many of the last 24 hours each flight stayed on schedule,
-  and an unclear answer is never reported as "no seats".
-- **It builds a record of your flight.** Past openings, how long they lasted, their prices, seats just
-  above your limit, and other flights it saw on your route.
-- **It spends searches where they matter.** Dates get checked more often close to departure and after
-  seats or prices move, within fixed daily limits.
-- **It keeps your details on your computer.** It searches as a guest, and never logs in, books anything
-  or moves your miles.
+- **It finds the deal you didn't ask for.** Another flight on your route opens, a day earlier, out of
+  EWR instead of JFK: you get an urgent alert that says exactly why it counts. Booked YYZ to HKG and any
+  North American airport would do? Say so, and it watches all of them for you.
+- **No false alarms.** Every opening is searched again live a minute or two later. If the seats were
+  only there for a moment, you never hear about it. If that second search can't tell, the email says
+  it's unconfirmed.
+- **It tells you how long you've got.** Each alert says how fast past openings on that date closed, and
+  you get one follow-up when these seats have stayed open as long as past ones did. It reports what it
+  has seen and doesn't guess.
+- **It learns your flight's rhythm.** From your own history it can spot the time of day seats tend to
+  appear and add a check there. Nothing leaves your computer, and with too little data it stays out of
+  the way.
+- **One step from alert to booking.** The link comes first, and `jetbridge book` opens the airline's own
+  page on the right date. You sign in and book yourself.
+- **Cheaper than what you paid.** Already booked? It alerts only when a seat costs less than you paid, so
+  a better deal is never missed.
+- **It proves it's watching.** See how many of the last 24 hours each flight stayed on schedule. An
+  unclear answer is never reported as "no seats".
+- **It's yours.** Free, private, runs on your computer as a guest, and never logs in, books anything or
+  moves your miles.
 
 <table>
   <tr>
@@ -103,6 +116,7 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 | "Watch CX805 or CX889, business or first" | One review covers them all, and they share their searches |
 | "I booked DL197 on May 21 for 95k, tell me if it gets cheaper" | Alerts only below what you paid, without asking for your confirmation code |
 | "We're four and can split into two and two on any nonstop" | Alerts only when enough nonstops are open to seat everyone |
+| "Booked YYZ to HKG. Any North American airport works, and a day either side" | Watches every likely airport and nearby date, and alerts when one beats your rules |
 | "Show me my flights" | Draws a board in the chat |
 | "How has that flight been doing? Has it ever opened?" | Shows past openings, how long they lasted and their prices |
 | "Lower the limit to 90k and add June 20" | Changes the watch and keeps its history |
@@ -114,9 +128,10 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 
 1. **Your computer searches.** Every 15 minutes it runs whatever checks are due, using Chrome as a
    guest, one airline at a time, with waits between searches.
-2. **It re-checks anything new.** If seats appear, it searches again live a minute or two later.
+2. **It re-checks anything new.** If seats appear, it searches again live a minute or two later. The
+   same goes for a similar flight, a nearby date or a nearby airport.
 3. **You get the alert.** The email has the booking link first, and you can
-   [add phone alerts](docs/guide.md#phone-alerts-optional) too. You book it yourself.
+   [add phone alerts](docs/guide.md#phone-alerts-optional) for when minutes matter. You book it yourself.
 4. **It tells you when something's off.** A daily summary shows what it watched. If that email stops,
    the watcher isn't running.
 

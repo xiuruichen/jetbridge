@@ -10,6 +10,9 @@
   ("any North American airport to Hong Kong is fine"). Any nonstop that fits the watch's rules sends
   the same urgent alert, saying why it counts. Scouting uses only searches left over after your own
   dates, covers at most 30 places, and looks at each about every 6 hours.
+- Say in a seat alert how fast past openings on that date closed, and send one follow-up per opening
+  once seats have stayed open about as long as past ones did. It reports the record and doesn't
+  predict anything, and it needs at least one past opening to compare with.
 
 ## 0.5.2
 

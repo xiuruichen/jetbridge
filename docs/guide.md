@@ -464,6 +464,7 @@ Over time, each watch builds up a record of what happened on your flight:
 | **PRICE DROP** | An open date got cheaper |
 | **MORE SEATS** | An open date gained seats (only when the site states a count) |
 | **STILL OPEN** | One reminder a day while seats stay open |
+| **STILL OPEN, PAST ONES CLOSED AROUND NOW** | Once per opening, when seats have stayed open about as long as past openings on that date lasted. Needs at least one past opening |
 | **Seats gone** | An open date closed |
 | **SIMILAR FLIGHT OPEN** | Another flight, nearby date or nearby airport that fits the watch's rules opened, and a live re-check confirmed it |
 | **jetbridge can't see...** | No clear answer on any date for 24 hours |

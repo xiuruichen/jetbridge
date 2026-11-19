@@ -82,6 +82,23 @@ def also_seen(watch: Watch, query: Query, answer: SearchAnswer) -> list[AlsoSeen
     return sorted(found.values(), key=lambda option: option.departs)
 
 
+def open_nonstops(watch: Watch, query: Query, answer: SearchAnswer) -> list[AlsoSeen]:
+    """Every nonstop with seats that fit this watch's rules, for scouting a nearby date or airport.
+    The answer was already fetched, so looking costs no searches."""
+    if answer.kind is not AnswerKind.ANSWER or answer.parsed is None or answer.parsed.site_error:
+        return []
+    found: dict[str, AlsoSeen] = {}
+    for item in answer.parsed.slices:
+        if not is_single_flight(item, query) or len(item.legs) != 1:
+            continue
+        first = item.legs[0]
+        other = replace(watch, flight=Flight(first.carrier, first.number))
+        result = evaluate(other, query.date, answer)
+        if result.status is CheckStatus.AVAILABLE and first.code not in found:
+            found[first.code] = AlsoSeen(first.code, first.departs_at, result.miles)
+    return sorted(found.values(), key=lambda option: option.departs)
+
+
 def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     """Judge each nonstop flight on the route by the same rules as a watch on that flight. Someone
     chose this in the review, and a connection still never counts."""

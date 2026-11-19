@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 
 from jetbridge.alerts import DateState
-from jetbridge.models import Cabin, CheckResult, CheckStatus, Flight, Watch
+from jetbridge.models import Cabin, CheckResult, CheckStatus, Flight, Query, Watch
 from jetbridge.scheduler import Burst
 
 SCHEMA = """
@@ -75,6 +75,10 @@ class NewAlert:
     recipient: str | None = None  # None means the owner's address
 
 
+def _scout_key(query: Query) -> str:
+    return f"{query.origin}{query.destination}:{query.date.isoformat()}"
+
+
 def _scope(name: str, watch_id: int) -> tuple[int, str]:
     prefix = f"{name}:{watch_id}:"
     return len(prefix), prefix
@@ -99,6 +103,9 @@ def _watch(row: sqlite3.Row) -> Watch:
         status=row["status"],
         created_at=row["created_at"],
         next_check_at=row["next_check_at"],
+        flex_days=row["flex_days"],
+        flex_origins=tuple(json.loads(row["flex_origins"])),
+        flex_destinations=tuple(json.loads(row["flex_destinations"])),
     )
 
 
@@ -120,6 +127,9 @@ class Store:
             ("date_state", "open_flights", "TEXT NOT NULL DEFAULT '[]'"),
             ("watches", "booked_miles", "INTEGER"),
             ("watches", "whole_party", "INTEGER"),
+            ("watches", "flex_days", "INTEGER NOT NULL DEFAULT 0"),
+            ("watches", "flex_origins", "TEXT NOT NULL DEFAULT '[]'"),
+            ("watches", "flex_destinations", "TEXT NOT NULL DEFAULT '[]'"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -208,6 +218,14 @@ class Store:
             (json.dumps([d.isoformat() for d in dates]), checks_per_day, max_miles, watch_id),
         )
 
+    def set_flex(
+        self, watch_id: int, days: int, origins: tuple[str, ...], destinations: tuple[str, ...]
+    ) -> None:
+        self.conn.execute(
+            "UPDATE watches SET flex_days=?, flex_origins=?, flex_destinations=? WHERE id=?",
+            (days, json.dumps(list(origins)), json.dumps(list(destinations)), watch_id),
+        )
+
     def set_high_priority(self, watch_id: int, high: bool) -> None:
         self.conn.execute("UPDATE watches SET high_priority=? WHERE id=?", (int(high), watch_id))
 
@@ -219,7 +237,7 @@ class Store:
             c.execute("DELETE FROM watches WHERE id=?", (watch_id,))
             c.execute("DELETE FROM date_state WHERE watch_id=?", (watch_id,))
             c.execute("DELETE FROM observations WHERE watch_id=?", (watch_id,))
-            for name in ("also_seen", "burst", "similar_sent"):
+            for name in ("also_seen", "burst", "similar_sent", "scouted"):
                 c.execute("DELETE FROM kv WHERE substr(key, 1, ?)=?", _scope(name, watch_id))
 
     # ---- check state ----------------------------------------------------------------
@@ -329,13 +347,24 @@ class Store:
         saved = self.get(f"also_seen:{watch_id}:{day.isoformat()}")
         return json.loads(saved) if saved else None
 
-    def get_similar_sent(self, watch_id: int, day: date) -> set[str] | None:
-        """Flights already announced as similar deals, or None if this date was never recorded."""
-        saved = self.get(f"similar_sent:{watch_id}:{day.isoformat()}")
+    def get_similar_sent(self, watch_id: int, day: date, route: str = "") -> set[str] | None:
+        """Flights already announced as similar deals, or None if this date was never recorded.
+        ``route`` is empty for the watch's own route, or like ``JFKHKG`` for a scouted one."""
+        saved = self.get(f"similar_sent:{watch_id}:{day.isoformat()}{route}")
         return None if saved is None else set(json.loads(saved))
 
-    def set_similar_sent(self, watch_id: int, day: date, flights: set[str]) -> None:
-        self.set(f"similar_sent:{watch_id}:{day.isoformat()}", json.dumps(sorted(flights)))
+    def set_similar_sent(
+        self, watch_id: int, day: date, flights: set[str], route: str = ""
+    ) -> None:
+        key = f"similar_sent:{watch_id}:{day.isoformat()}{route}"
+        self.set(key, json.dumps(sorted(flights)))
+
+    def get_scouted_at(self, watch_id: int, query: Query) -> float | None:
+        saved = self.get(f"scouted:{watch_id}:{_scout_key(query)}")
+        return None if saved is None else float(saved)
+
+    def set_scouted_at(self, watch_id: int, query: Query, at: float) -> None:
+        self.set(f"scouted:{watch_id}:{_scout_key(query)}", str(at))
 
     def clear_answers(self, watch_id: int, day: date, since: float) -> list[float]:
         """When this date got a clear answer since then, plus the last one before that."""

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from jetbridge import updater
@@ -23,9 +23,18 @@ from jetbridge.alerts import (
     render_availability,
     render_similar,
 )
+from jetbridge.flex import why_similar
 from jetbridge.insights import Coverage, Seen, alert_note, coverage
-from jetbridge.matcher import SO_FAR, also_seen, evaluate
-from jetbridge.models import AnswerKind, CheckResult, CheckStatus, Query, SearchAnswer, Watch
+from jetbridge.matcher import SO_FAR, also_seen, evaluate, open_nonstops
+from jetbridge.models import (
+    ANY_FLIGHT,
+    AnswerKind,
+    CheckResult,
+    CheckStatus,
+    Query,
+    SearchAnswer,
+    Watch,
+)
 from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox, owner_address
 from jetbridge.scheduler import (
@@ -40,6 +49,7 @@ from jetbridge.scheduler import (
     next_visit_at,
     normal_gap_s,
     opens_on,
+    plan_scouts,
     plan_searches,
     search_starts,
     searchable_dates,
@@ -245,6 +255,42 @@ class Runner:
                 self._apply_similar(query, similar, recheck)
             report.alerts_sent += flush_outbox(self.store, self.sender, self.clock())
 
+        if paced:
+            room = {site: self.governor.room_today(site) for site in {w.program for w in due}}
+            for planned_query in plan:
+                room[planned_query.program] -= get_site(planned_query.program).requests_per_search
+            scouts = plan_scouts(
+                due,
+                today,
+                self.clock(),
+                lambda w, q: self.store.get_scouted_at(w.id, q),
+                room,
+                set(plan),
+            )
+            for query, watches in scouts.items():
+                site = query.program
+                if site in stops:
+                    continue
+                if self.clock() >= deadline:
+                    break
+                if last_site == site:
+                    await self.sleep(self.rng.uniform(*REQUEST_SPACING_S))
+                last_site = site
+                answer = await self.fetcher.search(query, deadline)
+                if answer.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
+                    stop_site(site, answer)
+                    continue
+                for watch in watches:
+                    self.store.set_scouted_at(watch.id, query, self.clock())
+                hits = self._scout_hits(query, watches, answer)
+                if hits:
+                    await self.sleep(self.rng.uniform(*CONFIRM_DELAY_S))
+                    recheck = await self.fetcher.search(query, deadline)
+                    if recheck.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
+                        stop_site(site, recheck)
+                    self._scout_alert(query, hits, recheck)
+                report.alerts_sent += flush_outbox(self.store, self.sender, self.clock())
+
         now = self.clock()
         for watch in due:
             if watch.id in retry_at:
@@ -331,6 +377,71 @@ class Runner:
             if decision.needs_confirmation:
                 pending.append((watch, result, decision.state))
         return pending, similar
+
+    @staticmethod
+    def _scouting(watch: Watch, query: Query) -> Watch:
+        """This watch's rules applied to any nonstop on a nearby date or between nearby airports."""
+        return replace(watch, flight=ANY_FLIGHT, origin=query.origin, destination=query.destination)
+
+    def _scout_hits(
+        self, query: Query, watches: tuple[Watch, ...], answer: SearchAnswer
+    ) -> list[tuple[Watch, set[str]]]:
+        """Watches that see a nonstop here they haven't announced. A clear answer without it
+        forgets it, so it can be announced again if it returns. An unclear one changes nothing."""
+        hits = []
+        route = f"{query.origin}{query.destination}"
+        for watch in watches:
+            result = evaluate(self._scouting(watch, query), query.date, answer)
+            if not result.status.conclusive:
+                continue
+            current = set(result.flights) if result.status is CheckStatus.AVAILABLE else set()
+            sent = self.store.get_similar_sent(watch.id, query.date, route)
+            self.store.set_similar_sent(watch.id, query.date, (sent or set()) & current, route)
+            if current - (sent or set()):
+                hits.append((watch, current - (sent or set())))
+        return hits
+
+    def _scout_alert(
+        self,
+        query: Query,
+        hits: list[tuple[Watch, set[str]]],
+        answer: SearchAnswer,
+    ) -> None:
+        """Alert only if the live re-check still shows it, like any other opening."""
+        now = self.clock()
+        route = f"{query.origin}{query.destination}"
+        for watch, fresh in hits:
+            scouting = self._scouting(watch, query)
+            options = [
+                {"flight": o.flight, "departs": o.departs.isoformat(), "miles": o.miles}
+                for o in open_nonstops(scouting, query, answer)
+                if o.flight in fresh
+            ]
+            if not options:
+                continue
+            url = get_site(watch.program).search_url(query)
+            subject, body = render_similar(
+                watch,
+                query.date,
+                options,
+                now,
+                url,
+                self.headlines,
+                route=(query.origin, query.destination),
+                why=why_similar(watch, query),
+            )
+            alerts = [
+                NewAlert(AlertKind.SIMILAR_DEAL.value, subject, body, recipient=recipient)
+                for recipient in watch.recipients or (None,)
+            ]
+            if push.wanted_for(AlertKind.SIMILAR_DEAL):
+                alerts.append(push.alert_for(AlertKind.SIMILAR_DEAL, subject, url))
+            for alert in alerts:
+                self.store.enqueue(alert, now)
+            sent = self.store.get_similar_sent(watch.id, query.date, route) or set()
+            self.store.set_similar_sent(
+                watch.id, query.date, sent | {o["flight"] for o in options}, route
+            )
 
     def _apply_similar(
         self,

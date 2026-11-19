@@ -79,6 +79,7 @@ def cx_slice(
     leg_cabin: str = "BUSINESS",
     flight: str = "805",
     day: str = "2027-05-21",
+    origin: str = "JFK",
 ) -> dict:
     """A CX805 itinerary in the shape of a recorded aa.com response."""
     products = [_pricing("COACH", 60_000)]
@@ -91,7 +92,7 @@ def cx_slice(
                 "legs": [
                     {
                         "flight": None,
-                        "origin": {"code": "JFK"},
+                        "origin": {"code": origin},
                         "destination": {"code": "HKG"},
                         "departureDateTime": f"{day}T01:00:00.000-04:00",
                         "arrivalDateTime": f"{day}T23:00:00.000+08:00",

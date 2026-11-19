@@ -267,8 +267,11 @@ def render_similar(
     now: float,
     booking_url: str,
     headlines: Mapping[AlertKind, str] | None = None,
+    route: tuple[str, str] | None = None,
+    why: str = "",
 ) -> tuple[str, str]:
-    """An urgent alert for other flights on the watched route and date that meet the watch's rules.
+    """An urgent alert for other flights that meet the watch's rules: on the watched route and
+    date, or, with ``route`` and ``why``, on a nearby date or between nearby airports.
 
     ``options`` are dicts with ``flight``, ``departs`` (ISO text) and ``miles``, as kept by
     ``Store.set_also_seen``."""
@@ -280,7 +283,8 @@ def render_similar(
     priced = [o for o in options if o.get("miles")]
     best = min(priced, key=lambda o: o["miles"]) if priced else options[0]
     names = ", ".join(o["flight"] for o in options)
-    subject = f"{headline}: {names} {watch.cabin.value} on {day_text}"
+    where = f" {route[0]}-{route[1]}" if route else ""
+    subject = f"{headline}: {names}{where} {watch.cabin.value} on {day_text}"
     if best.get("miles"):
         subject += f" - {best['miles']:,} mi"
     lines = [
@@ -288,11 +292,17 @@ def render_similar(
         booking_url,
         "",
         f"You're watching: {watch.label}",
+        *([f"This one is: {why}"] if why else []),
+        f"Route:    {route[0]}-{route[1]}"
+        if route
+        else f"Route:    {watch.origin}-{watch.destination}",
         f"Date:     {day_text}",
         f"Cabin:    {watch.cabin.value}",
         f"Program:  {get_site(watch.program).label}",
         "",
-        "Other flights on this route and date with seats that fit your rules:",
+        "Other nonstops with seats that fit your rules:"
+        if route
+        else "Other flights on this route and date with seats that fit your rules:",
     ]
     for option in options:
         departs = datetime.fromisoformat(option["departs"]).strftime("%I:%M %p").lstrip("0")

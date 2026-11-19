@@ -281,6 +281,50 @@ def plan_searches(
     return planned
 
 
+SCOUT_GAP_S = 6 * 3600.0
+SCOUT_PRIORITY_GAP_S = 3 * 3600.0
+
+
+def plan_scouts(
+    watches: list[Watch],
+    today: date,
+    now: float,
+    scouted_at_of: Callable[[Watch, Query], float | None],
+    room: dict[str, int],
+    skip: set[Query],
+) -> dict[Query, tuple[Watch, ...]]:
+    """Extra searches for watches with a flexible scope. They only ever use what's left of a site's
+    day after the planned searches (``room`` is that, and is spent as scouts are chosen), so a wide
+    scope can't take searches from the dates someone actually asked for. The least recently looked
+    at goes first."""
+    from jetbridge.flex import scout_queries  # flex imports models, and this module stays light
+
+    wanted: dict[Query, list[Watch]] = defaultdict(list)
+    last: dict[Query, float] = {}
+    for watch in watches:
+        if not watch.is_flexible:
+            continue
+        gap = SCOUT_PRIORITY_GAP_S if watch.high_priority else SCOUT_GAP_S
+        for query in scout_queries(
+            watch, today, lambda d, w=watch: is_searchable(d, w.program, today)
+        ):
+            if query in skip:
+                continue
+            seen_at = scouted_at_of(watch, query)
+            if seen_at is None or now - seen_at >= gap:
+                wanted[query].append(watch)
+                last[query] = min(last.get(query, now), seen_at if seen_at is not None else 0.0)
+    planned: dict[Query, tuple[Watch, ...]] = {}
+    for query in sorted(wanted, key=lambda q: (last[q], q.date, q.origin, q.destination)):
+        site = query.program
+        cost = get_site(site).requests_per_search
+        if room.get(site, 0) < cost:
+            continue
+        room[site] -= cost
+        planned[query] = tuple(wanted[query])
+    return planned
+
+
 def next_visit_at(
     watch: Watch, now: float, today: date, bursts: list[Burst], rng: random.Random
 ) -> float:

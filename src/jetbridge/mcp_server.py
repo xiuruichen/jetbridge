@@ -21,7 +21,18 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from jetbridge import autorun, board, doctor, headlines, platforms, power, service, updater, wizard
+from jetbridge import (
+    autorun,
+    board,
+    doctor,
+    flex,
+    headlines,
+    platforms,
+    power,
+    service,
+    updater,
+    wizard,
+)
 from jetbridge import draft as drafts
 from jetbridge import report as problem_report
 from jetbridge.acquire.governor import DAILY_LIMIT, Governor
@@ -74,8 +85,11 @@ server = MCPServer(
         "When someone asks how a flight has been doing, use watch_insights, and say only what it "
         "shows: never predict when seats will open. To see everything at a glance, use show_board, "
         "which Claude Desktop draws in the chat. If list_watches shows also_seen, mention those "
-        "flights as something jetbridge happened to see rather than a watch or an alert, and offer "
-        "to watch one.\n\n"
+        "flights as something jetbridge happened to see, and offer to watch one. When one of them "
+        "newly opens and fits the watch's rules, jetbridge sends a similar-flight alert by itself. "
+        "If they'd take nearby dates or other airports (for example, booked YYZ to HKG and any "
+        "North American airport is fine), call review_flexible_scope, show it word for word, and "
+        "call confirm_flexible_scope only after a yes.\n\n"
         "Removing a watch takes two steps too: review_watch_removal, show what it says, and "
         "confirm_watch_removal only after a yes. Before turning off automatic checks, say that no "
         "watch will be checked until they're turned back on, and wait for a yes. Read addresses "
@@ -229,6 +243,7 @@ def _watch_view(watch: Watch) -> dict[str, Any]:
         "max_miles": watch.max_miles,
         "booked_at_miles": watch.booked_miles,
         "whole_party": watch.whole_party,
+        "also_looking_at": flex.review_text(watch) if watch.is_flexible else None,
         "seat_alerts_to": list(watch.recipients) or [_owner_address() or "the owner"],
         "status": watch.status,
         "next_check": format_when(watch.next_check_at) if watch.status == "active" else None,
@@ -413,6 +428,7 @@ def send_test_email(to: str | None = None) -> dict[str, str]:
 _REVIEW = "chat_review:"
 _REMOVAL = "chat_removal:"
 _CHANGE = "chat_change:"
+_FLEX = "chat_flex:"
 _REVIEW_LIFETIME_S = 86400
 
 
@@ -420,7 +436,7 @@ def _remember(prefix: str, payload: dict[str, Any]) -> str:
     store = service.open_store()
     now = time.time()
     pending = (*store.keys_with_prefix(_REVIEW), *store.keys_with_prefix(_REMOVAL))
-    for key in (*pending, *store.keys_with_prefix(_CHANGE)):
+    for key in (*pending, *store.keys_with_prefix(_CHANGE), *store.keys_with_prefix(_FLEX)):
         saved = json.loads(store.get(key) or "{}")
         if now - saved.get("saved_at", 0) > _REVIEW_LIFETIME_S:
             store.delete(key)
@@ -914,6 +930,51 @@ def confirm_watch_change(change_id: str) -> dict[str, Any]:
     except ValueError as exc:
         raise ToolError(f"{exc}. Nothing changed. Call review_watch_change again") from exc
     return _watch_view(updated)
+
+
+@_tool()
+def review_flexible_scope(
+    watch_id: int,
+    days_either_side: int = 0,
+    other_origins: str | None = None,
+    other_destinations: str | None = None,
+) -> dict[str, Any]:
+    """Show what a watch would also look at for nearby dates and other airports that would do just
+    as well. This changes nothing. Any nonstop that fits the watch's cabin and price rules on those
+    counts, and it sends an urgent alert after a live re-check. other_origins and
+    other_destinations are airport codes or places, comma-separated, or a region such as
+    north-america, us-east-coast, canada, new-york-area, london-area or tokyo-area: a person who
+    booked YYZ to HKG and would take any North American airport says other_origins north-america.
+    Leave all three out to go back to only the route and dates asked for. Show the review word for
+    word and ask them to confirm it."""
+    watch = _require_watch(watch_id)
+    scoped = flex.scoped(
+        watch, days=days_either_side, origins=other_origins, destinations=other_destinations
+    )
+    flex_id = _remember(
+        _FLEX,
+        {
+            "watch_id": watch_id,
+            "days": scoped.flex_days,
+            "origins": list(scoped.flex_origins),
+            "destinations": list(scoped.flex_destinations),
+        },
+    )
+    return {"changed": False, "flex_id": flex_id, "review": flex.review_text(scoped)}
+
+
+@_tool()
+def confirm_flexible_scope(flex_id: str) -> dict[str, Any]:
+    """Save a scope from review_flexible_scope. Call this only after the person has seen that
+    review and said yes to it. Each review can be saved once."""
+    saved = _recall(_FLEX, flex_id)
+    if saved is None:
+        raise ToolError("no review with that id, so nothing changed. Call review_flexible_scope")
+    watch = _require_watch(saved["watch_id"])
+    service.open_store().set_flex(
+        watch.id, saved["days"], tuple(saved["origins"]), tuple(saved["destinations"])
+    )
+    return _watch_view(_require_watch(watch.id))
 
 
 @_tool()

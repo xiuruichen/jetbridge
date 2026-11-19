@@ -82,6 +82,15 @@ class Watch:
     status: str = "active"  # active | paused | finished
     created_at: float = 0.0
     next_check_at: float = 0.0
+    # A flexible scope: also scout this many days either side, and these other airports, for any
+    # nonstop that fits the same rules. Empty and 0 mean only what was asked for.
+    flex_days: int = 0
+    flex_origins: tuple[str, ...] = ()
+    flex_destinations: tuple[str, ...] = ()
+
+    @property
+    def is_flexible(self) -> bool:
+        return bool(self.flex_days or self.flex_origins or self.flex_destinations)
 
     @property
     def name(self) -> str:

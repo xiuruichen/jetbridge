@@ -10,7 +10,17 @@ from datetime import date, datetime
 import typer
 import typer.core
 
-from jetbridge import autorun, claude_desktop, headlines, platforms, power, service, updater, wizard
+from jetbridge import (
+    autorun,
+    claude_desktop,
+    flex,
+    headlines,
+    platforms,
+    power,
+    service,
+    updater,
+    wizard,
+)
 from jetbridge import doctor as doctor_checks
 from jetbridge import draft as drafts
 from jetbridge import insights as record
@@ -252,6 +262,36 @@ def watch_edit(
     except ValueError as exc:
         raise _fail(str(exc)) from exc
     typer.echo(_describe(updated))
+
+
+@watch_app.command("flex")
+def watch_flex(
+    watch_id: int,
+    days: int = typer.Option(0, help="Also look this many days either side of each date"),
+    origins: str | None = typer.Option(
+        None, help="Other airports to leave from, or a region like north-america"
+    ),
+    destinations: str | None = typer.Option(None, help="Other airports to arrive at"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Save without asking, for use in scripts"),
+) -> None:
+    """Also scout nearby dates and other airports for any nonstop that fits the same rules.
+    With no options, this turns the extra scouting off."""
+    store = service.open_store()
+    watch = _require(store, watch_id)
+    try:
+        scoped = flex.scoped(watch, days=days, origins=origins, destinations=destinations)
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo(flex.review_text(scoped))
+    if not yes:
+        try:
+            if not typer.confirm("\nSave this?", default=False):
+                typer.echo("OK, nothing was changed.")
+                return
+        except typer.Abort as exc:
+            raise _fail("nothing was changed. Add --yes to save without asking") from exc
+    store.set_flex(watch_id, scoped.flex_days, scoped.flex_origins, scoped.flex_destinations)
+    typer.echo(f"Saved for watch {watch_id}.")
 
 
 @watch_app.command("priority")

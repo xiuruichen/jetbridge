@@ -1,43 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="620" height="470" viewBox="0 0 620 470" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="490" viewBox="0 0 640 490" role="img" aria-labelledby="title desc">
   <title id="title">The board jetbridge draws in a Claude Desktop chat</title>
-  <desc id="desc">An example watch on any nonstop from Seattle to Seoul, showing proof of watching, one date with seats open, a near miss above a price limit, and a past opening.</desc>
+  <desc id="desc">An example watch on any nonstop from Seattle to Seoul, showing proof of watching, one date with seats open, a near miss above a price limit, a past opening, and a date it couldn't read.</desc>
   <style>
-    .h { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 20px; font-weight: 600; fill: #f2f1ec; }
-    .t { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; fill: #ece9e2; }
-    .s { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; fill: #a8a49a; }
-    .b { font-weight: 600; fill: #4fce87; }
-    .n { fill: #e0a83f; }
+    .sans { font-family: Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .h { font-size: 20px; font-weight: 700; fill: #f2f5fb; }
+    .t { font-size: 15px; fill: #e8edf7; }
+    .s { font-size: 13px; fill: #8b97ad; }
+    .d { font-size: 13px; font-weight: 600; fill: #8b97ad; }
+    .g { font-weight: 700; fill: #4ff0c0; }
+    .n { fill: #ffb454; }
+    .pill { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; }
   </style>
-  <rect width="620" height="470" rx="14" fill="#1b1b1a"/>
-  <rect x="16" y="16" width="588" height="402" rx="12" fill="#232321" stroke="#3a3a37"/>
-  <text x="36" y="52" class="h">Any nonstop · SEA → ICN</text>
-  <text x="36" y="76" class="s">business · Delta SkyMiles · 2 passengers</text>
-  <text x="36" y="100" class="s">Watched 24 of the last 24 hours, longest gap 5.2 hours</text>
-  <text x="584" y="52" class="s" text-anchor="end">Next check today, 4:15 PM</text>
+  <rect width="640" height="490" rx="16" fill="#090d15"/>
+  <rect x="14" y="14" width="612" height="430" rx="12" fill="#101626" stroke="#232c3f"/>
 
-  <line x1="36" y1="118" x2="584" y2="118" stroke="#3a3a37"/>
-  <text x="36" y="148" class="t">Fri, May 21</text>
-  <circle cx="162" cy="143" r="5" fill="#4fce87"/>
-  <text x="178" y="148" class="t"><tspan class="b">Seats open on DL197: 95,000 miles</tspan></text>
-  <rect x="178" y="162" width="124" height="28" rx="7" fill="none" stroke="#55554f"/>
-  <text x="240" y="181" class="s" text-anchor="middle">Check and book</text>
+  <text x="36" y="50" class="sans h">Any nonstop · SEA → ICN</text>
+  <text x="36" y="72" class="sans s">business · Delta SkyMiles · 2 passengers</text>
+  <rect x="36" y="84" width="326" height="24" rx="12" fill="#4ff0c0" fill-opacity="0.1" stroke="#4ff0c0" stroke-opacity="0.35"/>
+  <circle cx="50" cy="96" r="4" fill="#4ff0c0"/>
+  <text x="62" y="100" class="sans s" fill="#bdf7e6">Watched 24 of the last 24 hours · longest gap 5.2 h</text>
+  <text x="604" y="50" class="sans s" text-anchor="end">Next check today, 4:15 PM</text>
 
-  <line x1="36" y1="204" x2="584" y2="204" stroke="#3a3a37"/>
-  <text x="36" y="234" class="t">Sat, May 22</text>
-  <circle cx="162" cy="229" r="4.5" fill="none" stroke="#a8a49a" stroke-width="1.5"/>
-  <text x="178" y="234" class="t">No seats · <tspan class="n">seats at 140,000 miles, above your limit</tspan></text>
+  <line x1="36" y1="126" x2="604" y2="126" stroke="#232c3f"/>
 
-  <line x1="36" y1="256" x2="584" y2="256" stroke="#3a3a37"/>
-  <text x="36" y="286" class="t">Sun, May 23</text>
-  <circle cx="162" cy="281" r="4.5" fill="none" stroke="#a8a49a" stroke-width="1.5"/>
-  <text x="178" y="286" class="t">No seats</text>
-  <text x="178" y="310" class="s">Seen 3 days ago: open for between 2 hours and 6 hours,</text>
-  <text x="178" y="330" class="s">95,000 miles</text>
+  <text x="36" y="154" class="sans d">FRI MAY 21</text>
+  <rect x="140" y="138" width="68" height="22" rx="11" fill="#4ff0c0" fill-opacity="0.14"/>
+  <text x="174" y="153" class="sans pill" fill="#4ff0c0" text-anchor="middle">OPEN</text>
+  <text x="222" y="154" class="sans t"><tspan class="g">DL197 · 95,000 miles</tspan></text>
+  <rect x="222" y="168" width="132" height="30" rx="15" fill="#4ff0c0"/>
+  <text x="288" y="188" class="sans" font-size="13" font-weight="700" fill="#07101f" text-anchor="middle">Check and book →</text>
 
-  <line x1="36" y1="350" x2="584" y2="350" stroke="#3a3a37"/>
-  <text x="36" y="380" class="t">Mon, May 24</text>
-  <circle cx="162" cy="375" r="4.5" fill="#8a8a8a"/>
-  <text x="178" y="380" class="t">Couldn't tell at the last check</text>
-  <text x="178" y="402" class="s">That never counts as no seats.</text>
-  <text x="310" y="450" class="s" text-anchor="middle">An illustration with made-up flights and prices.</text>
+  <line x1="36" y1="216" x2="604" y2="216" stroke="#232c3f"/>
+  <text x="36" y="244" class="sans d">SAT MAY 22</text>
+  <rect x="140" y="228" width="68" height="22" rx="11" fill="#ffb454" fill-opacity="0.14"/>
+  <text x="174" y="243" class="sans pill" fill="#ffb454" text-anchor="middle">NEAR</text>
+  <text x="222" y="244" class="sans t">No seats · <tspan class="n">140,000 miles, above your limit</tspan></text>
+
+  <line x1="36" y1="266" x2="604" y2="266" stroke="#232c3f"/>
+  <text x="36" y="294" class="sans d">SUN MAY 23</text>
+  <rect x="140" y="278" width="68" height="22" rx="11" fill="#8b97ad" fill-opacity="0.14"/>
+  <text x="174" y="293" class="sans pill" fill="#8b97ad" text-anchor="middle">CLOSED</text>
+  <text x="222" y="294" class="sans t">No seats</text>
+  <text x="222" y="316" class="sans s">Seen 3 days ago: open for between 2 and 6 hours, 95,000 miles</text>
+
+  <line x1="36" y1="336" x2="604" y2="336" stroke="#232c3f"/>
+  <text x="36" y="364" class="sans d">TUE MAY 25</text>
+  <rect x="140" y="348" width="68" height="22" rx="11" fill="#8b97ad" fill-opacity="0.14"/>
+  <text x="174" y="363" class="sans pill" fill="#8b97ad" text-anchor="middle">UNSURE</text>
+  <text x="222" y="364" class="sans t">Couldn't tell at the last check</text>
+  <text x="222" y="386" class="sans s">That never counts as no seats.</text>
+
+  <text x="320" y="424" class="sans s" text-anchor="middle" font-size="12">An illustration with made-up flights and prices.</text>
+  <text x="320" y="470" class="sans s" text-anchor="middle" font-size="12" fill="#5d6a82">jetbridge never logs in, books anything or moves your miles.</text>
 </svg>

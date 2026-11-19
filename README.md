@@ -120,9 +120,9 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 4. **It tells you when something's off.** A daily summary shows what it watched. If that email stops,
    the watcher isn't running.
 
-More about [how checks are timed](docs/guide.md#how-checks-work), including why there's no
-machine learning yet: there's no good public data on when seats are released, and a single watch doesn't
-produce enough to learn from.
+More about [how checks are timed](docs/guide.md#how-checks-work), including how it learns a time of
+day from your own openings once there are enough of them. There's no good public data on when seats are
+released, so until then it only uses fixed rules of thumb.
 
 ## How it compares
 

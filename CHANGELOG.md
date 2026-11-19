@@ -15,6 +15,9 @@
   predict anything, and it needs at least one past opening to compare with.
 - Add `jetbridge book ID` to open the airline's own page for a watch's date, one with seats open if
   you don't name one. It stops there: it never signs in, books or pays.
+- Learn from your own watches when seats first show up. Once at least 5 openings are known to within 3
+  hours and 60% fall in one 3-hour window, each date gets one extra check a day in that window, within
+  the same limits. Nothing leaves your computer, and with less data it does nothing.
 
 ## 0.5.2
 

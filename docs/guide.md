@@ -563,6 +563,11 @@ A few details in the email:
      experiment.
    - **Priority:** `jetbridge watch priority 1 high` makes a watch go first and get checked about 1.5
      times as often.
+   - **Your own timing:** once your watches have recorded at least 5 openings whose start is known to
+     within 3 hours, and 60% of them fall in one 3-hour window of the day, each date gets one extra
+     check a day inside that window. It learns only from your own history on this computer, nothing is
+     shared, and the daily summary says what it found. With less data than that, it does nothing,
+     because a pattern from a handful of openings can be chance.
    - **After a block:** planned searching on that site is halved for a day, then recovers.
 
    These are rules of thumb about where searches do the most good, not predictions. There's no good

@@ -271,6 +271,67 @@ async def test_an_unclear_answer_keeps_what_was_last_seen(store, clock):
     assert store.get_also_seen(watch.id, DAY) is not None
 
 
+def _shut():
+    return answer_from(response(cx_slice(business_miles=None)))
+
+
+def _with_other():
+    return answer_from(response(cx_slice(business_miles=None), _other()))
+
+
+async def _two_ticks(store, clock, answers):
+    runner, fetcher, sender, _ = make_runner(store, clock, answers)
+    await runner.tick()
+    clock.now = store.get_watch(1).next_check_at + 1
+    await runner.tick()
+    return fetcher, sender
+
+
+async def test_a_new_similar_flight_sends_an_urgent_alert_after_a_recheck(store, clock):
+    add_cx(store, clock)
+    fetcher, sender = await _two_ticks(store, clock, [_shut(), _with_other(), _with_other()])
+    assert len(fetcher.queries) == 3  # the second check was re-checked live
+    [subject] = [s for s in sender.subjects if s.startswith("SIMILAR FLIGHT OPEN")]
+    assert "CX889" in subject and "95,000 mi" in subject
+
+
+async def test_a_similar_flight_that_was_open_from_the_start_is_not_announced(store, clock):
+    add_cx(store, clock)
+    _, sender = await _two_ticks(store, clock, [_with_other(), _with_other()])
+    assert not sender.sent
+
+
+async def test_a_similar_flight_is_announced_once_while_it_stays_open(store, clock):
+    add_cx(store, clock)
+    runner, _, sender, _ = make_runner(
+        store, clock, [_shut(), _with_other(), _with_other(), _with_other()]
+    )
+    await runner.tick()
+    for _ in range(2):
+        clock.now = store.get_watch(1).next_check_at + 1
+        await runner.tick()
+    assert sum(s.startswith("SIMILAR FLIGHT OPEN") for s in sender.subjects) == 1
+
+
+async def test_a_similar_flight_gone_at_the_recheck_sends_nothing(store, clock):
+    add_cx(store, clock)
+    _, sender = await _two_ticks(store, clock, [_shut(), _with_other(), _shut()])
+    assert not sender.sent
+
+
+async def test_an_unclear_recheck_retries_the_similar_flight_next_time(store, clock):
+    add_cx(store, clock)
+    unclear = SearchAnswer(AnswerKind.ERROR, detail="x")
+    runner, _, sender, _ = make_runner(
+        store, clock, [_shut(), _with_other(), unclear, _with_other(), _with_other()]
+    )
+    await runner.tick()
+    for _ in range(2):
+        clock.now = store.get_watch(1).next_check_at + 1
+        await runner.tick()
+    assert sum(s.startswith("SIMILAR FLIGHT OPEN") for s in sender.subjects) == 1
+
+
 def test_deleting_a_watch_deletes_what_it_saw(store, clock):
     watch = add_cx(store, clock)
     other = add_cx(store, clock)

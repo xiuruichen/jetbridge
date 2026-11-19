@@ -981,6 +981,7 @@ _HEADLINE_MEANINGS = {
     AlertKind.MORE_SEATS: "more seats have opened",
     AlertKind.REMINDER: "seats are still open",
     AlertKind.SEATS_GONE: "seats have gone",
+    AlertKind.SIMILAR_DEAL: "another flight on the route and date has seats that fit the watch",
 }
 
 

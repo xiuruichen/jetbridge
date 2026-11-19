@@ -336,7 +336,9 @@ async def test_a_price_change_counts_as_movement(store, clock):
 
 async def test_a_new_flight_on_the_route_counts_as_movement(store, clock):
     add_cx(store, clock)
-    answers = [answer_from(CLOSED), answer_from(response(cx_slice(business_miles=None), OTHER))]
+    with_other = answer_from(response(cx_slice(business_miles=None), OTHER))
+    # The third answer is the live re-check that now follows a new similar flight.
+    answers = [answer_from(CLOSED), with_other, with_other]
     runner, _, _, _ = make_runner(store, clock, answers)
     await runner.tick()
     assert store.get_burst(1, DAY) is None

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Send an urgent "similar flight open" alert when another flight on your watched route and date has
+  seats that fit your rules (cabin, price limit, or below what you paid). It costs one extra live
+  re-check, like any opening, and goes to your phone too if phone alerts are on. Flights already open
+  when a date is first checked aren't announced.
+
 ## 0.5.2
 
 - Show what you paid and how a party splits on the board and in the daily summary, along with how

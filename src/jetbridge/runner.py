@@ -21,6 +21,7 @@ from jetbridge.alerts import (
     format_when,
     query_for,
     render_availability,
+    render_similar,
 )
 from jetbridge.insights import Coverage, Seen, alert_note, coverage
 from jetbridge.matcher import SO_FAR, also_seen, evaluate
@@ -233,14 +234,15 @@ class Runner:
                 for watch in watches:
                     retry_at[watch.id] = answer.retry_at
 
-            confirm = self._apply(query, watches, answer, report, reason)
+            confirm, similar = self._apply(query, watches, answer, report, reason)
             self._note_parser_health(query, watches, answer)
-            if confirm:
+            if confirm or similar:
                 await self.sleep(self.rng.uniform(*CONFIRM_DELAY_S))
                 recheck = await self.fetcher.search(query, deadline)
                 if recheck.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
                     stop_site(site, recheck)
                 self._apply_confirmation(query, confirm, recheck, report, reason)
+                self._apply_similar(query, similar, recheck)
             report.alerts_sent += flush_outbox(self.store, self.sender, self.clock())
 
         now = self.clock()
@@ -279,9 +281,11 @@ class Runner:
         answer: SearchAnswer,
         report: TickReport,
         reason: str | None = None,
-    ) -> list[tuple[Watch, CheckResult, DateState]]:
-        """Record results. Returns the watches whose opening needs a live re-check."""
+    ) -> tuple[list[tuple[Watch, CheckResult, DateState]], list[tuple[Watch, set[str]]]]:
+        """Record results. Returns the watches whose opening needs a live re-check, and the
+        watches that saw a new similar flight, which needs the same re-check."""
         pending = []
+        similar: list[tuple[Watch, set[str]]] = []
         now = self.clock()
         for watch in watches:
             result = evaluate(watch, query.date, answer)
@@ -303,6 +307,17 @@ class Runner:
                 self.store.set_also_seen(watch.id, query.date, flights, now)
                 if prev.last_check_at is not None and {o["flight"] for o in flights} - known:
                     self._note_movement(watch, query.date, "another flight opened on this route")
+                current = {o["flight"] for o in flights}
+                sent = self.store.get_similar_sent(watch.id, query.date)
+                if sent is None or prev.last_check_at is None:
+                    # The first look at a date is a baseline, so a new watch doesn't announce
+                    # flights that were already open when it was made.
+                    self.store.set_similar_sent(watch.id, query.date, current)
+                else:
+                    self.store.set_similar_sent(watch.id, query.date, sent & current)
+                    fresh = current - sent
+                    if fresh:
+                        similar.append((watch, fresh))
             if AlertKind.SEATS_GONE in decision.alerts:
                 self._note_movement(watch, query.date, "seats just went")
             elif (
@@ -315,7 +330,37 @@ class Runner:
             self._commit(watch, query.date, result, prev, decision, now, reason=reason)
             if decision.needs_confirmation:
                 pending.append((watch, result, decision.state))
-        return pending
+        return pending, similar
+
+    def _apply_similar(
+        self,
+        query: Query,
+        similar: list[tuple[Watch, set[str]]],
+        answer: SearchAnswer,
+    ) -> None:
+        """Alert for a similar flight only if the live re-check still shows it. An unclear
+        re-check sends nothing and leaves the flight unannounced, so the next check tries again."""
+        now = self.clock()
+        for watch, fresh in similar:
+            options = [
+                {"flight": o.flight, "departs": o.departs.isoformat(), "miles": o.miles}
+                for o in also_seen(watch, query, answer)
+                if o.flight in fresh
+            ]
+            if not options:
+                continue
+            url = get_site(watch.program).search_url(query_for(watch, query.date))
+            subject, body = render_similar(watch, query.date, options, now, url, self.headlines)
+            alerts = [
+                NewAlert(AlertKind.SIMILAR_DEAL.value, subject, body, recipient=recipient)
+                for recipient in watch.recipients or (None,)
+            ]
+            if push.wanted_for(AlertKind.SIMILAR_DEAL):
+                alerts.append(push.alert_for(AlertKind.SIMILAR_DEAL, subject, url))
+            sent = self.store.get_similar_sent(watch.id, query.date) or set()
+            for alert in alerts:
+                self.store.enqueue(alert, now)
+            self.store.set_similar_sent(watch.id, query.date, sent | {o["flight"] for o in options})
 
     def _apply_confirmation(
         self,

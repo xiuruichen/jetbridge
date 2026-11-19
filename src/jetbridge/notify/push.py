@@ -21,7 +21,12 @@ MAX_AGE_S = 3600.0  # a phone buzz about seats from hours ago would only mislead
 TIMEOUT_S = 15
 LAST_ERROR = "push_last_error"
 _HIGH = 4
-_KINDS = (AlertKind.SEATS_OPEN, AlertKind.SEATS_OPEN_UNCONFIRMED, AlertKind.PRICE_DROP)
+_KINDS = (
+    AlertKind.SEATS_OPEN,
+    AlertKind.SEATS_OPEN_UNCONFIRMED,
+    AlertKind.PRICE_DROP,
+    AlertKind.SIMILAR_DEAL,
+)
 
 
 def _path():

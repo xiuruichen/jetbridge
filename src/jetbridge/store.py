@@ -219,7 +219,7 @@ class Store:
             c.execute("DELETE FROM watches WHERE id=?", (watch_id,))
             c.execute("DELETE FROM date_state WHERE watch_id=?", (watch_id,))
             c.execute("DELETE FROM observations WHERE watch_id=?", (watch_id,))
-            for name in ("also_seen", "burst"):
+            for name in ("also_seen", "burst", "similar_sent"):
                 c.execute("DELETE FROM kv WHERE substr(key, 1, ?)=?", _scope(name, watch_id))
 
     # ---- check state ----------------------------------------------------------------
@@ -328,6 +328,14 @@ class Store:
     def get_also_seen(self, watch_id: int, day: date) -> dict | None:
         saved = self.get(f"also_seen:{watch_id}:{day.isoformat()}")
         return json.loads(saved) if saved else None
+
+    def get_similar_sent(self, watch_id: int, day: date) -> set[str] | None:
+        """Flights already announced as similar deals, or None if this date was never recorded."""
+        saved = self.get(f"similar_sent:{watch_id}:{day.isoformat()}")
+        return None if saved is None else set(json.loads(saved))
+
+    def set_similar_sent(self, watch_id: int, day: date, flights: set[str]) -> None:
+        self.set(f"similar_sent:{watch_id}:{day.isoformat()}", json.dumps(sorted(flights)))
 
     def clear_answers(self, watch_id: int, day: date, since: float) -> list[float]:
         """When this date got a clear answer since then, plus the last one before that."""

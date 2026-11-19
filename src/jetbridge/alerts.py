@@ -21,6 +21,7 @@ class AlertKind(StrEnum):
     MORE_SEATS = "more_seats"
     REMINDER = "reminder"
     SEATS_GONE = "seats_gone"
+    SIMILAR_DEAL = "similar_deal"
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,7 @@ DEFAULT_HEADLINES = {
     AlertKind.MORE_SEATS: "MORE SEATS",
     AlertKind.REMINDER: "STILL OPEN",
     AlertKind.SEATS_GONE: "Seats gone",
+    AlertKind.SIMILAR_DEAL: "SIMILAR FLIGHT OPEN",
 }
 
 
@@ -169,6 +171,7 @@ BOOKED_HEADLINES = {
     AlertKind.PRICE_DROP: "EVEN CHEAPER THAN YOU PAID",
     AlertKind.REMINDER: "STILL CHEAPER THAN YOU PAID",
     AlertKind.SEATS_GONE: "Cheaper seats gone",
+    AlertKind.SIMILAR_DEAL: "CHEAPER THAN YOU PAID ON A SIMILAR FLIGHT",
 }
 
 
@@ -248,6 +251,58 @@ def render_availability(
             "goes. Check what the airline charges and what it refunds first.",
         ]
     lines += [
+        "",
+        "Award seats can vanish quickly. "
+        "Confirm on the site before moving any points, because transfers can't be undone.",
+        "",
+        cancel_note(watch.program, datetime.fromtimestamp(now).date()),
+    ]
+    return subject, "\n".join(lines)
+
+
+def render_similar(
+    watch: Watch,
+    day: date,
+    options: list[dict],
+    now: float,
+    booking_url: str,
+    headlines: Mapping[AlertKind, str] | None = None,
+) -> tuple[str, str]:
+    """An urgent alert for other flights on the watched route and date that meet the watch's rules.
+
+    ``options`` are dicts with ``flight``, ``departs`` (ISO text) and ``miles``, as kept by
+    ``Store.set_also_seen``."""
+    day_text = day.strftime("%b %d, %Y")
+    kind = AlertKind.SIMILAR_DEAL
+    headline = (headlines or {}).get(kind, DEFAULT_HEADLINES[kind])
+    if watch.booked_miles:
+        headline = BOOKED_HEADLINES[kind]
+    priced = [o for o in options if o.get("miles")]
+    best = min(priced, key=lambda o: o["miles"]) if priced else options[0]
+    names = ", ".join(o["flight"] for o in options)
+    subject = f"{headline}: {names} {watch.cabin.value} on {day_text}"
+    if best.get("miles"):
+        subject += f" - {best['miles']:,} mi"
+    lines = [
+        "Check and book:",
+        booking_url,
+        "",
+        f"You're watching: {watch.label}",
+        f"Date:     {day_text}",
+        f"Cabin:    {watch.cabin.value}",
+        f"Program:  {get_site(watch.program).label}",
+        "",
+        "Other flights on this route and date with seats that fit your rules:",
+    ]
+    for option in options:
+        departs = datetime.fromisoformat(option["departs"]).strftime("%I:%M %p").lstrip("0")
+        price = f"{option['miles']:,} miles per person" if option.get("miles") else "price unknown"
+        lines.append(f"  {option['flight']}  departs {departs}  {price}")
+    if watch.booked_miles:
+        lines.append(f"You paid: {watch.booked_miles:,} miles per person")
+    lines += [
+        "",
+        f"Observed: {format_when(now)}, and confirmed by a second live check.",
         "",
         "Award seats can vanish quickly. "
         "Confirm on the site before moving any points, because transfers can't be undone.",

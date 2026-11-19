@@ -121,6 +121,7 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 | "I booked DL197 on May 21 for 95k, tell me if it gets cheaper" | Alerts only below what you paid, without asking for your confirmation code |
 | "We're four and can split into two and two on any nonstop" | Alerts only when enough nonstops are open to seat everyone |
 | "Booked YYZ to HKG. Any North American airport works, and a day either side" | Watches every likely airport and nearby date, and alerts when one beats your rules |
+| "Any airline from North America to Hong Kong, business, on every program" | Saves one watch per program, and alerts say what else is open on the others |
 | "Show me my flights" | Draws a board in the chat |
 | "How has that flight been doing? Has it ever opened?" | Shows past openings, how long they lasted and their prices |
 | "Lower the limit to 90k and add June 20" | Changes the watch and keeps its history |

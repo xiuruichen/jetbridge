@@ -13,6 +13,9 @@
 - Say in a seat alert how fast past openings on that date closed, and send one follow-up per opening
   once seats have stayed open about as long as past ones did. It reports the record and doesn't
   predict anything, and it needs at least one past opening to compare with.
+- Watch a route on every program at once: `jetbridge watch add any ... --program all`, or ask Claude
+  for "any airline". Alerts say what else is open on the other programs. The same review can add the
+  nearby-date and nearby-airport scope.
 - Check dates in their last 3 days before departure about twice as often, within the same limits,
   because seats can come back as bookings are cancelled. The review's "up to N a day" now counts it.
 - Add `jetbridge book ID` to open the airline's own page for a watch's date, one with seats open if

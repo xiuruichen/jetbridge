@@ -321,6 +321,24 @@ a region (`north-america`, `us-east-coast`, `us-west-coast`, `canada`, `new-york
 - A scouted opening is announced once while it stays open, and again if it goes and comes back.
 - The alert says why it counts, such as "1 day earlier, from EWR instead of JFK".
 
+### Any airline, every program
+
+To watch a route and not one airline, use `any` and let it search every program. Each program's results
+include its alliance partners (American's include its oneworld partners, Delta's its SkyTeam partners,
+United's its Star Alliance partners), so together they cover far more than one airline:
+
+```powershell
+jetbridge watch add any --from JFK --to HKG --dates 2027-05-21 --program all --origins north-america --flex-days 1
+```
+
+In chat, say "Any airline from North America to Hong Kong". That saves one watch per program, tied
+together. When seats open on one program, the alert says what else is open on the others, so you can
+compare before moving any points.
+
+- It's nonstops only, and a program can only book the airlines in its own alliance.
+- Each program is searched on its own, so three programs use about three times the searches. The
+  review says so, and the daily limits still apply.
+
 ### Getting these right
 
 - **Program:** this is whose miles you'd use, not who flies the plane. Partner flights can appear:

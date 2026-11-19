@@ -561,6 +561,9 @@ A few details in the email:
    - **Booking night:** a date gets one check just after midnight at the airline's home on the day it
      should become bookable, if your computer is awake. Evidence for this timing is thin, so it's a cheap
      experiment.
+   - **Last 3 days:** seats often come back as bookings are cancelled just before departure, so a date
+     in its last 3 days is checked about twice as often as normal, within the same limits. This isn't
+     based on any airline's cancellation rules.
    - **Priority:** `jetbridge watch priority 1 high` makes a watch go first and get checked about 1.5
      times as often.
    - **Your own timing:** once your watches have recorded at least 5 openings whose start is known to

@@ -17,7 +17,14 @@ from typer.testing import CliRunner
 
 from jetbridge import service
 from jetbridge.cli import app
-from jetbridge.insights import Seen, alert_note, clear_answers, openings
+from jetbridge.insights import (
+    Seen,
+    alert_note,
+    clear_answers,
+    closing_soon,
+    hold_note,
+    openings,
+)
 from jetbridge.matcher import also_seen, evaluate
 from jetbridge.models import AnswerKind, CheckStatus, Query, SearchAnswer
 from jetbridge.runner import above_limit_miles
@@ -112,6 +119,38 @@ def test_alert_note_describes_the_latest_past_opening():
         note
         == "Seen open once before on this date, most recently open for between 2 hours and 5 hours."
     )
+
+
+PAST = [Seen(0, SHUT), Seen(HOUR, OPEN), Seen(3 * HOUR, SHUT)]  # open, and gone within 3 hours
+
+
+def test_hold_note_needs_a_past_opening():
+    assert hold_note([Seen(0, SHUT), Seen(HOUR, OPEN)]) is None
+
+
+def test_hold_note_says_how_fast_the_last_one_closed():
+    assert hold_note(PAST) == "The last opening on this date was gone within 3 hours."
+
+
+def test_hold_note_gives_the_range_over_several():
+    history = [*PAST, Seen(10 * HOUR, OPEN), Seen(11 * HOUR, SHUT)]
+    assert (
+        hold_note(history)
+        == "The 2 past openings on this date were gone within 3 hours to 8 hours."
+    )
+
+
+def test_closing_soon_waits_until_it_has_been_open_as_long():
+    history = [*PAST, Seen(10 * HOUR, SHUT), Seen(11 * HOUR, OPEN)]
+    assert closing_soon(history, 11 * HOUR + 600) is None  # 10 minutes in
+    started, note = closing_soon(history, 11 * HOUR + 3 * HOUR)
+    assert started == 11 * HOUR and "open for at least 3 hours" in note
+    assert "gone within 3 hours" in note
+
+
+def test_closing_soon_says_nothing_without_a_past_opening_or_when_shut():
+    assert closing_soon([Seen(0, SHUT), Seen(HOUR, OPEN)], 9 * HOUR) is None
+    assert closing_soon([*PAST], 9 * HOUR) is None
 
 
 @pytest.mark.parametrize("word", ["usually", "likely", "expect", "will open", "predict"])

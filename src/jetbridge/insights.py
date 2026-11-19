@@ -132,6 +132,55 @@ def clear_answers(history: list[Seen]) -> int:
     return sum(seen.status != _UNKNOWN for seen in history)
 
 
+CLOSING_SOON_SHARE = 0.75
+CLOSING_SOON_MIN_S = 1800.0
+
+
+def _gone_within(found: Opening) -> float:
+    """The longest a finished opening can have lasted, going by the answers around it."""
+    start = found.clear_before if found.clear_before is not None else found.first_seen
+    return found.closed_seen - start  # type: ignore[operator]
+
+
+def _past_range(past: list[Opening]) -> str:
+    shortest = _duration(min(_gone_within(found) for found in past))
+    longest = _duration(max(_gone_within(found) for found in past))
+    return f"within {shortest}" if shortest == longest else f"within {shortest} to {longest}"
+
+
+def hold_note(history: list[Seen]) -> str | None:
+    """How fast this date's past openings closed, so someone can decide how long to think. Only what
+    was seen: it says nothing about this opening."""
+    past = [found for found in openings(history) if found.closed_seen is not None]
+    if not past:
+        return None
+    which = "The last opening" if len(past) == 1 else f"The {len(past)} past openings"
+    return f"{which} on this date {'was' if len(past) == 1 else 'were'} gone {_past_range(past)}."
+
+
+def closing_soon(history: list[Seen], now: float) -> tuple[float, str] | None:
+    """For seats that are open now: when this opening started, and a line to say it has been open
+    about as long as the shortest past one was known to last. None until that point, and when
+    there's no past opening to compare with."""
+    runs = openings(history)
+    if not runs or runs[-1].closed_seen is not None:
+        return None
+    current, past = runs[-1], [found for found in runs[:-1] if found.closed_seen is not None]
+    if not past:
+        return None
+    threshold = max(
+        CLOSING_SOON_MIN_S, CLOSING_SOON_SHARE * min(_gone_within(found) for found in past)
+    )
+    open_for = now - current.first_seen
+    if open_for < threshold:
+        return None
+    note = (
+        f"These seats have now been open for at least {_duration(open_for)}. Past openings on this "
+        f"date were gone {_past_range(past)}."
+    )
+    return current.first_seen, note
+
+
 def alert_note(history: list[Seen], now: float) -> str | None:
     """A line for a seats alert saying what this date has done before. Past openings only, so the
     one being announced doesn't count. Says nothing rather than read much into very little."""

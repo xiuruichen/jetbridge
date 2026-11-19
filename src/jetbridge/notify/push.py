@@ -26,6 +26,7 @@ _KINDS = (
     AlertKind.SEATS_OPEN_UNCONFIRMED,
     AlertKind.PRICE_DROP,
     AlertKind.SIMILAR_DEAL,
+    AlertKind.CLOSING_SOON,
 )
 
 

@@ -24,7 +24,7 @@ from jetbridge.alerts import (
     render_similar,
 )
 from jetbridge.flex import why_similar
-from jetbridge.insights import Coverage, Seen, alert_note, coverage
+from jetbridge.insights import Coverage, Seen, alert_note, closing_soon, coverage, hold_note
 from jetbridge.matcher import SO_FAR, also_seen, evaluate, open_nonstops
 from jetbridge.models import (
     ANY_FLIGHT,
@@ -364,6 +364,8 @@ class Runner:
                     fresh = current - sent
                     if fresh:
                         similar.append((watch, fresh))
+            if result.status is CheckStatus.AVAILABLE and prev.status is CheckStatus.AVAILABLE:
+                self._closing_soon(watch, query.date, result, prev, now)
             if AlertKind.SEATS_GONE in decision.alerts:
                 self._note_movement(watch, query.date, "seats just went")
             elif (
@@ -377,6 +379,29 @@ class Runner:
             if decision.needs_confirmation:
                 pending.append((watch, result, decision.state))
         return pending, similar
+
+    def _closing_soon(
+        self, watch: Watch, day: date, result: CheckResult, prev: DateState, now: float
+    ) -> None:
+        """Once per opening, say that seats have stayed open about as long as past openings on this
+        date did. It's a fact about the record, so it doesn't predict anything."""
+        found = closing_soon(seen_history(self.store, watch.id, day), now)
+        if found is None:
+            return
+        started, note = found
+        url = get_site(watch.program).search_url(query_for(watch, day))
+        kind = AlertKind.CLOSING_SOON
+        subject, body = render_availability(
+            kind, watch, day, result, prev, now, url, self.headlines, note
+        )
+        key = f"closing_soon:{watch.id}:{day}:{int(started)}"
+        for recipient in watch.recipients or (None,):
+            alert = NewAlert(kind.value, subject, body, f"{key}:{recipient}", recipient)
+            self.store.enqueue(alert, now)
+        if push.wanted_for(kind):
+            self.store.enqueue(
+                replace(push.alert_for(kind, subject, url), dedupe_key=f"{key}:push"), now
+            )
 
     @staticmethod
     def _scouting(watch: Watch, query: Query) -> Watch:
@@ -513,7 +538,9 @@ class Runner:
         for kind in decision.alerts:
             note = None
             if kind in (AlertKind.SEATS_OPEN, AlertKind.SEATS_OPEN_UNCONFIRMED):
-                note = alert_note(seen_history(self.store, watch.id, day), now)
+                history = seen_history(self.store, watch.id, day)
+                note = " ".join(n for n in (alert_note(history, now), hold_note(history)) if n)
+                note = note or None
             subject, body = render_availability(
                 kind, watch, day, shown or result, prev, now, url, self.headlines, note
             )

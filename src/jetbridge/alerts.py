@@ -22,6 +22,7 @@ class AlertKind(StrEnum):
     REMINDER = "reminder"
     SEATS_GONE = "seats_gone"
     SIMILAR_DEAL = "similar_deal"
+    CLOSING_SOON = "closing_soon"
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,7 @@ DEFAULT_HEADLINES = {
     AlertKind.REMINDER: "STILL OPEN",
     AlertKind.SEATS_GONE: "Seats gone",
     AlertKind.SIMILAR_DEAL: "SIMILAR FLIGHT OPEN",
+    AlertKind.CLOSING_SOON: "STILL OPEN, PAST ONES CLOSED AROUND NOW",
 }
 
 
@@ -172,6 +174,7 @@ BOOKED_HEADLINES = {
     AlertKind.REMINDER: "STILL CHEAPER THAN YOU PAID",
     AlertKind.SEATS_GONE: "Cheaper seats gone",
     AlertKind.SIMILAR_DEAL: "CHEAPER THAN YOU PAID ON A SIMILAR FLIGHT",
+    AlertKind.CLOSING_SOON: "STILL CHEAPER THAN YOU PAID, PAST ONES CLOSED AROUND NOW",
 }
 
 

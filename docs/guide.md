@@ -647,6 +647,7 @@ folder. Add `--help` to any command for details.
 | `watch edit ID ...` | Change dates, price limit or pace, keeping the history |
 | `watch priority ID high` / `normal` | Put a watch first, within the same daily limits |
 | `watch flex ID [--days N] [--origins X] [--destinations Y]` | Also scout nearby dates and other airports. No options turns it off |
+| `book ID [DATE] [--link-only]` | Open the airline's own page for a date, one with seats open if you don't say. It never signs in, books or pays |
 | `watch recipients ID [ADDRESSES]` | Show or replace who gets seat alerts |
 | `watch pause ID` / `watch resume ID` | Stop or restart checking |
 | `watch rm ID` | Delete a watch and its history |

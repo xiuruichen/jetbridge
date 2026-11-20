@@ -313,7 +313,8 @@ def render_similar(
     for option in options:
         departs = datetime.fromisoformat(option["departs"]).strftime("%I:%M %p").lstrip("0")
         price = f"{option['miles']:,} miles per person" if option.get("miles") else "price unknown"
-        lines.append(f"  {option['flight']}  departs {departs}  {price}")
+        via = f"  ({option['via']})" if option.get("via") else ""
+        lines.append(f"  {option['flight']}  departs {departs}  {price}{via}")
     if watch.booked_miles:
         lines.append(f"You paid: {watch.booked_miles:,} miles per person")
     lines += [

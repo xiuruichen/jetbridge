@@ -110,6 +110,64 @@ def cx_slice(
     }
 
 
+def connecting_slice(
+    *,
+    business_miles: int | None = 80_000,
+    hub: str = "ORD",
+    layover_h: float = 2,
+    second_cabin: str = "BUSINESS",
+    second_hours: float = 15,
+    day: str = "2027-05-21",
+) -> dict:
+    """AA100 from JFK to a hub, then CX806 on to HKG, in the shape of a recorded aa.com response."""
+    from datetime import datetime, timedelta, timezone
+
+    edt = timezone(timedelta(hours=-4))
+    cdt = timezone(timedelta(hours=-5))
+    hkt = timezone(timedelta(hours=8))
+    start = datetime.fromisoformat(f"{day}T06:00:00").replace(tzinfo=edt)
+    lands = start + timedelta(hours=3)
+    leaves = lands + timedelta(hours=layover_h)
+    arrives = leaves + timedelta(hours=second_hours)
+
+    def stamp(moment: datetime) -> str:
+        return moment.isoformat(timespec="milliseconds")
+
+    def leg(origin, destination, depart, arrive, cabin):
+        return {
+            "flight": None,
+            "origin": {"code": origin},
+            "destination": {"code": destination},
+            "departureDateTime": stamp(depart),
+            "arrivalDateTime": stamp(arrive),
+            "aircraftCode": "77W",
+            "operationalDisclosure": "",
+            "productDetails": [
+                {"productType": "COACH", "cabinType": "COACH"},
+                {"productType": "BUSINESS", "cabinType": cabin},
+            ],
+        }
+
+    products = [_pricing("COACH", 60_000)]
+    if business_miles is not None:
+        products.append(_pricing("BUSINESS", business_miles))
+    return {
+        "segments": [
+            {
+                "flight": {"carrierCode": "AA", "flightNumber": "100"},
+                "legs": [leg("JFK", hub, start, lands.astimezone(cdt), "BUSINESS")],
+            },
+            {
+                "flight": {"carrierCode": "CX", "flightNumber": "806"},
+                "legs": [
+                    leg(hub, "HKG", leaves.astimezone(cdt), arrives.astimezone(hkt), second_cabin)
+                ],
+            },
+        ],
+        "pricingDetail": products,
+    }
+
+
 def response(*slices: dict, error: str = "") -> dict:
     return {
         "SearchData": {

@@ -155,6 +155,9 @@ class WatchDraft:
     flex_days: int = 0  # also scout this many days either side
     flex_origins: str | None = None  # other airports or a region to leave from
     flex_destinations: str | None = None  # other airports or a region to arrive at
+    max_stops: int = 0  # 0 for nonstops only, 1 to also count one-ticket one-stop trips
+    max_total_hours: int | None = None
+    max_layover_hours: int = 6
 
     def missing(self) -> list[str]:
         fields = ("origin", "destination", "dates", "flight")
@@ -356,6 +359,12 @@ def review_text(
             lines.append(f"             That's {count} watches, and alerts say what else is open.")
         else:
             lines.append(f"             That's {count} watches sharing these searches.")
+    if draft.max_stops:
+        total = f", {draft.max_total_hours} h total at most" if draft.max_total_hours else ""
+        lines.append(
+            f"Connections: up to {draft.max_stops} stop, layovers up to "
+            f"{draft.max_layover_hours} h{total}. One ticket only, and every leg in your cabin."
+        )
     if draft.flex_days or draft.flex_origins or draft.flex_destinations:
         scoped = flex.scoped(
             _stand_in(draft),
@@ -389,6 +398,19 @@ def review_text(
 def _program_names(programs: tuple[str, ...]) -> str:
     labels = [get_site(program).label for program in programs]
     return f"{', '.join(labels[:-1])} and {labels[-1]}"
+
+
+def _check_connections(draft: WatchDraft) -> None:
+    if not draft.max_stops and draft.max_total_hours is None:
+        return
+    if draft.max_stops not in (0, 1):
+        raise ValueError("connections can have 0 or 1 stop")
+    if draft.max_stops and draft.flight != ANY_FLIGHT.code:
+        raise ValueError("connections only work when watching any flight on the route")
+    if not 1 <= draft.max_layover_hours <= 12:
+        raise ValueError("a layover limit has to be from 1 to 12 hours")
+    if draft.max_total_hours is not None and not 1 <= draft.max_total_hours <= 48:
+        raise ValueError("a total time limit has to be from 1 to 48 hours")
 
 
 def _stand_in(draft: WatchDraft) -> Watch:
@@ -448,6 +470,7 @@ def validate(draft: WatchDraft) -> None:
     """Raise ``ValueError`` if saving this draft would be refused, so a review can't mislead."""
     service.validate_watch(**_fields(draft))
     flex.check(draft.flex_days, draft.flex_origins, draft.flex_destinations)
+    _check_connections(draft)
 
 
 def save(store: Store, draft: WatchDraft) -> Watch:
@@ -461,8 +484,11 @@ def save(store: Store, draft: WatchDraft) -> Watch:
             destinations=draft.flex_destinations,
         )
         store.set_flex(watch.id, scoped.flex_days, scoped.flex_origins, scoped.flex_destinations)
-        watch = store.get_watch(watch.id) or watch
-    return watch
+    if draft.max_stops:
+        store.set_connections(
+            watch.id, draft.max_stops, draft.max_total_hours, draft.max_layover_hours
+        )
+    return store.get_watch(watch.id) or watch
 
 
 def save_all(store: Store, all_drafts: list[WatchDraft]) -> list[Watch]:

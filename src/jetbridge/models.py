@@ -88,6 +88,10 @@ class Watch:
     flex_origins: tuple[str, ...] = ()
     flex_destinations: tuple[str, ...] = ()
     group_id: int | None = None  # watches saved together across programs, flights or cabins
+    # On an "any" watch, also count one-ticket itineraries with up to this many stops.
+    max_stops: int = 0
+    max_total_hours: int | None = None
+    max_layover_hours: int = 6
     snipe_window: str | None = None  # "02:00-05:00" or "auto": checked often inside it
 
     @property

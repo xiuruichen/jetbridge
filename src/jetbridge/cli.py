@@ -149,6 +149,15 @@ def watch_add(
     checks_per_day: int = typer.Option(
         6, help="Checks per day, per date. Lower far out, higher in the last two weeks"
     ),
+    stops: int = typer.Option(
+        0, "--stops", help="With 'any': also count one-ticket trips with this many stops (0 or 1)"
+    ),
+    max_hours: int | None = typer.Option(
+        None, "--max-hours", help="With --stops: longest total trip time, in hours"
+    ),
+    max_layover: int = typer.Option(
+        6, "--max-layover", help="With --stops: longest layover, hours"
+    ),
     flex_days: int = typer.Option(0, "--flex-days", help="Also scout this many days either side"),
     origins: str | None = typer.Option(
         None, "--origins", help="Also scout these airports or a region, like north-america"
@@ -208,6 +217,9 @@ def watch_add(
                 flex_days=flex_days,
                 flex_origins=origins,
                 flex_destinations=destinations,
+                max_stops=stops,
+                max_total_hours=max_hours,
+                max_layover_hours=max_layover,
             )
             for each in programs
         ]

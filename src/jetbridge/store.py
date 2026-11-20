@@ -109,6 +109,9 @@ def _watch(row: sqlite3.Row) -> Watch:
         flex_destinations=tuple(json.loads(row["flex_destinations"])),
         group_id=row["group_id"],
         snipe_window=row["snipe_window"],
+        max_stops=row["max_stops"],
+        max_total_hours=row["max_total_hours"],
+        max_layover_hours=row["max_layover_hours"],
     )
 
 
@@ -135,6 +138,9 @@ class Store:
             ("watches", "flex_destinations", "TEXT NOT NULL DEFAULT '[]'"),
             ("watches", "group_id", "INTEGER"),
             ("watches", "snipe_window", "TEXT"),
+            ("watches", "max_stops", "INTEGER NOT NULL DEFAULT 0"),
+            ("watches", "max_total_hours", "INTEGER"),
+            ("watches", "max_layover_hours", "INTEGER NOT NULL DEFAULT 6"),
         ):
             existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -221,6 +227,14 @@ class Store:
         self.conn.execute(
             "UPDATE watches SET dates=?, checks_per_day=?, max_miles=? WHERE id=?",
             (json.dumps([d.isoformat() for d in dates]), checks_per_day, max_miles, watch_id),
+        )
+
+    def set_connections(
+        self, watch_id: int, max_stops: int, max_total_hours: int | None, max_layover_hours: int
+    ) -> None:
+        self.conn.execute(
+            "UPDATE watches SET max_stops=?, max_total_hours=?, max_layover_hours=? WHERE id=?",
+            (max_stops, max_total_hours, max_layover_hours, watch_id),
         )
 
     def set_snipe(self, watch_id: int, window: str | None) -> None:

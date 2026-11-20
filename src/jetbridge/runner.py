@@ -538,7 +538,12 @@ class Runner:
         for watch, fresh in hits:
             scouting = self._scouting(watch, query)
             options = [
-                {"flight": o.flight, "departs": o.departs.isoformat(), "miles": o.miles}
+                {
+                    "flight": o.flight,
+                    "departs": o.departs.isoformat(),
+                    "miles": o.miles,
+                    "via": o.via,
+                }
                 for o in open_nonstops(scouting, query, answer)
                 if o.flight in fresh
             ]

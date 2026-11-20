@@ -488,6 +488,9 @@ def review_watch(
     flex_days: int = 0,
     other_origins: str | None = None,
     other_destinations: str | None = None,
+    max_stops: int = 0,
+    max_total_hours: int | None = None,
+    max_layover_hours: int = 6,
 ) -> dict[str, Any]:
     """Check the details of a new watch and return a review. This saves nothing.
 
@@ -506,7 +509,10 @@ def review_watch(
     each program's results include its alliance partners, and alerts then say what else is open on
     the other programs. flex_days (0 to 3), other_origins and other_destinations also scout
     nearby dates and other airports or a region such as north-america, for any nonstop that fits
-    the same rules: say it in the review, and never promise a catch rate."""
+    the same rules: say it in the review, and never promise a catch rate. max_stops 1 (with flight
+    any) also counts bookable one-stop trips on a single ticket, with every leg in the cabin, a
+    layover limit (max_layover_hours, default 6) and an optional total time limit
+    (max_total_hours): offer it when the route has no good nonstop, such as from a small airport."""
     codes = tuple(Flight.parse(part).code for part in _several(flight))
     cabins = tuple(drafts.parse_cabin(part) for part in _several(cabin))
     programs = _programs(program)
@@ -527,6 +533,9 @@ def review_watch(
         "flex_days": flex_days,
         "flex_origins": other_origins,
         "flex_destinations": other_destinations,
+        "max_stops": max_stops,
+        "max_total_hours": max_total_hours,
+        "max_layover_hours": max_layover_hours,
     }
     all_drafts = [
         drafts.WatchDraft(flight=code, cabin=each, program=each_program, **shared)

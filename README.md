@@ -27,7 +27,8 @@ you the price and a booking link, before the seats are gone.
 
 And it doesn't stop at the flight you named. It also catches the **sibling flight** that just opened,
 the **day before or after**, and the **airport next door**, because that's usually where the deal is
-hiding.
+hiding. Watch a whole route and it can search **all three programs at once**, so you see every
+airline they can book.
 
 **Free. No account, no subscription, no data leaving your machine.** American AAdvantage, Delta
 SkyMiles and United MileagePlus, partner flights included.
@@ -43,6 +44,9 @@ SkyMiles and United MileagePlus, partner flights included.
 - **It finds the deal you didn't ask for.** Another flight on your route opens, a day earlier, out of
   EWR instead of JFK: you get an urgent alert that says exactly why it counts. Booked YYZ to HKG and any
   North American airport would do? Say so, and it watches all of them for you.
+- **Every airline, every program.** "Any airline from North America to Hong Kong" saves one watch per
+  program, and each program's results include its alliance partners. When seats open on one, the alert
+  says what else is open on the others, so you can compare before moving any points.
 - **No false alarms.** Every opening is searched again live a minute or two later. If the seats were
   only there for a moment, you never hear about it. If that second search can't tell,
   the email says it's unconfirmed.
@@ -52,6 +56,12 @@ SkyMiles and United MileagePlus, partner flights included.
 - **It learns your flight's rhythm.** From your own history it can spot the time of day seats tend to
   appear and add a check there. Nothing leaves your computer, and with too little data it stays out of
   the way.
+- **Snipe windows, when minutes matter.** Opt in per watch, and inside a time of day you pick (or the
+  one it learned) it checks about every 15 minutes instead of every few hours. It's capped, only uses
+  searches the day's plan leaves over, and is the most likely thing to get a site to block you, so it's
+  off until you turn it on.
+- **The last days get the most attention.** Seats can come back as bookings are cancelled, so dates in
+  their last 3 days are checked about twice as often.
 - **One step from alert to booking.** The link comes first, and `jetbridge book` opens the airline's own
   page on the right date. You sign in and book yourself.
 - **Cheaper than what you paid.** Already booked? It alerts only when a seat costs less than you paid, so
@@ -122,6 +132,7 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 | "We're four and can split into two and two on any nonstop" | Alerts only when enough nonstops are open to seat everyone |
 | "Booked YYZ to HKG. Any North American airport works, and a day either side" | Watches every likely airport and nearby date, and alerts when one beats your rules |
 | "Any airline from North America to Hong Kong, business, on every program" | Saves one watch per program, and alerts say what else is open on the others |
+| "Check this one hard between 2 and 5 AM" | A snipe window: about every 15 minutes in that time of day, capped, after it shows you the risk |
 | "Show me my flights" | Draws a board in the chat |
 | "How has that flight been doing? Has it ever opened?" | Shows past openings, how long they lasted and their prices |
 | "Lower the limit to 90k and add June 20" | Changes the watch and keeps its history |
@@ -156,7 +167,7 @@ Its details can change, so check [seats.aero](https://seats.aero) itself.
 | **Programs** | American, Delta and United | [24 programs](https://awardwallet.com/travel/seats-aero-guide/) |
 | **Cost** | Free | [Free plan, or Pro at $12.99 a month from Nov 9, 2026](https://upgradedpoints.com/news/seats-aero-price-increase) |
 | **How far ahead** | As far as the airline shows | [60 days free, a year on Pro](https://awardwallet.com/travel/seats-aero-guide/) |
-| **Alerts** | One flight or any nonstop, re-checked live on the airline's site first | [Unlimited, for direct routes, by date, program and cabin](https://docs.seats.aero/article/43-creating-and-managing-alerts) |
+| **Alerts** | One flight, any nonstop, nearby dates and airports, re-checked live on the airline's site first | [Unlimited, for direct routes, by date, program and cabin](https://docs.seats.aero/article/43-creating-and-managing-alerts) |
 | **Where it runs** | Your computer, which has to be on | Its own service, so your computer can be off |
 | **In Claude** | Yes, on your computer | Yes, through its [official connector](https://seats.aero/mcp) |
 
@@ -167,6 +178,8 @@ Its details can change, so check [seats.aero](https://seats.aero) itself.
 - **Sending alerts needs a Gmail account** with 2-Step Verification. Alerts can go to any address.
 - **Sites can change or block it.** If that happens, it stops and tells you, rather than saying "no
   seats". [Here's how it stays careful](docs/guide.md#blocks-and-the-airlines-terms).
+- **Nothing can promise you a seat.** The airline decides when seats exist and other people are looking
+  too. jetbridge shortens how long it takes to see them and tell you, and that's all.
 - **What leaves your computer:** searches to the airline, emails through Gmail, anything you say to
   Claude, and [a few optional things](docs/guide.md#where-your-data-lives).
 

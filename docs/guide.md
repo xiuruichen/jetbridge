@@ -321,6 +321,27 @@ a region (`north-america`, `us-east-coast`, `us-west-coast`, `canada`, `new-york
 - A scouted opening is announced once while it stays open, and again if it goes and comes back.
 - The alert says why it counts, such as "1 day earlier, from EWR instead of JFK".
 
+### Connecting flights
+
+Most alert sites only cover direct flights. jetbridge can also count one-stop trips, which is often the
+only way to get from a smaller airport to a faraway city. It needs `any`, because it judges every
+itinerary on the route:
+
+```powershell
+jetbridge watch add any --from BOS --to HKG --dates 2027-05-21 --stops 1 --max-hours 24 --max-layover 6
+```
+
+In chat, say "a one-stop is fine if it's under 24 hours".
+
+- It's one ticket only. Two separate tickets, or a self-transfer, never count.
+- Every leg has to be in your cabin, so a business seat to a hub and economy on to the destination is
+  not a match.
+- The price limit and party size apply to the whole trip, and so do the layover limit (default 6 hours,
+  up to 12) and the total time limit (up to 48 hours). Times that can't be compared count against it.
+- The alert shows where it connects, like "via ORD, 2h layover, 19h total", and a connection can be the
+  cheapest thing shown when a nonstop is also open.
+- It works with all three programs, and with nearby airports and dates.
+
 ### Any airline, every program
 
 To watch a route and not one airline, use `any` and let it search every program. Each program's results
@@ -692,6 +713,7 @@ folder. Add `--help` to any command for details.
 | `watch list` | List every watch |
 | `watch edit ID ...` | Change dates, price limit or pace, keeping the history |
 | `watch priority ID high` / `normal` | Put a watch first, within the same daily limits |
+| `watch add ... --stops 1 [--max-hours N] [--max-layover N]` | With `any`, also count one-ticket one-stop trips inside those limits |
 | `watch snipe ID --window 02:00-05:00` / `auto` / `--off` | Check a watch about every 15 minutes inside a time of day. Opt-in, capped |
 | `watch flex ID [--days N] [--origins X] [--destinations Y]` | Also scout nearby dates and other airports. No options turns it off |
 | `book ID [DATE] [--link-only]` | Open the airline's own page for a date, one with seats open if you don't say. It never signs in, books or pays |

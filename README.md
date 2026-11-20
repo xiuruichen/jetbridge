@@ -47,6 +47,9 @@ SkyMiles and United MileagePlus, partner flights included.
 - **Every airline, every program.** "Any airline from North America to Hong Kong" saves one watch per
   program, and each program's results include its alliance partners. When seats open on one, the alert
   says what else is open on the others, so you can compare before moving any points.
+- **It sees the one-stops other sites skip.** Most alert sites only cover direct flights. Tell jetbridge a
+  one-stop is fine and it counts bookable one-ticket trips too, every leg in your cabin, with a layover
+  and total-time limit. A small airport to Hong Kong via a hub is exactly where this shows up.
 - **No false alarms.** Every opening is searched again live a minute or two later. If the seats were
   only there for a moment, you never hear about it. If that second search can't tell,
   the email says it's unconfirmed.
@@ -133,6 +136,7 @@ Nothing is saved or deleted until you say yes. Claude is optional, and
 | "Booked YYZ to HKG. Any North American airport works, and a day either side" | Watches every likely airport and nearby date, and alerts when one beats your rules |
 | "Any airline from North America to Hong Kong, business, on every program" | Saves one watch per program, and alerts say what else is open on the others |
 | "Check this one hard between 2 and 5 AM" | A snipe window: about every 15 minutes in that time of day, capped, after it shows you the risk |
+| "A one-stop is fine if it's under 24 hours" | Also counts one-ticket one-stop trips inside those limits, and says where each connects |
 | "Show me my flights" | Draws a board in the chat |
 | "How has that flight been doing? Has it ever opened?" | Shows past openings, how long they lasted and their prices |
 | "Lower the limit to 90k and add June 20" | Changes the watch and keeps its history |
@@ -167,7 +171,7 @@ Its details can change, so check [seats.aero](https://seats.aero) itself.
 | **Programs** | American, Delta and United | [24 programs](https://awardwallet.com/travel/seats-aero-guide/) |
 | **Cost** | Free | [Free plan, or Pro at $12.99 a month from Nov 9, 2026](https://upgradedpoints.com/news/seats-aero-price-increase) |
 | **How far ahead** | As far as the airline shows | [60 days free, a year on Pro](https://awardwallet.com/travel/seats-aero-guide/) |
-| **Alerts** | One flight, any nonstop, nearby dates and airports, re-checked live on the airline's site first | [Unlimited, for direct routes, by date, program and cabin](https://docs.seats.aero/article/43-creating-and-managing-alerts) |
+| **Alerts** | One flight, any nonstop or one-stop, nearby dates and airports, re-checked live on the airline's site first | [Unlimited, for direct routes, by date, program and cabin](https://docs.seats.aero/article/43-creating-and-managing-alerts) |
 | **Where it runs** | Your computer, which has to be on | Its own service, so your computer can be off |
 | **In Claude** | Yes, on your computer | Yes, through its [official connector](https://seats.aero/mcp) |
 

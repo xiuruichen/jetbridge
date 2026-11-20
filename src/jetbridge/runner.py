@@ -398,10 +398,33 @@ class Runner:
             self.clock(),
             parsed.cached,
         )
+        if parsed.calendar:
+            moved = self.store.record_calendar(
+                query.program,
+                query.origin,
+                query.destination,
+                {day.isoformat(): miles for day, miles in parsed.calendar},
+                self.clock(),
+            )
+            for day in moved:
+                if day != query.date:  # this date is being checked right now
+                    self._calendar_moved(query, day)
         if parsed.cached is not None:
             key = f"cached_seen:{query.program}"
             seen = json.loads(self.store.get(key) or "[0, 0]")
             self.store.set(key, json.dumps([seen[0] + int(parsed.cached), seen[1] + 1]))
+
+    def _calendar_moved(self, query: Query, day: date) -> None:
+        """American's calendar for a nearby date moved, so a watched date there is checked sooner,
+        inside the same limits. This is early warning only: the calendar covers every cabin."""
+        for watch in self.store.list_watches("active"):
+            same = (watch.program, watch.origin, watch.destination) == (
+                query.program,
+                query.origin,
+                query.destination,
+            )
+            if same and day in watch.dates:
+                self._note_movement(watch, day, "the calendar for nearby dates moved")
 
     def _pattern_due(self, watch: Watch, state: DateState) -> bool:
         """Inside the time of day seats have tended to appear on this computer's watches, and this

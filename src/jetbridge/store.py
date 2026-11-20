@@ -469,6 +469,29 @@ class Store:
             c.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?,?)", (snap, str(at)))
         return len(events)
 
+    def record_calendar(
+        self, program: str, origin: str, destination: str, days: dict[str, int], at: float
+    ) -> list[date]:
+        """Keep the latest per-day calendar for a route and say which days changed since the last
+        one. Only days in both count, because the window slides as other dates are searched. Each
+        change is also written as an event, so the signal can be checked against what opened."""
+        key = f"calendar:{program}:{origin}:{destination}"
+        saved = self.get(key)
+        before = json.loads(saved) if saved else {}
+        changed = sorted(
+            day for day, miles in days.items() if day in before and before[day] != miles
+        )
+        with self._tx() as c:
+            c.executemany(
+                "INSERT INTO offer_events (program, origin, destination, day, flight, cabin, kind,"
+                " miles, observed_at) VALUES (?,?,?,?,'calendar','any','calendar',?,?)",
+                [(program, origin, destination, day, days[day], at) for day in changed],
+            )
+            c.execute(
+                "INSERT OR REPLACE INTO kv (key, value) VALUES (?,?)", (key, json.dumps(days))
+            )
+        return [date.fromisoformat(day) for day in changed]
+
     def release_events(self, program: str, within_s: float) -> list[tuple[str, str, float]]:
         """When each flight's cabin first showed up, where the answer before it was recent enough
         (within ``within_s``) to say it hadn't been there a moment earlier."""

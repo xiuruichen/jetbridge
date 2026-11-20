@@ -21,7 +21,7 @@ import json
 import re
 import urllib.parse
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -171,7 +171,8 @@ def extract_state(body: str) -> dict[str, Any]:
 
 def parse(body: str) -> ParsedResponse:
     """Parse a response, raising ``SchemaDrift`` unless it's recognizably a search answer."""
-    data = extract_state(body).get("SearchData")
+    state = extract_state(body)
+    data = state.get("SearchData")
     if not isinstance(data, dict) or not isinstance(data.get("itineraryResult"), dict):
         raise SchemaDrift("ng-state missing SearchData.itineraryResult")
     result = data["itineraryResult"]
@@ -188,12 +189,28 @@ def parse(body: str) -> ParsedResponse:
         # Zero results only count as genuine when the search metadata came back too.
         raise SchemaDrift("empty itineraryResult with no responseMetadata")
 
+    out.calendar = _calendar(data.get("weeklyResult"))
     for raw in raw_slices or []:
         try:
             out.slices.append(_parse_slice(raw))
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             out.unreadable.append(UnreadableSlice(_flight_hints(raw), repr(exc)))
     return out
+
+
+def _calendar(weekly: Any) -> tuple[tuple[date, int], ...]:
+    """The cheapest award per day that the site sends along with every search. It's across every
+    cabin, so a change here only says something moved nearby. Anything odd is skipped, never raised,
+    because this is a bonus and mustn't make a good answer unreadable."""
+    days = weekly.get("days") if isinstance(weekly, dict) else None
+    found = []
+    for entry in days if isinstance(days, list) else []:
+        try:
+            miles = int(entry.get("perPassengerAwardPointsTotal") or entry["awardPointsTotal"])
+            found.append((date.fromisoformat(entry["date"]), miles))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+    return tuple(found)
 
 
 def _parse_slice(raw: dict[str, Any]) -> ParsedSlice:

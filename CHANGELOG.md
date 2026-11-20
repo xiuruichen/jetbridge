@@ -13,6 +13,9 @@
 - Say in a seat alert how fast past openings on that date closed, and send one follow-up per opening
   once seats have stayed open about as long as past ones did. It reports the record and doesn't
   predict anything, and it needs at least one past opening to compare with.
+- Use American's free 13-day calendar as an early warning: when its cheapest price for a nearby
+  watched date changes, that date's checks come forward (inside the same limits, at no extra
+  searches). It's cheapest across every cabin, so it signals movement only, and the check decides.
 - Learn when each specific flight releases seats, not only each program. A ledger of what every
   search already shows (appearing, vanishing, price changes) costs no extra searches and is kept for 90
   days on your computer. A flight with enough tightly placed openings gets its own window, which snipe

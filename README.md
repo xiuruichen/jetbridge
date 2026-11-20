@@ -50,6 +50,9 @@ SkyMiles and United MileagePlus, partner flights included.
 - **It sees the one-stops other sites skip.** Most alert sites only cover direct flights. Tell jetbridge a
   one-stop is fine and it counts bookable one-ticket trips too, every leg in your cabin, with a layover
   and total-time limit. A small airport to Hong Kong via a hub is exactly where this shows up.
+- **Early warnings for free.** Every American search also carries a calendar of the cheapest award for
+  nearby days. When one of your watched dates moves there, jetbridge checks it sooner, without
+  spending extra searches. It's a nudge, not an alert: the live check still decides.
 - **No false alarms.** Every opening is searched again live a minute or two later. If the seats were
   only there for a moment, you never hear about it. If that second search can't tell,
   the email says it's unconfirmed.

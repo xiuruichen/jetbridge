@@ -617,6 +617,11 @@ A few details in the email:
 
    - **Movement:** if seats vanish, a price changes, another flight on the route opens or a nearby
      date opens, that date gets up to 3 extra checks over the next several hours.
+   - **American's calendar:** every American search also returns the cheapest award for about 13 days
+     around the date. When that price changes for a date you're watching, that date's checks come
+     forward as if seats had moved, at no extra searches. It's early warning only: the calendar is
+     cheapest across all cabins, so a change can't say business seats opened, and the check itself
+     decides. Delta and United don't send one. Each change is also kept in the ledger.
    - **Booking night:** a date gets one check just after midnight at the airline's home on the day it
      should become bookable, if your computer is awake. Evidence for this timing is thin, so it's a cheap
      experiment.

@@ -53,6 +53,18 @@ CREATE TABLE IF NOT EXISTS outbox (
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS site_starts (site TEXT NOT NULL, started_at REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS site_starts_lookup ON site_starts (site, started_at);
+CREATE TABLE IF NOT EXISTS offer_state (
+  program TEXT NOT NULL, origin TEXT NOT NULL, destination TEXT NOT NULL, day TEXT NOT NULL,
+  flight TEXT NOT NULL, cabin TEXT NOT NULL, miles INTEGER NOT NULL, seats INTEGER NOT NULL,
+  PRIMARY KEY (program, origin, destination, day, flight, cabin)
+);
+CREATE TABLE IF NOT EXISTS offer_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  program TEXT NOT NULL, origin TEXT NOT NULL, destination TEXT NOT NULL, day TEXT NOT NULL,
+  flight TEXT NOT NULL, cabin TEXT NOT NULL, kind TEXT NOT NULL, miles INTEGER NOT NULL,
+  observed_at REAL NOT NULL, previous_at REAL, cached INTEGER
+);
+CREATE INDEX IF NOT EXISTS offer_events_lookup ON offer_events (program, kind, flight, cabin);
 """
 
 
@@ -391,6 +403,86 @@ class Store:
                 Seen(row["observed_at"], row["status"], row["miles"])
             )
         return list(grouped.values())
+
+    def record_offers(
+        self,
+        program: str,
+        origin: str,
+        destination: str,
+        day: date,
+        offers: dict[tuple[str, str], tuple[int, int]],
+        at: float,
+        cached: bool | None = None,
+    ) -> int:
+        """Keep this route and date's snapshot, and write an event for what changed since the last
+        one. The first snapshot is a baseline and writes no events. Returns the events written."""
+        where = (program, origin, destination, day.isoformat())
+        snap = f"offer_snap:{program}:{origin}:{destination}:{day.isoformat()}"
+        saved = self.get(snap)
+        previous_at = float(saved) if saved else None
+        with self._tx() as c:
+            old = {
+                (r["flight"], r["cabin"]): r["miles"]
+                for r in c.execute(
+                    "SELECT flight, cabin, miles FROM offer_state"
+                    " WHERE program=? AND origin=? AND destination=? AND day=?",
+                    where,
+                )
+            }
+            events: list[tuple[str, str, str, int]] = []
+            if previous_at is not None:
+                for (flight, cabin), (miles, _) in offers.items():
+                    if (flight, cabin) not in old:
+                        events.append((flight, cabin, "appeared", miles))
+                    elif old[(flight, cabin)] != miles:
+                        events.append((flight, cabin, "price", miles))
+                events += [
+                    (flight, cabin, "vanished", miles)
+                    for (flight, cabin), miles in old.items()
+                    if (flight, cabin) not in offers
+                ]
+            c.execute(
+                "DELETE FROM offer_state WHERE program=? AND origin=? AND destination=? AND day=?",
+                where,
+            )
+            c.executemany(
+                "INSERT INTO offer_state VALUES (?,?,?,?,?,?,?,?)",
+                [(*where, f, cab, m, s) for (f, cab), (m, s) in offers.items()],
+            )
+            c.executemany(
+                "INSERT INTO offer_events (program, origin, destination, day, flight, cabin,"
+                " kind, miles, observed_at, previous_at, cached) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        *where,
+                        f,
+                        cab,
+                        kind,
+                        m,
+                        at,
+                        previous_at,
+                        None if cached is None else int(cached),
+                    )
+                    for f, cab, kind, m in events
+                ],
+            )
+            c.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?,?)", (snap, str(at)))
+        return len(events)
+
+    def release_events(self, program: str, within_s: float) -> list[tuple[str, str, float]]:
+        """When each flight's cabin first showed up, where the answer before it was recent enough
+        (within ``within_s``) to say it hadn't been there a moment earlier."""
+        rows = self.conn.execute(
+            "SELECT flight, cabin, observed_at FROM offer_events WHERE program=? AND"
+            " kind='appeared' AND previous_at IS NOT NULL AND observed_at - previous_at <= ?",
+            (program, within_s),
+        )
+        return [(r["flight"], r["cabin"], r["observed_at"]) for r in rows]
+
+    def prune_offers(self, before: float, today: date) -> None:
+        """Forget old events, and snapshots of dates that have passed."""
+        self.conn.execute("DELETE FROM offer_events WHERE observed_at < ?", (before,))
+        self.conn.execute("DELETE FROM offer_state WHERE day < ?", (today.isoformat(),))
 
     def get_burst(self, watch_id: int, day: date) -> Burst | None:
         saved = self.get(f"burst:{watch_id}:{day.isoformat()}")

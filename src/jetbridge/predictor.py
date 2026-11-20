@@ -73,6 +73,15 @@ def first_seen_times(histories: list[list[Seen]]) -> list[float]:
     return times
 
 
+def flight_patterns(events: list[tuple[str, str, float]]) -> dict[tuple[str, str], Pattern]:
+    """A release window for each flight and cabin with enough openings, from the ledger's events."""
+    grouped: dict[tuple[str, str], list[float]] = {}
+    for flight, cabin, at in events:
+        grouped.setdefault((flight, cabin), []).append(at)
+    found = {key: find_pattern(times) for key, times in grouped.items()}
+    return {key: pattern for key, pattern in found.items() if pattern is not None}
+
+
 def find_pattern(first_seen: list[float]) -> Pattern | None:
     """The 3-hour window of the day holding most openings, if there are enough and it holds most."""
     if len(first_seen) < MIN_OPENINGS:

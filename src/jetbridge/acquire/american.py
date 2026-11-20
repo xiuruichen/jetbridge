@@ -181,6 +181,9 @@ def parse(body: str) -> ParsedResponse:
 
     error = result.get("error")
     out = ParsedResponse(site_error=str(error) if error else None)
+    metadata = result.get("responseMetadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("cached"), bool):
+        out.cached = metadata["cached"]
     if not raw_slices and not error and result.get("responseMetadata") is None:
         # Zero results only count as genuine when the search metadata came back too.
         raise SchemaDrift("empty itineraryResult with no responseMetadata")

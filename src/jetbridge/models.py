@@ -173,6 +173,8 @@ class ParsedResponse:
     slices: list[ParsedSlice] = field(default_factory=list)
     unreadable: list[UnreadableSlice] = field(default_factory=list)
     site_error: str | None = None  # an error code in the site's answer
+    cached: bool | None = None  # the site said whether this answer came from its own cache
+    calendar: tuple[tuple[date, int], ...] = ()  # cheapest award miles per day, if the site sent it
 
 
 class AnswerKind(StrEnum):

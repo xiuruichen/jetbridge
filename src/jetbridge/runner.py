@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
-from jetbridge import snipe, updater
+from jetbridge import ledger, snipe, updater
 from jetbridge.acquire.fetcher import Fetcher
 from jetbridge.acquire.governor import Governor
 from jetbridge.acquire.sites import SITES, get_site
@@ -38,7 +38,14 @@ from jetbridge.models import (
 )
 from jetbridge.notify import push
 from jetbridge.notify.email import Sender, flush_outbox, owner_address
-from jetbridge.predictor import WINDOW_HOURS, Pattern, find_pattern, first_seen_times
+from jetbridge.predictor import (
+    TIGHT_S,
+    WINDOW_HOURS,
+    Pattern,
+    find_pattern,
+    first_seen_times,
+    flight_patterns,
+)
 from jetbridge.scheduler import (
     MANUAL,
     NEIGHBOUR_DAYS,
@@ -71,6 +78,7 @@ NEVER_SEEN_AFTER = 6  # conclusive checks with the flight never listed
 OFFLINE_NOTE_AFTER_S = 6 * 3600
 DIGEST_HOUR = 8
 COVERAGE_PERIOD_S = 24 * 3600
+LEDGER_KEEP_S = 90 * 24 * 3600
 
 
 def watching_since(watch: Watch, day: date) -> float:
@@ -247,6 +255,7 @@ class Runner:
                 for watch in watches:
                     retry_at[watch.id] = answer.retry_at
 
+            self._record(query, answer)
             confirm, similar = self._apply(query, watches, answer, report, reason)
             self._note_parser_health(query, watches, answer)
             if confirm or similar:
@@ -283,6 +292,7 @@ class Runner:
                 if answer.kind in (AnswerKind.BLOCKED, AnswerKind.DEFERRED):
                     stop_site(site, answer)
                     continue
+                self._record(query, answer)
                 if answer.kind is AnswerKind.ANSWER:  # an error is tried again at the next visit
                     for watch in watches:
                         self.store.set_scouted_at(watch.id, query, self.clock())
@@ -322,7 +332,7 @@ class Runner:
         if not watch.snipe_window:
             return None
         if watch.snipe_window == snipe.AUTO:
-            learned = self._pattern(watch.program)
+            learned = self._best_pattern(watch)
             if learned is None:
                 return None
             return learned.start_hour * 60, ((learned.start_hour + WINDOW_HOURS) % 24) * 60
@@ -342,7 +352,7 @@ class Runner:
     def _wake_at(self, watch: Watch, now: float) -> float | None:
         """The next time this watch should be looked at for timing reasons alone."""
         times = []
-        pattern = self._pattern(watch.program)
+        pattern = self._best_pattern(watch)
         if pattern is not None:
             times.append(pattern.next_start(now))
         bounds = self._snipe_bounds(watch)
@@ -360,10 +370,43 @@ class Runner:
         saved = self.store.get(f"release_pattern:{program}")
         return Pattern(**json.loads(saved)) if saved else None
 
+    def _flight_pattern(self, watch: Watch) -> Pattern | None:
+        """When this specific flight and cabin has tended to release, from the ledger."""
+        if watch.flight.is_any:
+            return None
+        saved = self.store.get(
+            f"release_pattern:{watch.program}:{watch.flight.code}:{watch.cabin.value}"
+        )
+        return Pattern(**json.loads(saved)) if saved else None
+
+    def _best_pattern(self, watch: Watch) -> Pattern | None:
+        """This flight's own release window if it has one, else the program's."""
+        return self._flight_pattern(watch) or self._pattern(watch.program)
+
+    def _record(self, query: Query, answer: SearchAnswer) -> None:
+        """Keep what this answer showed in the ledger. It costs nothing, since it's already here."""
+        parsed = answer.parsed
+        if answer.kind is not AnswerKind.ANSWER or not ledger.complete(parsed):
+            return
+        assert parsed is not None
+        self.store.record_offers(
+            query.program,
+            query.origin,
+            query.destination,
+            query.date,
+            ledger.offers_in(parsed),
+            self.clock(),
+            parsed.cached,
+        )
+        if parsed.cached is not None:
+            key = f"cached_seen:{query.program}"
+            seen = json.loads(self.store.get(key) or "[0, 0]")
+            self.store.set(key, json.dumps([seen[0] + int(parsed.cached), seen[1] + 1]))
+
     def _pattern_due(self, watch: Watch, state: DateState) -> bool:
         """Inside the time of day seats have tended to appear on this computer's watches, and this
         date hasn't been checked since the window opened. That's one extra check a day at most."""
-        pattern = self._pattern(watch.program)
+        pattern = self._best_pattern(watch)
         now = self.clock()
         if pattern is None or not pattern.is_inside(now):
             return False
@@ -381,6 +424,14 @@ class Runner:
                 self.store.delete(key)
             else:
                 self.store.set(key, json.dumps(asdict(found)))
+            for old in self.store.keys_with_prefix(f"release_pattern:{site.id}:"):
+                self.store.delete(old)
+            events = self.store.release_events(site.id, TIGHT_S)
+            for (flight, cabin), pattern in flight_patterns(events).items():
+                self.store.set(
+                    f"release_pattern:{site.id}:{flight}:{cabin}", json.dumps(asdict(pattern))
+                )
+        self.store.prune_offers(self.clock() - LEDGER_KEEP_S, self._today())
         self.store.set("pattern_learned", today)
 
     def _note_movement(self, watch: Watch, day: date, reason: str) -> None:
@@ -822,6 +873,9 @@ class Runner:
             watched = watch_coverage(self.store, watch, now)
             if watched is not None:
                 lines.append(f"  Proof of watching: {watched.text}")
+            flight_timing = self._flight_pattern(watch)
+            if flight_timing is not None and for_owner:
+                lines.append(f"  Release timing for {watch.flight.code}: {flight_timing.text}")
             all_never_seen = True
             searchable = searchable_dates(watch, today)
             for day in upcoming_dates(watch, today):
@@ -879,6 +933,13 @@ class Runner:
                 f"This computer was off or asleep for up to {gap / 3600:.0f} hours since the "
                 "last digest, so no checks ran during that time."
             )
+        for site in SITES.values():
+            cached, answered = json.loads(self.store.get(f"cached_seen:{site.id}") or "[0, 0]")
+            if cached:
+                lines.append(
+                    f"{cached} of {answered} {site.domain} answers were served from the site's own "
+                    "cache, which can lag a little behind what's really open."
+                )
         for site in SITES.values():
             pattern = self._pattern(site.id)
             if pattern is not None:

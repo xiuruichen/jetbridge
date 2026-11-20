@@ -48,13 +48,13 @@ def day_map(**by_day: int) -> dict[str, int]:
 
 
 def test_the_first_calendar_is_a_baseline(store):
-    assert store.record_calendar("american", "JFK", "HKG", {"2027-05-22": 50_000}, 0.0) == []
+    assert store.record_calendar("american", "JFK", "HKG", 1, {"2027-05-22": 50_000}, 0.0) == []
 
 
 def test_only_days_in_both_calendars_and_that_changed_count(store):
-    store.record_calendar("american", "JFK", "HKG", {"2027-05-21": 1, "2027-05-22": 2}, 0.0)
+    store.record_calendar("american", "JFK", "HKG", 1, {"2027-05-21": 1, "2027-05-22": 2}, 0.0)
     moved = store.record_calendar(
-        "american", "JFK", "HKG", {"2027-05-22": 9, "2027-05-23": 3, "2027-05-21": 1}, 60.0
+        "american", "JFK", "HKG", 1, {"2027-05-22": 9, "2027-05-23": 3, "2027-05-21": 1}, 60.0
     )
     assert moved == [date(2027, 5, 22)]  # 05-23 is new because the window slid, not a change
     kinds = [r["kind"] for r in store.conn.execute("SELECT kind FROM offer_events")]

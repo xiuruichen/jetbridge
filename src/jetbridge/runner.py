@@ -394,6 +394,7 @@ class Runner:
             query.origin,
             query.destination,
             query.date,
+            query.pax,
             ledger.offers_in(parsed),
             self.clock(),
             parsed.cached,
@@ -403,6 +404,7 @@ class Runner:
                 query.program,
                 query.origin,
                 query.destination,
+                query.pax,
                 {day.isoformat(): miles for day, miles in parsed.calendar},
                 self.clock(),
             )

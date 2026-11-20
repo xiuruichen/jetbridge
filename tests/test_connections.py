@@ -141,3 +141,18 @@ async def test_a_connection_opening_sends_the_usual_alert_with_its_path(store, c
     subject, body = next((s, b) for s, b in sender.sent if s.startswith("SEATS OPEN"))
     assert "AA100+CX806" in subject and "80,000 mi" in subject
     assert "via ORD" in body
+
+
+def test_seats_on_a_shared_flight_are_only_counted_once_for_a_whole_party():
+    # The nonstop AA100 and the connection that starts on AA100 draw on the same seats.
+    from jetbridge.matcher import _distinct_seats
+    from jetbridge.models import CheckResult
+
+    def open_with(seats: int) -> CheckResult:
+        return CheckResult(CheckStatus.AVAILABLE, miles=1, seats_exact=seats)
+
+    shared = {"AA100": open_with(2), "AA100+BA15": open_with(2)}
+    assert _distinct_seats(shared, 2) == 2
+    apart = {"AA100": open_with(2), "DL1+BA15": open_with(3)}
+    assert _distinct_seats(apart, 2) == 5
+    assert _distinct_seats({"AA100": open_with(2), "AA100+BA15": open_with(4)}, 2) == 4

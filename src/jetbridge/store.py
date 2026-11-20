@@ -55,12 +55,14 @@ CREATE TABLE IF NOT EXISTS site_starts (site TEXT NOT NULL, started_at REAL NOT 
 CREATE INDEX IF NOT EXISTS site_starts_lookup ON site_starts (site, started_at);
 CREATE TABLE IF NOT EXISTS offer_state (
   program TEXT NOT NULL, origin TEXT NOT NULL, destination TEXT NOT NULL, day TEXT NOT NULL,
+  pax INTEGER NOT NULL,
   flight TEXT NOT NULL, cabin TEXT NOT NULL, miles INTEGER NOT NULL, seats INTEGER NOT NULL,
-  PRIMARY KEY (program, origin, destination, day, flight, cabin)
+  PRIMARY KEY (program, origin, destination, day, pax, flight, cabin)
 );
 CREATE TABLE IF NOT EXISTS offer_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   program TEXT NOT NULL, origin TEXT NOT NULL, destination TEXT NOT NULL, day TEXT NOT NULL,
+  pax INTEGER NOT NULL,
   flight TEXT NOT NULL, cabin TEXT NOT NULL, kind TEXT NOT NULL, miles INTEGER NOT NULL,
   observed_at REAL NOT NULL, previous_at REAL, cached INTEGER
 );
@@ -410,14 +412,15 @@ class Store:
         origin: str,
         destination: str,
         day: date,
+        pax: int,
         offers: dict[tuple[str, str], tuple[int, int]],
         at: float,
         cached: bool | None = None,
     ) -> int:
         """Keep this route and date's snapshot, and write an event for what changed since the last
         one. The first snapshot is a baseline and writes no events. Returns the events written."""
-        where = (program, origin, destination, day.isoformat())
-        snap = f"offer_snap:{program}:{origin}:{destination}:{day.isoformat()}"
+        where = (program, origin, destination, day.isoformat(), pax)
+        snap = f"offer_snap:{program}:{origin}:{destination}:{day.isoformat()}:{pax}"
         saved = self.get(snap)
         previous_at = float(saved) if saved else None
         with self._tx() as c:
@@ -425,7 +428,7 @@ class Store:
                 (r["flight"], r["cabin"]): r["miles"]
                 for r in c.execute(
                     "SELECT flight, cabin, miles FROM offer_state"
-                    " WHERE program=? AND origin=? AND destination=? AND day=?",
+                    " WHERE program=? AND origin=? AND destination=? AND day=? AND pax=?",
                     where,
                 )
             }
@@ -442,16 +445,18 @@ class Store:
                     if (flight, cabin) not in offers
                 ]
             c.execute(
-                "DELETE FROM offer_state WHERE program=? AND origin=? AND destination=? AND day=?",
+                "DELETE FROM offer_state WHERE program=? AND origin=? AND destination=?"
+                " AND day=? AND pax=?",
                 where,
             )
             c.executemany(
-                "INSERT INTO offer_state VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO offer_state VALUES (?,?,?,?,?,?,?,?,?)",
                 [(*where, f, cab, m, s) for (f, cab), (m, s) in offers.items()],
             )
             c.executemany(
-                "INSERT INTO offer_events (program, origin, destination, day, flight, cabin,"
-                " kind, miles, observed_at, previous_at, cached) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO offer_events (program, origin, destination, day, pax, flight,"
+                " cabin, kind, miles, observed_at, previous_at, cached)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         *where,
@@ -470,12 +475,18 @@ class Store:
         return len(events)
 
     def record_calendar(
-        self, program: str, origin: str, destination: str, days: dict[str, int], at: float
+        self,
+        program: str,
+        origin: str,
+        destination: str,
+        pax: int,
+        days: dict[str, int],
+        at: float,
     ) -> list[date]:
         """Keep the latest per-day calendar for a route and say which days changed since the last
         one. Only days in both count, because the window slides as other dates are searched. Each
         change is also written as an event, so the signal can be checked against what opened."""
-        key = f"calendar:{program}:{origin}:{destination}"
+        key = f"calendar:{program}:{origin}:{destination}:{pax}"
         saved = self.get(key)
         before = json.loads(saved) if saved else {}
         changed = sorted(
@@ -483,9 +494,9 @@ class Store:
         )
         with self._tx() as c:
             c.executemany(
-                "INSERT INTO offer_events (program, origin, destination, day, flight, cabin, kind,"
-                " miles, observed_at) VALUES (?,?,?,?,'calendar','any','calendar',?,?)",
-                [(program, origin, destination, day, days[day], at) for day in changed],
+                "INSERT INTO offer_events (program, origin, destination, day, pax, flight, cabin,"
+                " kind, miles, observed_at) VALUES (?,?,?,?,?,'calendar','any','calendar',?,?)",
+                [(program, origin, destination, day, pax, days[day], at) for day in changed],
             )
             c.execute(
                 "INSERT OR REPLACE INTO kv (key, value) VALUES (?,?)", (key, json.dumps(days))

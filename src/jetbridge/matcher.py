@@ -169,6 +169,24 @@ def open_nonstops(watch: Watch, query: Query, answer: SearchAnswer) -> list[Also
     return sorted(found.values(), key=lambda option: option.departs)
 
 
+def _distinct_seats(available: dict[str, CheckResult], pax: int) -> int:
+    """Seats that can be told apart. A nonstop and a connection on the same flight draw on the same
+    seats, so only itineraries sharing no flight number are added together, most seats first."""
+    used: set[str] = set()
+    total = 0
+    ranked = sorted(
+        available.items(),
+        key=lambda kv: (-(kv[1].seats_exact or kv[1].seats_at_least or pax), kv[0]),
+    )
+    for key, result in ranked:
+        codes = set(key.split("+"))
+        if codes & used:
+            continue
+        used |= codes
+        total += result.seats_exact or result.seats_at_least or pax
+    return total
+
+
 def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     """Judge each nonstop flight on the route by the same rules as a watch on that flight. Someone
     chose this in the review, and a connection still never counts."""
@@ -187,7 +205,7 @@ def _evaluate_any(watch: Watch, day: date, answer: SearchAnswer) -> CheckResult:
     available = {
         code: result for code, result in results.items() if result.status is CheckStatus.AVAILABLE
     }
-    seats = sum(r.seats_exact or r.seats_at_least or watch.pax for r in available.values())
+    seats = _distinct_seats(available, watch.pax)
     if available and (not watch.whole_party or seats >= watch.whole_party):
         code = min(available, key=lambda c: available[c].miles or 0)
         return replace(available[code], flight=code, flights=tuple(sorted(available)))

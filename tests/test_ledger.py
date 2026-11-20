@@ -16,7 +16,7 @@ HOUR = 3600.0
 
 
 def record(store, offers, at, cached=None):
-    return store.record_offers("american", "JFK", "HKG", DAY, offers, at, cached)
+    return store.record_offers("american", "JFK", "HKG", DAY, 1, offers, at, cached)
 
 
 # ---- what an answer contains ------------------------------------------------------------
@@ -77,8 +77,10 @@ def test_a_release_is_only_placed_when_the_answer_before_was_recent(store):
 
 def test_other_programs_and_dates_keep_their_own_snapshots(store):
     record(store, {("CX805", "business"): (110_000, 2)}, 0.0)
-    store.record_offers("delta", "JFK", "HKG", DAY, {}, 0.0)
-    assert store.record_offers("delta", "JFK", "HKG", DAY, {("DL1", "business"): (1, 1)}, HOUR) == 1
+    store.record_offers("delta", "JFK", "HKG", DAY, 1, {}, 0.0)
+    assert (
+        store.record_offers("delta", "JFK", "HKG", DAY, 1, {("DL1", "business"): (1, 1)}, HOUR) == 1
+    )
     assert record(store, {("CX805", "business"): (110_000, 2)}, HOUR) == 0
 
 
@@ -169,3 +171,13 @@ def test_the_digest_reports_flight_timing_and_cached_answers(store, clock):
     )
     assert "3 of 10 aa.com answers were served from the site's own cache" in body
     assert DateState().status is None  # keeps the import used
+
+
+def test_different_party_sizes_keep_separate_snapshots(store):
+    one = {("CX805", "business"): (110_000, 2)}
+    four = {}  # a search for four hides flights with only two seats
+    store.record_offers("american", "JFK", "HKG", DAY, 1, one, 0.0)
+    store.record_offers("american", "JFK", "HKG", DAY, 4, four, 10.0)
+    assert store.record_offers("american", "JFK", "HKG", DAY, 1, one, HOUR) == 0
+    assert store.record_offers("american", "JFK", "HKG", DAY, 4, four, HOUR) == 0
+    assert store.conn.execute("SELECT COUNT(*) FROM offer_events").fetchone()[0] == 0

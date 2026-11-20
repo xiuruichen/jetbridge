@@ -625,11 +625,19 @@ A few details in the email:
      based on any airline's cancellation rules.
    - **Priority:** `jetbridge watch priority 1 high` makes a watch go first and get checked about 1.5
      times as often.
+   - **Per-flight timing:** every search already shows every flight and cabin on the route and date, so
+     jetbridge keeps a ledger of what changed (a flight's cabin appearing, vanishing or changing price)
+     at no extra searches. Once a specific flight has at least 5 openings placed to within 3 hours and
+     60% fall in one 3-hour window, that flight's own window is used for its extra daily check and for
+     `--window auto` snipe windows, ahead of the program-wide one. The daily summary shows it as
+     "Release timing for CX845". The ledger keeps 90 days, only on your computer.
    - **Your own timing:** once your watches have recorded at least 5 openings whose start is known to
      within 3 hours, and 60% of them fall in one 3-hour window of the day, each date gets one extra
      check a day inside that window. It learns only from your own history on this computer, nothing is
      shared, and the daily summary says what it found. With less data than that, it does nothing,
-     because a pattern from a handful of openings can be chance.
+     because a pattern from a handful of openings can be chance. American also says whether an answer
+     came from its own cache, and the daily summary reports how many did, because a cached answer can
+     lag a little behind what's really open. That is reported only, and doesn't change any alert.
    - **After a block:** planned searching on that site is halved for a day, then recovers.
 
    These are rules of thumb about where searches do the most good, not predictions. There's no good

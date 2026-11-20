@@ -56,9 +56,10 @@ SkyMiles and United MileagePlus, partner flights included.
 - **It tells you how long you've got.** Each alert says how fast past openings on that date closed, and
   you get one follow-up when these seats have stayed open as long as past ones did. It reports what it
   has seen and doesn't guess.
-- **It learns your flight's rhythm.** From your own history it can spot the time of day seats tend to
-  appear and add a check there. Nothing leaves your computer, and with too little data it stays out of
-  the way.
+- **It learns your flight's rhythm.** Every search already shows every flight on the route, so jetbridge
+  keeps a ledger of what changed and learns when *that specific flight* tends to release seats (like
+  "CX845 business shows up around 2 AM"). It aims its extra checks and snipe windows there. Nothing
+  leaves your computer, and with too little data it stays out of the way.
 - **Snipe windows, when minutes matter.** Opt in per watch, and inside a time of day you pick (or the
   one it learned) it checks about every 15 minutes instead of every few hours. It's capped, only uses
   searches the day's plan leaves over, and is the most likely thing to get a site to block you, so it's
